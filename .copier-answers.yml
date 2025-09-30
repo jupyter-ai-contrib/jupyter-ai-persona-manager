@@ -1,0 +1,15 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v4.4.0
+_src_path: https://github.com/jupyterlab/extension-template
+author_email: jupyter@googlegroups.com
+author_name: Project Jupyter
+has_binder: false
+has_settings: false
+kind: frontend-and-server
+labextension_name: '@jupyter-ai/persona-manager'
+project_short_description: The core manager & registry for AI personas in Jupyter
+    AI
+python_name: jupyter_ai_persona_manager
+repository: https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager
+test: true
+
