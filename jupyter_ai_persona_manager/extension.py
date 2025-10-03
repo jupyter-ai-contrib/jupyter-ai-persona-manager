@@ -100,9 +100,6 @@ class PersonaManagerExtension(ExtensionApp):
         """
         self.log.info(f"Router detected new chat room, initializing persona manager: {room_id}")
         
-        # Cache the YChat instance
-        self.ychats_by_room[room_id] = ychat
-        
         # Initialize persona manager for this chat
         persona_manager = self._init_persona_manager(room_id, ychat)
         if not persona_manager:

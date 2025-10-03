@@ -348,19 +348,9 @@ class PersonaManager(LoggingConfigurable):
         return persona_list
 
     def on_chat_message(self, room_id: str, message: Message):
-        self.route_message(message)
-
-    def on_slash_cmd_message(self, room_id: str, message: Message):
-        self.route_slash_command(message)
-
-    def route_message(self, new_message: Message):
         """
         Method that routes an incoming message to the correct personas by
         calling their `process_message()` methods.
-
-        - If the message contains a slash command, the slash command will be
-          dispatched to `route_slash_command()` first. If the slash command is
-          unrecognized, the message will be handled as a normal message.
 
         - If the chat has multiple users, then each persona only replies
           when `@`-mentioned.
@@ -373,21 +363,13 @@ class PersonaManager(LoggingConfigurable):
           regardless of whether it is `@`-mentioned.
         """
 
-        # Dispatch message to `route_slash_command()` if the first word is a
-        # slash command. Return immediately if the slash command is recognized.
-        first_word = get_first_word(new_message.body)
-        if first_word and first_word.startswith("/"):
-            slash_cmd_recognized = self.route_slash_command(new_message)
-            if slash_cmd_recognized:
-                return
-
         # Gather routing context
         human_users = self.get_active_human_users()
         sender_not_human = (
-            is_persona(new_message.sender) or new_message.sender == SYSTEM_USERNAME
+            is_persona(message.sender) or message.sender == SYSTEM_USERNAME
         )
         sender_is_human = not sender_not_human
-        mentioned_personas = self.get_mentioned_personas(new_message)
+        mentioned_personas = self.get_mentioned_personas(message)
         human_user_count = len(human_users)
         persona_count = len(self.personas)
 
@@ -395,7 +377,7 @@ class PersonaManager(LoggingConfigurable):
         # mentioned personas
         if sender_not_human or human_user_count > 1:
             if mentioned_personas:
-                self._broadcast(new_message, to_personas=mentioned_personas)
+                self._broadcast(message, to_personas=mentioned_personas)
             return
 
         # Single user + multiple personas case: route message to mentioned
@@ -411,13 +393,13 @@ class PersonaManager(LoggingConfigurable):
             targeted_personas = mentioned_personas
             if default_persona and not targeted_personas:
                 targeted_personas = [default_persona]
-            self._broadcast(new_message, to_personas=targeted_personas)
+            self._broadcast(message, to_personas=targeted_personas)
             return
 
         # Default case (single user, 0/1 personas): persona always replies if present
-        self._broadcast(new_message, to_personas=self.personas)
+        self._broadcast(message, to_personas=self.personas)
         return
-
+    
     def _broadcast(
         self,
         message: Message,
@@ -434,7 +416,7 @@ class PersonaManager(LoggingConfigurable):
             self.event_loop.create_task(persona.process_message(message))
         return
 
-    def route_slash_command(self, new_message: Message) -> bool:
+    def on_slash_cmd_message(self, room_id: str, message: Message):
         """
         Routes & handles a message containing a slash command. Returns `True` if
         the message specified a valid slash command recognized by
@@ -448,12 +430,12 @@ class PersonaManager(LoggingConfigurable):
         should return back to `route_message()`. This allows AI personas to
         receive custom slash commands that only they recognize.
         """
-        first_word = get_first_word(new_message.body)
+        first_word = get_first_word(message.body)
         assert first_word and first_word.startswith("/")
 
         command_id = first_word[1:]
         if command_id == "refresh-personas":
-            self.handle_refresh_personas_command(new_message)
+            self.handle_refresh_personas_command(message)
             return True
 
         # If command is unrecognized, log an error
