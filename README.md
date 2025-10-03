@@ -2,16 +2,113 @@
 
 [![Github Actions Status](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/workflows/Build/badge.svg)](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/actions/workflows/build.yml)
 
-The core manager & registry for AI personas in Jupyter AI
+The core manager & registry for AI personas in Jupyter AI.
 
-This extension is composed of a Python package named `jupyter_ai_persona_manager`
-for the server extension and a NPM package named `@jupyter-ai/persona-manager`
-for the frontend extension.
+This package provides the foundational infrastructure for managing AI personas in Jupyter AI chat environments. It includes:
 
-## QUICK START
+- **BasePersona**: Abstract base class for creating custom AI personas
+- **PersonaManager**: Registry and lifecycle management for personas
+- **PersonaAwareness**: Awareness integration for multi-user chat environments
+- **Entry Point Support**: Automatic discovery of personas via Python entry points
 
-Everything that follows after this section was from the extension template. We
-will need to revise the rest of this README.
+AI personas are analogous to "bots" in other chat applications, allowing different AI assistants to coexist in the same chat environment. Each persona can have unique behavior, models, and capabilities.
+
+## Adding a New Persona via Entry Points
+
+To create and register a custom AI persona:
+
+### 1. Create Your Persona Class
+
+```python
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+
+class MyCustomPersona(BasePersona):
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="MyPersona",
+            description="A helpful custom assistant",
+            avatar_path="/api/ai/static/custom-avatar.svg",
+            system_prompt="You are a helpful assistant specialized in...",
+        )
+
+    async def process_message(self, message: Message):
+        # Your custom logic here
+        response = f"Hello! You said: {message.body}"
+        self.send_message(response)
+```
+
+### 2. Register via Entry Points
+
+Add to your package's `pyproject.toml`:
+
+```toml
+[project.entry-points."jupyter_ai.personas"]
+my-custom-persona = "my_package.personas:MyCustomPersona"
+```
+
+### 3. Install and Restart
+
+```bash
+pip install your-package
+# Restart JupyterLab to load the new persona
+```
+
+Your persona will automatically appear in Jupyter AI chats and can be @-mentioned by name.
+
+## Loading Personas from .jupyter Directory
+
+For development and local customization, personas can be loaded from the `.jupyter/personas/` directory:
+
+### Directory Structure
+
+```
+.jupyter/
+└── personas/
+    ├── my_custom_persona.py
+    ├── research_assistant.py
+    └── debug_helper.py
+```
+
+### File Requirements
+
+- Place Python files in `.jupyter/personas/` (not directly in `.jupyter/`)
+- Filename must contain "persona" (case-insensitive)
+- Cannot start with `_` or `.` (treated as private/hidden)
+- Must contain a class inheriting from `BasePersona`
+
+### Example Local Persona
+
+**File: `.jupyter/personas/my_persona.py`**
+
+```python
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+
+class MyLocalPersona(BasePersona):
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="Local Dev Assistant",
+            description="A persona for local development",
+            avatar_path="/api/ai/static/jupyternaut.svg",
+            system_prompt="You help with local development tasks.",
+        )
+
+    async def process_message(self, message: Message):
+        self.send_message(f"Local persona received: {message.body}")
+```
+
+### Refreshing Personas
+
+Use the `/refresh-personas` slash command in any chat to reload personas without restarting JupyterLab:
+
+```
+/refresh-personas
+```
+
+This allows for iterative development - modify your local persona files and refresh to see changes immediately.
 
 Development install:
 

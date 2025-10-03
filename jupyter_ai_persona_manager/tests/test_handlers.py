@@ -1,9 +1,9 @@
 import json
 
 
-async def test_get_example(jp_fetch):
+async def test_health(jp_fetch):
     # When
-    response = await jp_fetch("jupyter-ai-persona-manager", "get-example")
+    response = await jp_fetch("jupyter-ai-persona-manager", "health")
 
     # Then
     assert response.code == 200

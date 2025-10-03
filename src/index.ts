@@ -13,9 +13,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'The core manager & registry for AI personas in Jupyter AI',
   autoStart: true,
   activate: (app: JupyterFrontEnd) => {
-    console.log('JupyterLab extension @jupyter-ai/persona-manager is activated!');
+    console.log(
+      'JupyterLab extension @jupyter-ai/persona-manager is activated!'
+    );
 
-    requestAPI<any>('get-example')
+    requestAPI<any>('health')
       .then(data => {
         console.log(data);
       })
