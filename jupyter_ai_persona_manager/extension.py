@@ -114,7 +114,6 @@ class PersonaManagerExtension(ExtensionApp):
         
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
-        self.router.observe_slash_cmd_msg(room_id, persona_manager.on_slash_cmd_message)
     
     def _init_persona_manager(
         self, room_id: str, ychat: "YChat"
