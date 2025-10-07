@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from jupyterlab_chat.ychat import YChat
 
 
+PERSONA_MANAGERS_SETTINGS_KEY = "jai.persona_managers_by_room"
+
 class PersonaManagerExtension(ExtensionApp):
     """
     Jupyter AI Persona Manager Extension
@@ -43,8 +45,18 @@ class PersonaManagerExtension(ExtensionApp):
     def initialize(self, argv: Any = None) -> None:
         super().initialize()
         
-        self.persona_managers_by_room: dict[str, PersonaManager] = {}
-        """Cache of PersonaManager instances, indexed by room ID."""
+    @property
+    def persona_managers_by_room(self) -> dict[str, PersonaManager]:
+        """
+        Dictionary of PersonaManager instances indexed by room ID.
+
+        This is accessible to other extensions via
+        `self.settings[PERSONA_MANAGERS_SETTINGS_KEY]`.
+        """
+        if PERSONA_MANAGERS_SETTINGS_KEY not in self.settings:
+            self.settings[PERSONA_MANAGERS_SETTINGS_KEY] = {}
+        
+        return self.settings[PERSONA_MANAGERS_SETTINGS_KEY]
     
     @property
     def event_loop(self) -> AbstractEventLoop:
