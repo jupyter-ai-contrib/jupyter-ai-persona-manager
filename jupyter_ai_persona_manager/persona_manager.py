@@ -416,7 +416,15 @@ class PersonaManager(LoggingConfigurable):
             self.event_loop.create_task(persona.process_message(message))
         return
 
-    async def _refresh_personas(self):
+    async def refresh_personas(self):
+        """
+        Method that reloads all persona classes defined locally under
+        `.jupyter/personas`, and re-initializes each persona class available in
+        the current chat.
+
+        This method is public because it is called by `jupyter_ai_chat_commands`
+        when the `/refresh-personas` slash command is sent.
+        """
         # Shutdown all personas
         await self.shutdown_personas()
 
