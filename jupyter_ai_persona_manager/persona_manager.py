@@ -416,46 +416,15 @@ class PersonaManager(LoggingConfigurable):
             self.event_loop.create_task(persona.process_message(message))
         return
 
-    def on_slash_cmd_message(self, room_id: str, message: Message):
+    async def refresh_personas(self):
         """
-        Routes & handles a message containing a slash command. Returns `True` if
-        the message specified a valid slash command recognized by
-        `PersonaManager`, `False` otherwise. Notes:
+        Method that reloads all persona classes defined locally under
+        `.jupyter/personas`, and re-initializes each persona class available in
+        the current chat.
 
-        - Each message may have exactly one slash command, which must be
-        specified by the first word of the message.
-
-        - This method will return `True` even if the command was not handled
-        successfully. `False` is just meant to indicate that the control flow
-        should return back to `route_message()`. This allows AI personas to
-        receive custom slash commands that only they recognize.
+        This method is public because it is called by `jupyter_ai_chat_commands`
+        when the `/refresh-personas` slash command is sent.
         """
-        first_word = get_first_word(message.body)
-        assert first_word and first_word.startswith("/")
-
-        command_id = first_word[1:]
-        if command_id == "refresh-personas":
-            self.handle_refresh_personas_command(message)
-            return True
-
-        # If command is unrecognized, log an error
-        self.log.warning(f"Unrecognized slash command: '/{command_id}'")
-        return False
-
-    def handle_refresh_personas_command(self, _: Message) -> None:
-        """
-        Handles the '/refresh-personas' slash command.
-
-        TODO: How do we show status/completion in the UI?
-        """
-        self.log.info(
-            f"Received '/refresh-personas'. Refreshing personas in chat '{self.room_id}'..."
-        )
-
-        # Refresh personas in background task
-        asyncio.create_task(self._refresh_personas())
-
-    async def _refresh_personas(self):
         # Shutdown all personas
         await self.shutdown_personas()
 

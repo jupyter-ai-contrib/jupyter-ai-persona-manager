@@ -43,8 +43,20 @@ class PersonaManagerExtension(ExtensionApp):
     def initialize(self, argv: Any = None) -> None:
         super().initialize()
         
-        self.persona_managers_by_room: dict[str, PersonaManager] = {}
-        """Cache of PersonaManager instances, indexed by room ID."""
+    @property
+    def persona_managers_by_room(self) -> dict[str, PersonaManager]:
+        """
+        Dictionary of PersonaManager instances indexed by room ID.
+
+        This is accessible to other extensions via
+        `self.settings['jupyter-ai']['persona-managers']`.
+        """
+        if 'jupyter-ai' not in self.settings:
+            self.settings['jupyter-ai'] = {}
+        if 'persona-managers' not in self.settings['jupyter-ai']:
+            self.settings['jupyter-ai']['persona-managers'] = {}
+        
+        return self.settings['jupyter-ai']['persona-managers']
     
     @property
     def event_loop(self) -> AbstractEventLoop:
@@ -114,7 +126,6 @@ class PersonaManagerExtension(ExtensionApp):
         
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
-        self.router.observe_slash_cmd_msg(room_id, persona_manager.on_slash_cmd_message)
     
     def _init_persona_manager(
         self, room_id: str, ychat: "YChat"
