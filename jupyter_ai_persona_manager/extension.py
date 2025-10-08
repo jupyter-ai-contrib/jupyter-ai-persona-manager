@@ -44,21 +44,6 @@ class PersonaManagerExtension(ExtensionApp):
         super().initialize()
         
     @property
-    def persona_managers_by_room(self) -> dict[str, PersonaManager]:
-        """
-        Dictionary of PersonaManager instances indexed by room ID.
-
-        This is accessible to other extensions via
-        `self.settings['jupyter-ai']['persona-managers']`.
-        """
-        if 'jupyter-ai' not in self.settings:
-            self.settings['jupyter-ai'] = {}
-        if 'persona-managers' not in self.settings['jupyter-ai']:
-            self.settings['jupyter-ai']['persona-managers'] = {}
-        
-        return self.settings['jupyter-ai']['persona-managers']
-    
-    @property
     def event_loop(self) -> AbstractEventLoop:
         """
         Returns a reference to the asyncio event loop.
@@ -70,9 +55,16 @@ class PersonaManagerExtension(ExtensionApp):
         """Initialize persona manager settings and router integration."""
         start = time.time()
         
+        # Ensure 'jupyter-ai.persona-manager' is in `self.settings`, which gets
+        # copied to `self.serverapp.web_app.settings` after this method returns
+        if 'jupyter-ai' not in self.settings:
+            self.settings['jupyter-ai'] = {}
+        if 'persona-manager' not in self.settings['jupyter-ai']:
+            self.settings['jupyter-ai']['persona-managers'] = {}
+        
         # Set up router integration task
         self.event_loop.create_task(self._setup_router_integration())
-        
+
         # Log server extension startup time
         self.log.info(f"Registered {self.name} server extension")
         startup_time = round((time.time() - start) * 1000)
@@ -93,6 +85,13 @@ class PersonaManagerExtension(ExtensionApp):
                 break
             await asyncio.sleep(0.1)  # Check every 100ms
         
+        # Wait for the 'jupyter-ai.persona-managers' dictionary to be available
+        # in `self.serverapp.web_app.settings`. This will occur after
+        # `initialize_settings()` returns.
+        while self.serverapp.web_app.settings.get("jupyter-ai", {}).get("persona-managers") is None:
+            self.log.warning("PersonaManagers dictionary not found, retrying in 100ms")
+            await asyncio.sleep(0.1)
+
         try:
             self.log.info("Found jupyter-ai-router, registering persona manager callbacks")
             
@@ -121,8 +120,14 @@ class PersonaManagerExtension(ExtensionApp):
             )
             return
         
-        # Cache the persona manager
-        self.persona_managers_by_room[room_id] = persona_manager
+        # Cache the persona manager in server settings dictionary.
+        #
+        # NOTE: This must be added to `self.serverapp.web_app.settings`, not
+        # `self.settings`. `self.settings` is a local dictionary that is only
+        # copied to `self.serverapp.web_app.settings` immediately after
+        # `self.initialize_settings` returns.
+        persona_managers_by_room = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
+        persona_managers_by_room[room_id] = persona_manager
         
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
