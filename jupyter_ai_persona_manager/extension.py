@@ -189,13 +189,14 @@ class PersonaManagerExtension(ExtensionApp):
         stopping.
         """
         # Clean up persona managers
-        for room_id, persona_manager in self.persona_managers_by_room.items():
+        persona_managers_by_room = self.serverapp.web_app.settings.get('jupyter-ai', {}).get('persona-managers', {})
+        for room_id, persona_manager in persona_managers_by_room.items():
             try:
                 await persona_manager.shutdown_personas()
             except Exception as e:
                 self.log.error(f"Error cleaning up persona manager for room {room_id}: {e}")
-        
-        self.persona_managers_by_room.clear()
+
+        persona_managers_by_room.clear()
     
     def _link_jupyter_server_extension(self, server_app: ServerApp):
         """Setup custom config needed by this extension."""
