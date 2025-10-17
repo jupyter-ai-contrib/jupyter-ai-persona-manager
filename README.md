@@ -22,6 +22,11 @@ To create and register a custom AI persona:
 ```python
 from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
 from jupyterlab_chat.models import Message
+import os
+
+# Path to avatar file in your package
+AVATAR_PATH = os.path.join(os.path.dirname(__file__), "assets", "avatar.svg")
+
 
 class MyCustomPersona(BasePersona):
     @property
@@ -29,7 +34,7 @@ class MyCustomPersona(BasePersona):
         return PersonaDefaults(
             name="MyPersona",
             description="A helpful custom assistant",
-            avatar_path="/api/ai/static/custom-avatar.svg",
+            avatar_path=AVATAR_PATH,  # Absolute path to avatar file
             system_prompt="You are a helpful assistant specialized in...",
         )
 
@@ -38,6 +43,8 @@ class MyCustomPersona(BasePersona):
         response = f"Hello! You said: {message.body}"
         self.send_message(response)
 ```
+
+**Avatar Path**: The `avatar_path` should be an absolute path to an image file (SVG, PNG, or JPG) within your package. The avatar will be automatically served at `/api/ai/avatars/{filename}`. If multiple personas use the same filename, the first one found will be served.
 
 ### 2. Register via Entry Points
 
@@ -85,6 +92,11 @@ For development and local customization, personas can be loaded from the `.jupyt
 ```python
 from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
 from jupyterlab_chat.models import Message
+import os
+
+# Path to avatar file (in same directory as persona file)
+AVATAR_PATH = os.path.join(os.path.dirname(__file__), "avatar.svg")
+
 
 class MyLocalPersona(BasePersona):
     @property
@@ -92,13 +104,15 @@ class MyLocalPersona(BasePersona):
         return PersonaDefaults(
             name="Local Dev Assistant",
             description="A persona for local development",
-            avatar_path="/api/ai/static/jupyternaut.svg",
+            avatar_path=AVATAR_PATH,
             system_prompt="You help with local development tasks.",
         )
 
     async def process_message(self, message: Message):
         self.send_message(f"Local persona received: {message.body}")
 ```
+
+**Note**: Place your avatar file (e.g., `avatar.svg`) in the same directory as your persona file.
 
 ### Refreshing Personas
 
