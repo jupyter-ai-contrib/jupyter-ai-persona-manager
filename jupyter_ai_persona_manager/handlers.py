@@ -3,22 +3,23 @@ import mimetypes
 import os
 from functools import lru_cache
 
-from jupyter_server.base.handlers import APIHandler
+from jupyter_server.base.handlers import JupyterHandler
 import tornado
 
 
-class RouteHandler(APIHandler):
+class RouteHandler(JupyterHandler):
     # The following decorator should be present on all verb methods (head, get, post,
     # patch, put, delete, options) to ensure only authorized user can request the
     # Jupyter server
     @tornado.web.authenticated
     def get(self):
+        self.set_header("Content-Type", "application/json")
         self.finish(json.dumps({
             "data": "This is /jupyter-ai-persona-manager/get-example endpoint!"
         }))
 
 
-class AvatarHandler(APIHandler):
+class AvatarHandler(JupyterHandler):
     """
     Handler for serving persona avatar files.
 
@@ -44,9 +45,10 @@ class AvatarHandler(APIHandler):
 
             # Read and serve the file
             with open(avatar_path, 'rb') as f:
-                self.write(f.read())
+                content = f.read()
+                self.write(content)
 
-            self.finish()
+            await self.finish()
         except Exception as e:
             self.log.error(f"Error serving avatar file {filename}: {e}")
             raise tornado.web.HTTPError(500, f"Error serving avatar file: {str(e)}")
