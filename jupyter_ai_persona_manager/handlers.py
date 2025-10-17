@@ -2,6 +2,7 @@ import json
 import mimetypes
 import os
 from functools import lru_cache
+from typing import Optional
 
 from jupyter_server.base.handlers import JupyterHandler
 import tornado
@@ -54,7 +55,7 @@ class AvatarHandler(JupyterHandler):
             raise tornado.web.HTTPError(500, f"Error serving avatar file: {str(e)}")
 
     @lru_cache(maxsize=128)
-    def _find_avatar_file(self, filename: str) -> str | None:
+    def _find_avatar_file(self, filename: str) -> Optional[str]:
         """
         Find the avatar file path by searching through all persona managers.
 
