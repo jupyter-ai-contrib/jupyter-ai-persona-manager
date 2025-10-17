@@ -284,6 +284,7 @@ class PersonaManager(LoggingConfigurable):
         self.log.info(
             f"SUCCESS: Initialized {len(personas)} AI personas for chat room '{self.ychat.get_id()}'. Time elapsed: {elapsed_time_ms}ms."
         )
+
         return personas
 
     def _display_persona_error_message(self, persona_item: dict) -> None:

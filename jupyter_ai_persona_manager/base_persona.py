@@ -34,7 +34,7 @@ class PersonaDefaults(BaseModel):
     ################################################
     name: str  # e.g. "Jupyternaut"
     description: str  # e.g. "..."
-    avatar_path: str  # e.g. /avatars/jupyternaut.svg
+    avatar_path: str  # e.g. "/path/to/package/avatars/jupyternaut.svg" - absolute path to avatar file
     system_prompt: str  # e.g. "You are a language model named..."
 
     ################################################
@@ -179,7 +179,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         This is set here because we may require this field to be configurable
         for all personas in the future.
         """
-        return self.defaults.avatar_path
+        filename = os.path.basename(self.defaults.avatar_path)
+        return f"/api/ai/avatars/{filename}"
 
     @property
     def system_prompt(self) -> str:

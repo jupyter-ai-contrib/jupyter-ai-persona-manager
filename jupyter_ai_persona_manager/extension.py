@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from asyncio import get_event_loop_policy
 from typing import TYPE_CHECKING
 
 from jupyter_server.extension.application import ExtensionApp
@@ -10,7 +11,7 @@ from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
-from jupyter_ai_persona_manager.handlers import RouteHandler
+from jupyter_ai_persona_manager.handlers import RouteHandler, AvatarHandler
 
 from .persona_manager import PersonaManager
 
@@ -30,8 +31,9 @@ class PersonaManagerExtension(ExtensionApp):
     
     name = "jupyter_ai_persona_manager"
     handlers = [
-        (r"jupyter-ai-persona-manager/health/?", RouteHandler)
-    ]  # No direct HTTP handlers, works through router integration
+        (r"jupyter-ai-persona-manager/health/?", RouteHandler),
+        (r"/api/ai/avatars/(.*)", AvatarHandler),
+    ]
     
     persona_manager_class = Type(
         klass=PersonaManager,
@@ -48,20 +50,19 @@ class PersonaManagerExtension(ExtensionApp):
         """
         Returns a reference to the asyncio event loop.
         """
-        from asyncio import get_event_loop_policy
         return get_event_loop_policy().get_event_loop()
     
     def initialize_settings(self):
         """Initialize persona manager settings and router integration."""
         start = time.time()
-        
+
         # Ensure 'jupyter-ai.persona-manager' is in `self.settings`, which gets
         # copied to `self.serverapp.web_app.settings` after this method returns
         if 'jupyter-ai' not in self.settings:
             self.settings['jupyter-ai'] = {}
         if 'persona-manager' not in self.settings['jupyter-ai']:
             self.settings['jupyter-ai']['persona-managers'] = {}
-        
+
         # Set up router integration task
         self.event_loop.create_task(self._setup_router_integration())
 
@@ -69,7 +70,7 @@ class PersonaManagerExtension(ExtensionApp):
         self.log.info(f"Registered {self.name} server extension")
         startup_time = round((time.time() - start) * 1000)
         self.log.info(f"Initialized Persona Manager server extension in {startup_time} ms.")
-    
+
     async def _setup_router_integration(self) -> None:
         """
         Set up integration with jupyter-ai-router.
@@ -110,7 +111,7 @@ class PersonaManagerExtension(ExtensionApp):
         This initializes persona manager for the new chat room.
         """
         self.log.info(f"Router detected new chat room, initializing persona manager: {room_id}")
-        
+
         # Initialize persona manager for this chat
         persona_manager = self._init_persona_manager(room_id, ychat)
         if not persona_manager:
@@ -119,7 +120,7 @@ class PersonaManagerExtension(ExtensionApp):
                 + "Please verify your configuration and open a new issue on GitHub if this error persists."
             )
             return
-        
+
         # Cache the persona manager in server settings dictionary.
         #
         # NOTE: This must be added to `self.serverapp.web_app.settings`, not
@@ -128,7 +129,7 @@ class PersonaManagerExtension(ExtensionApp):
         # `self.initialize_settings` returns.
         persona_managers_by_room = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
         persona_managers_by_room[room_id] = persona_manager
-        
+
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
     
