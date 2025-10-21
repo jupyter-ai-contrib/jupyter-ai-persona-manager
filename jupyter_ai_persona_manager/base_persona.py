@@ -34,7 +34,7 @@ class PersonaDefaults(BaseModel):
     ################################################
     name: str  # e.g. "Jupyternaut"
     description: str  # e.g. "..."
-    avatar_path: str  # e.g. "/path/to/package/avatars/jupyternaut.svg" - absolute path to avatar file
+    avatar_path: str  # Absolute filesystem path to avatar image file (SVG, PNG, or JPG)
     system_prompt: str  # e.g. "You are a language model named..."
 
     ################################################
@@ -171,16 +171,22 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     @property
     def avatar_path(self) -> str:
         """
-        Returns the URL route that serves the avatar shown on messages from this
-        persona in the chat. This sets the `avatar_url` field in the data model
-        returned by `self.as_user()`. Provided by `BasePersona`.
+        Returns the API URL route that serves the avatar for this persona.
 
-        NOTE/TODO: This currently just returns the value set in `self.defaults`.
-        This is set here because we may require this field to be configurable
-        for all personas in the future.
+        The avatar is served at `/api/ai/avatars/{id}` where the ID is the
+        unique persona identifier. This ensures that each persona has a unique
+        avatar URL without exposing filesystem paths.
+
+        The actual avatar file path is specified in `defaults.avatar_path` as an
+        absolute filesystem path to an image file (SVG, PNG, or JPG) within the
+        persona's package or module.
+
+        This sets the `avatar_url` field in the data model returned by
+        `self.as_user()`. Provided by `BasePersona`.
         """
-        filename = os.path.basename(self.defaults.avatar_path)
-        return f"/api/ai/avatars/{filename}"
+        # URL-encode the persona ID to handle special characters
+        from urllib.parse import quote
+        return f"/api/ai/avatars/{quote(self.id, safe='')}"
 
     @property
     def system_prompt(self) -> str:

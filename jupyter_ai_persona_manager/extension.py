@@ -11,7 +11,7 @@ from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
-from jupyter_ai_persona_manager.handlers import RouteHandler, AvatarHandler
+from jupyter_ai_persona_manager.handlers import AvatarHandler, build_avatar_cache
 
 from .persona_manager import PersonaManager
 
@@ -31,7 +31,6 @@ class PersonaManagerExtension(ExtensionApp):
     
     name = "jupyter_ai_persona_manager"
     handlers = [
-        (r"jupyter-ai-persona-manager/health/?", RouteHandler),
         (r"/api/ai/avatars/(.*)", AvatarHandler),
     ]
     
@@ -129,6 +128,9 @@ class PersonaManagerExtension(ExtensionApp):
         # `self.initialize_settings` returns.
         persona_managers_by_room = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
         persona_managers_by_room[room_id] = persona_manager
+
+        # Rebuild avatar cache to include the new personas
+        build_avatar_cache(persona_managers_by_room)
 
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
