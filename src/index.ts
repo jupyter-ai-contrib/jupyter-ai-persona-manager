@@ -3,8 +3,6 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 
-import { requestAPI } from './handler';
-
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
  */
@@ -16,16 +14,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
     console.log(
       'JupyterLab extension @jupyter-ai/persona-manager is activated!'
     );
-
-    requestAPI<any>('health')
-      .then(data => {
-        console.log(data);
-      })
-      .catch(reason => {
-        console.error(
-          `The jupyter_ai_persona_manager server extension appears to be missing.\n${reason}`
-        );
-      });
   }
 };
 
