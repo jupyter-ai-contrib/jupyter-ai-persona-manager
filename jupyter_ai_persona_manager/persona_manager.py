@@ -19,6 +19,7 @@ from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
+from .handlers import build_avatar_cache
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -284,6 +285,7 @@ class PersonaManager(LoggingConfigurable):
         self.log.info(
             f"SUCCESS: Initialized {len(personas)} AI personas for chat room '{self.ychat.get_id()}'. Time elapsed: {elapsed_time_ms}ms."
         )
+
         return personas
 
     def _display_persona_error_message(self, persona_item: dict) -> None:
@@ -431,6 +433,16 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
+
+        # Rebuild avatar cache after reloading personas
+        # Get all persona managers from parent (extension) settings
+        try:
+            # Access all persona managers through the parent extension's settings
+            # Note: self.parent is the PersonaManagerExtension instance
+            persona_managers = self.parent.serverapp.web_app.settings.get('jupyter-ai', {}).get('persona-managers', {})
+            build_avatar_cache(persona_managers)
+        except Exception as e:
+            self.log.error(f"Error rebuilding avatar cache: {e}")
 
         # Write success message to chat & logs
         self.send_system_message("Refreshed all AI personas in this chat.")
