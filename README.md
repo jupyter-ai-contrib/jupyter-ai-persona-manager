@@ -132,6 +132,48 @@ jlpm
 jlpm dev:install
 ```
 
+## Example for connecting persona to Ollama
+install Ollama and download model:
+```
+ollama pull deepseek-coder:6.7b
+pip install ollama
+```
+
+persona code:
+```
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+import os
+from ollama import chat
+from ollama import ChatResponse
+
+# Path to avatar file (in same directory as persona file)
+AVATAR_PATH = os.path.join(os.path.dirname(__file__), "avatar.svg")
+
+
+class MyLocalPersona(BasePersona):
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="NeurodeskAI",
+            description="A persona for local development",
+            avatar_path=AVATAR_PATH,
+            system_prompt="You help with local development tasks.",
+        )
+
+    async def process_message(self, message: Message):
+        response: ChatResponse = chat(model='deepseek-coder:6.7b', messages=[
+          {
+            'role': 'user',
+            'content': message.body,
+          },
+        ])
+        print(response['message']['content'])
+        # or access fields directly from the response object
+        self.send_message(response.message.content)
+
+
+```
 ## Requirements
 
 - JupyterLab >= 4.0.0
