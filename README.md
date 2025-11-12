@@ -109,7 +109,7 @@ class MyLocalPersona(BasePersona):
         )
 
     async def process_message(self, message: Message):
-        self.send_message(f"Local persona received: {message.body}")
+        self.send_message(f"Local persona received: Hello world!")
 ```
 
 **Note**: Place your avatar file (e.g., `avatar.svg`) in the same directory as your persona file.
