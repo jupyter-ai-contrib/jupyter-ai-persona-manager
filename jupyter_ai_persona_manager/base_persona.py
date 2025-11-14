@@ -236,6 +236,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         stream, then continuously updates it until the stream is closed.
 
         - Automatically manages its awareness state to show writing status.
+
+        - Triggers mention detection after streaming completes, allowing
+        personas to mention each other in their responses.
         """
         stream_id: Optional[str] = None
         try:
@@ -266,7 +269,17 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                         raw_time=False,
                     ),
                     append=True,
+                    find_mentions=False,  # Defer mention extraction during streaming
                 )
+
+            # Stream complete - trigger mention extraction and notifications
+            if stream_id:
+                msg = self.ychat.get_message(stream_id)
+                if msg:
+                    self.ychat.update_message(
+                        msg,
+                        find_mentions=True,  # Extract mentions and notify mentioned personas
+                    )
         except Exception as e:
             self.log.error(
                 f"Persona '{self.name}' encountered an exception printed below when attempting to stream output."
