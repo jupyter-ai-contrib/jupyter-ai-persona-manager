@@ -7,6 +7,7 @@ from time import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
+from jupyterlab_chat.utils import find_mentions_callback
 from pydantic import BaseModel
 from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable
@@ -283,7 +284,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                         raw_time=False,
                     ),
                     append=True,
-                    find_mentions=False,  # Defer mention extraction during streaming
+                    trigger_actions=[],  # Defer mention extraction during streaming
                 )
 
             # Stream complete - trigger mention extraction and notifications
@@ -292,7 +293,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 if msg:
                     self.ychat.update_message(
                         msg,
-                        find_mentions=True,  # Extract mentions and notify mentioned personas
+                        trigger_actions=[find_mentions_callback],  # Extract mentions and notify mentioned personas
                     )
         except Exception as e:
             self.log.error(
