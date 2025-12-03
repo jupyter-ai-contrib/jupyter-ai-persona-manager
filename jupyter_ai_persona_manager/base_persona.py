@@ -7,7 +7,7 @@ from time import time
 from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
-from jupyterlab_chat.utils import find_mentions_callback
+from jupyterlab_chat.utils import find_mentions
 from pydantic import BaseModel
 from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable
@@ -293,7 +293,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 if msg:
                     self.ychat.update_message(
                         msg,
-                        trigger_actions=[find_mentions_callback],  # Extract mentions and notify mentioned personas
+                        trigger_actions=[find_mentions],  # Extract mentions and notify mentioned personas
                     )
         except Exception as e:
             self.log.error(
