@@ -159,6 +159,8 @@ class PersonaManagerExtension(ExtensionApp):
             root_dir = getattr(contents_manager, "root_dir", None)
             assert isinstance(root_dir, str)
             
+            base_url = self.serverapp.web_app.settings.get("base_url", "/")
+
             PersonaManagerClass = self.persona_manager_class
             persona_manager = PersonaManagerClass(
                 parent=self,
@@ -167,6 +169,7 @@ class PersonaManagerExtension(ExtensionApp):
                 fileid_manager=fileid_manager,
                 root_dir=root_dir,
                 event_loop=self.event_loop,
+                base_url=base_url,
             )
         except Exception as e:
             self.log.error(
