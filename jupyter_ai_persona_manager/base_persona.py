@@ -173,9 +173,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         Returns the API URL route that serves the avatar for this persona.
 
-        The avatar is served at `/api/ai/avatars/{id}` where the ID is the
+        The avatar is served at `{base_url}api/ai/avatars/{id}` where the ID is the
         unique persona identifier. This ensures that each persona has a unique
         avatar URL without exposing filesystem paths.
+
+        The base_url is obtained from the PersonaManager and ensures the URL works
+        correctly in both JupyterLab standalone and JupyterHub environments.
 
         The actual avatar file path is specified in `defaults.avatar_path` as an
         absolute filesystem path to an image file (SVG, PNG, or JPG) within the
@@ -186,7 +189,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         # URL-encode the persona ID to handle special characters
         from urllib.parse import quote
-        return f"/api/ai/avatars/{quote(self.id, safe='')}"
+        base_url = getattr(self.parent, 'base_url', '/')
+        # Ensure base_url ends with '/' for proper path joining
+        if not base_url.endswith('/'):
+            base_url += '/'
+        return f"{base_url}api/ai/avatars/{quote(self.id, safe='')}"
 
     @property
     def system_prompt(self) -> str:

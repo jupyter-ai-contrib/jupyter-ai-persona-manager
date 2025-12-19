@@ -65,6 +65,7 @@ class PersonaManager(LoggingConfigurable):
     fileid_manager: "BaseFileIdManager"
     root_dir: str
     event_loop: "AbstractEventLoop"
+    base_url: str
     last_mentioned_persona: BasePersona | None
 
     log: Logger  # type: ignore
@@ -87,6 +88,7 @@ class PersonaManager(LoggingConfigurable):
         fileid_manager: "BaseFileIdManager",
         root_dir: str,
         event_loop: "AbstractEventLoop",
+        base_url: str = "/",
         **kwargs,
     ):
         # Forward other arguments to parent class
@@ -98,6 +100,7 @@ class PersonaManager(LoggingConfigurable):
         self.fileid_manager = fileid_manager
         self.root_dir = root_dir
         self.event_loop = event_loop
+        self.base_url = base_url
 
         # Store file ID
         self.file_id = room_id.split(":")[2]

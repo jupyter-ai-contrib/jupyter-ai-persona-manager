@@ -133,13 +133,16 @@ jlpm dev:install
 ```
 
 ## Example for connecting persona to Ollama
+
 install Ollama and download model:
+
 ```
 ollama pull deepseek-coder:6.7b
 pip install ollama
 ```
 
 persona code:
+
 ```
 from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
 from jupyterlab_chat.models import Message
@@ -174,6 +177,7 @@ class MyLocalPersona(BasePersona):
 
 
 ```
+
 ## Requirements
 
 - JupyterLab >= 4.0.0
