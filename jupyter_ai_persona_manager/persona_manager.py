@@ -38,7 +38,7 @@ SYSTEM_USERNAME = "hidden::jupyter_ai_system"
 Username used for system messages shown to the user.
 """
 
-class PersonaRequirementsUnmet(BaseException):
+class PersonaRequirementsUnmet(RuntimeError):
     """
     Exception that persona entry point modules should raise if their
     requirements are unmet by the environment. This prevents the error from
