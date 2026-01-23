@@ -199,6 +199,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.defaults.system_prompt
 
+    @property
+    def event_loop(self) -> asyncio.AbstractEventLoop:
+        """
+        The asyncio event loop running this process.
+        """
+        return self.parent.event_loop
+
     def as_user(self) -> User:
         """
         Returns the `jupyterlab_chat.models:User` model that represents this
