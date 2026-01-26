@@ -38,6 +38,14 @@ SYSTEM_USERNAME = "hidden::jupyter_ai_system"
 Username used for system messages shown to the user.
 """
 
+class PersonaRequirementsUnmet(RuntimeError):
+    """
+    Exception that persona entry point modules should raise if their
+    requirements are unmet by the environment. This prevents the error from
+    being reported in the chat.
+    """
+    pass
+
 
 class PersonaManager(LoggingConfigurable):
     """
@@ -161,6 +169,11 @@ class PersonaManager(LoggingConfigurable):
                 self.log.info(
                     f"  - Loaded AI persona class '{class_name}' from '{class_module}' using entry point '{persona_ep.name}'."
                 )
+            except PersonaRequirementsUnmet as e:
+                # If requirements are unmet, log an abbreviated warning and
+                # continue, without showing an error in the chat.
+                self.log.warning(f" - AI persona from entry point '{persona_ep.name}' has unmet requirements: {str(e)}")
+                continue
             except Exception:
                 # On exception, log an error and continue.
                 # This does not stop the surrounding `for` loop. If a persona

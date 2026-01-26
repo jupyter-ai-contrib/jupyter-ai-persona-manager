@@ -9,7 +9,7 @@ except ImportError:
     __version__ = "dev"
 
 from .base_persona import BasePersona, PersonaDefaults
-from .persona_manager import PersonaManager
+from .persona_manager import PersonaManager, PersonaRequirementsUnmet
 from .persona_awareness import PersonaAwareness
 from .extension import PersonaManagerExtension
 
