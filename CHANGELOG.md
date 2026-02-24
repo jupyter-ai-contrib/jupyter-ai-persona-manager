@@ -2,6 +2,25 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.0.6
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.0.5...66bbc807f1ca4b1e896748eeb90432a31df53a19))
+
+### Enhancements made
+
+- Add support for reading MCP settings in `.jupyter/` [#19](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/19) ([@dlqqq](https://github.com/dlqqq), [@andrii-i](https://github.com/andrii-i), [@joshuatowner](https://github.com/joshuatowner))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-01-27&to=2026-02-24&type=c))
+
+@andrii-i ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aandrii-i+updated%3A2026-01-27..2026-02-24&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-01-27..2026-02-24&type=Issues)) | @joshuatowner ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Ajoshuatowner+updated%3A2026-01-27..2026-02-24&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.0.5
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.0.4...2069139e45e52c4e138272b2f60bb522a3681fb6))
@@ -26,8 +45,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2025-10-24&to=2026-01-27&type=c))
 
 @3coins ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3A3coins+updated%3A2025-10-24..2026-01-27&type=Issues)) | @Abigayle-Mercer ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3AAbigayle-Mercer+updated%3A2025-10-24..2026-01-27&type=Issues)) | @abmercer ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aabmercer+updated%3A2025-10-24..2026-01-27&type=Issues)) | @darpan097 ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adarpan097+updated%3A2025-10-24..2026-01-27&type=Issues)) | @darpantwd ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adarpantwd+updated%3A2025-10-24..2026-01-27&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2025-10-24..2026-01-27&type=Issues)) | @JGuinegagne ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3AJGuinegagne+updated%3A2025-10-24..2026-01-27&type=Issues)) | @rgbkrk ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Argbkrk+updated%3A2025-10-24..2026-01-27&type=Issues)) | @stebo85 ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Astebo85+updated%3A2025-10-24..2026-01-27&type=Issues)) | @Zsailer ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3AZsailer+updated%3A2025-10-24..2026-01-27&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.0.4
 
