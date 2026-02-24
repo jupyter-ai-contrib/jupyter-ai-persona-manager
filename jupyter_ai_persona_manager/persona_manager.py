@@ -516,7 +516,7 @@ class PersonaManager(LoggingConfigurable):
         mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
 
         if not mcp_config_path.exists():
-            self.log.warning(
+            self.log.info(
                 f"MCP config file not found at {mcp_config_path}."
             )
             return None
