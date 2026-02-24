@@ -22,7 +22,7 @@ class McpServerStdio(BaseModel):
     env: Annotated[
         List[EnvVariable],
         Field(description="Environment variables to set when launching the MCP server."),
-    ]
+    ] = []
     name: Annotated[str, Field(description="Human-readable name identifying this MCP server.")]
 
 class HttpHeader(BaseModel):
@@ -34,7 +34,7 @@ class McpServerHttp(BaseModel):
     headers: Annotated[
         List[HttpHeader],
         Field(description="HTTP headers to set when making requests to the MCP server."),
-    ]
+    ] = []
     name: Annotated[str, Field(description="Human-readable name identifying this MCP server.")]
     url: Annotated[str, Field(description="URL to the MCP server.")]
 
