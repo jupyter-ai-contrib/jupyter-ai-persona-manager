@@ -19,6 +19,7 @@ from .persona_awareness import PersonaAwareness
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from jupyterlab_chat.ychat import YChat
+    from .mcp_server_models import McpSettings
     from .persona_manager import PersonaManager
 
 
@@ -337,11 +338,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_workspace_dir()
 
-    def get_mcp_config(self) -> dict[str, Any]:
+    def get_mcp_settings(self) -> "McpSettings | None":
         """
         Returns the MCP config for the current chat.
         """
-        return self.parent.get_mcp_config()
+        return self.parent.get_mcp_settings()
 
     def process_attachments(self, message: Message) -> Optional[str]:
         """

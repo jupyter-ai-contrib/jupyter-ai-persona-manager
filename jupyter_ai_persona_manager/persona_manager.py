@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import inspect
+import json
 import os
 import sys
 import traceback
@@ -20,6 +21,7 @@ from traitlets.config import LoggingConfigurable
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
+from .mcp_server_models import McpSettings
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -501,12 +503,33 @@ class PersonaManager(LoggingConfigurable):
         """
         return find_workspace_dir(self.get_chat_dir(), root_dir=self.root_dir)
 
-    def get_mcp_config(self) -> dict[str, Any]:
+    def get_mcp_settings(self) -> McpSettings | None:
         """
-        Returns the MCP config for the current chat.
-        Returns empty dict since MCP functionality is removed.
+        Returns the MCP config for the current chat by reading from
+        .jupyter/mcp_settings.json. Returns None if the file doesn't exist
+        or if an error occurs.
         """
-        return {}
+        dotjupyter_dir = self.get_dotjupyter_dir()
+        if dotjupyter_dir is None:
+            return None
+
+        mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
+
+        if not mcp_config_path.exists():
+            self.log.info(
+                f"MCP config file not found at {mcp_config_path}."
+            )
+            return None
+
+        try:
+            with open(mcp_config_path, 'r') as f:
+                config_data = json.load(f)
+            return McpSettings(**config_data)
+        except Exception:
+            self.log.exception(
+                f"Failed to read or parse MCP config from {mcp_config_path}."
+            )
+            return None
 
     def get_active_human_users(self):
         """Returns active human users in a chat session"""
