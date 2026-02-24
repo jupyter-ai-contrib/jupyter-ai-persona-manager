@@ -412,6 +412,32 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.error(f"Failed to resolve attachment {attachment_id}: {e}")
             return None
 
+    async def on_message_edited(self, message: Message) -> None:
+        """
+        Called when a previously processed message is edited by the user.
+
+        The default implementation re-processes the message by calling
+        ``process_message()``.  Subclasses may override this to implement
+        custom edit handling (e.g. regenerating a response, updating context).
+
+        Args:
+            message: The message after the edit, with updated body.
+        """
+        await self.process_message(message)
+
+    async def on_message_deleted(self, message: Message) -> None:
+        """
+        Called when a message is soft-deleted by the user.
+
+        The default implementation is a no-op.  Subclasses may override this
+        to clean up resources associated with the deleted message (e.g.
+        removing a response, clearing conversation history entries).
+
+        Args:
+            message: The deleted message (with ``deleted=True``).
+        """
+        pass
+
     def shutdown(self) -> None:
         """
         Shuts the persona down. This method should:

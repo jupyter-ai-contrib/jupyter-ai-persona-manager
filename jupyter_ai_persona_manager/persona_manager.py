@@ -418,6 +418,55 @@ class PersonaManager(LoggingConfigurable):
         self._broadcast(message, to_personas=self.personas)
         return
     
+    def on_chat_message_edited(self, room_id: str, message: Message):
+        """
+        Routes an edited message to the correct personas by calling their
+        ``on_message_edited()`` methods.  Uses the same routing logic as
+        ``on_chat_message()``.
+        """
+        targeted = self._resolve_target_personas(message)
+        for persona in targeted:
+            self.event_loop.create_task(persona.on_message_edited(message))
+
+    def on_chat_message_deleted(self, room_id: str, message: Message):
+        """
+        Notifies the correct personas that a message was deleted by calling
+        their ``on_message_deleted()`` methods.  Uses the same routing logic
+        as ``on_chat_message()``.
+        """
+        targeted = self._resolve_target_personas(message)
+        for persona in targeted:
+            self.event_loop.create_task(persona.on_message_deleted(message))
+
+    def _resolve_target_personas(self, message: Message) -> list[BasePersona]:
+        """
+        Determine which personas should receive a message based on the same
+        routing rules used by ``on_chat_message()``.
+
+        Returns a list of persona instances.
+        """
+        human_users = self.get_active_human_users()
+        sender_not_human = (
+            is_persona(message.sender) or message.sender == SYSTEM_USERNAME
+        )
+        mentioned_personas = self.get_mentioned_personas(message)
+        human_user_count = len(human_users)
+        persona_count = len(self.personas)
+
+        # Multi-user or non-human sender: only mentioned personas
+        if sender_not_human or human_user_count > 1:
+            return mentioned_personas if mentioned_personas else []
+
+        # Single user + multiple personas
+        if persona_count > 1:
+            default_persona = self.last_mentioned_persona or self.default_persona
+            if mentioned_personas:
+                return mentioned_personas
+            return [default_persona] if default_persona else []
+
+        # Single user, 0/1 personas
+        return list(self.personas.values())
+
     def _broadcast(
         self,
         message: Message,
