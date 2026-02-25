@@ -6,7 +6,7 @@ from logging import Logger
 from time import time
 from typing import TYPE_CHECKING, Any, Optional
 
-from jupyterlab_chat.models import Message, NewMessage, User
+from jupyterlab_chat.models import Message, NewMessage, TokenUsage, User
 from jupyterlab_chat.utils import find_mentions
 from pydantic import BaseModel
 from traitlets import MetaHasTraits
@@ -19,7 +19,6 @@ from .persona_awareness import PersonaAwareness
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from jupyterlab_chat.ychat import YChat
-    from .mcp_server_models import McpSettings
     from .persona_manager import PersonaManager
 
 
@@ -241,7 +240,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return asdict(user)
 
     async def stream_message(
-        self, reply_stream: "AsyncIterator"
+        self, reply_stream: "AsyncIterator", usage: Optional[TokenUsage] = None
     ) -> None:
         """
         Takes an async iterator, dubbed the 'reply stream', and streams it to a
@@ -255,6 +254,10 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         - Triggers mention detection after streaming completes, allowing
         personas to mention each other in their responses.
+
+        Args:
+            reply_stream: Async iterator of message chunks
+            usage: Optional token usage information to attach to the message
         """
         stream_id: Optional[str] = None
         try:
@@ -288,10 +291,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     trigger_actions=[],  # Defer mention extraction during streaming
                 )
 
-            # Stream complete - trigger mention extraction and notifications
+            # Stream complete - trigger mention extraction, add usage, and send notifications
             if stream_id:
                 msg = self.ychat.get_message(stream_id)
                 if msg:
+                    # Add usage information if provided
+                    if usage:
+                        msg.usage = usage
                     self.ychat.update_message(
                         msg,
                         trigger_actions=[find_mentions],  # Extract mentions and notify mentioned personas
@@ -304,11 +310,22 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         finally:
             self.awareness.set_local_state_field("isWriting", False)
 
-    def send_message(self, body: str) -> None:
+    def send_message(self, body: str, usage: Optional[TokenUsage] = None) -> None:
         """
         Sends a new message to the chat from this persona.
+
+        Args:
+            body: The message content
+            usage: Optional token usage information to attach to the message
         """
-        self.ychat.add_message(NewMessage(body=body, sender=self.id))
+        msg_id = self.ychat.add_message(NewMessage(body=body, sender=self.id))
+
+        # If usage is provided, update the message with usage information
+        if usage:
+            msg = self.ychat.get_message(msg_id)
+            if msg:
+                msg.usage = usage
+                self.ychat.update_message(msg)
 
     def get_chat_path(self, relative: bool = False) -> str:
         """
@@ -338,11 +355,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_workspace_dir()
 
-    def get_mcp_settings(self) -> "McpSettings | None":
+    def get_mcp_config(self) -> dict[str, Any]:
         """
         Returns the MCP config for the current chat.
         """
-        return self.parent.get_mcp_settings()
+        return self.parent.get_mcp_config()
 
     def process_attachments(self, message: Message) -> Optional[str]:
         """
