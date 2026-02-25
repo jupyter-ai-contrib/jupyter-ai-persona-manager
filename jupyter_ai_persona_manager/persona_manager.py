@@ -116,6 +116,10 @@ class PersonaManager(LoggingConfigurable):
         # Initialize last_mentioned_persona to None
         self.last_mentioned_persona = None
 
+        # Set for holding strong references to broadcast tasks, preventing
+        # garbage collection from silently discarding exceptions.
+        self._broadcast_tasks: set["asyncio.Task"] = set()
+
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
@@ -431,7 +435,9 @@ class PersonaManager(LoggingConfigurable):
             to_personas if isinstance(to_personas, list) else list(to_personas.values())
         )
         for persona in persona_list:
-            self.event_loop.create_task(persona.process_message(message))
+            task = self.event_loop.create_task(persona.process_message(message))
+            self._broadcast_tasks.add(task)
+            task.add_done_callback(self._broadcast_tasks.discard)
         return
 
     async def refresh_personas(self):
