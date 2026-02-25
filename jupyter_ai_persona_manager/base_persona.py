@@ -301,6 +301,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 f"Persona '{self.name}' encountered an exception printed below when attempting to stream output."
             )
             self.log.exception(e)
+            raise
         finally:
             self.awareness.set_local_state_field("isWriting", False)
 
