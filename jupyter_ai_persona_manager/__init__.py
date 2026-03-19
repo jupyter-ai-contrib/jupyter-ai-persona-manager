@@ -9,6 +9,7 @@ except ImportError:
     __version__ = "dev"
 
 from .base_persona import BasePersona, PersonaDefaults
+from .markdown_persona import MarkdownFrontmatter, MarkdownPersona, create_markdown_persona_class
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
 from .persona_awareness import PersonaAwareness
 from .mcp_server_models import McpSettings, McpServerHttp, McpServerStdio

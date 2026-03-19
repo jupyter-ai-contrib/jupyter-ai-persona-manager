@@ -30,10 +30,13 @@ def mock_logger():
 
 @pytest.fixture
 def mock_ychat():
-    """Create a mock YChat instance."""
-    # Import at runtime to avoid circular import
-    from jupyterlab_chat.ychat import YChat
-    mock = Mock(spec=YChat)
+    """Create a mock YChat instance.
+
+    Uses a plain Mock rather than ``Mock(spec=YChat)`` to avoid a circular
+    import triggered by ``jupyter_ydoc`` entry-point loading when
+    ``jupyterlab_chat.ychat`` is first imported at fixture setup time.
+    """
+    mock = Mock()
     mock.get_id.return_value = "test-chat-id"
     mock.set_user = Mock()
     mock.add_message = Mock(return_value="msg-123")
