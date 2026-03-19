@@ -21,6 +21,11 @@ from traitlets.config import LoggingConfigurable
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
+from .markdown_persona import (
+    MarkdownPersona,
+    create_markdown_persona_class,
+    parse_markdown_persona,
+)
 from .mcp_server_models import McpSettings
 
 if TYPE_CHECKING:
@@ -232,7 +237,14 @@ class PersonaManager(LoggingConfigurable):
             )
             return
 
-        self._local_persona_classes = load_from_dir(personas_subdir, self.log)
+        py_personas = load_from_dir(personas_subdir, self.log)
+        md_personas = load_markdown_personas_from_dir(
+            personas_subdir,
+            self.log,
+            ep_persona_classes=PersonaManager._ep_persona_classes,
+            default_persona_id=self.default_persona_id,
+        )
+        self._local_persona_classes = py_personas + md_personas
 
     def _init_personas(self) -> dict[str, BasePersona]:
         """
@@ -266,9 +278,11 @@ class PersonaManager(LoggingConfigurable):
                 self._display_persona_error_message(item)
                 continue
             try:
+                extra_kwargs = item.get("kwargs", {})
                 persona = Persona(
                     parent=self,
                     ychat=self.ychat,
+                    **extra_kwargs,
                 )
             except Exception:
                 tb_str = traceback.format_exc()
@@ -664,6 +678,146 @@ def load_from_dir(dir: str, log: Logger) -> list[dict]:
             sys.path.remove(dir)
 
     return persona_classes
+
+
+def find_markdown_persona_files(dir: str) -> list[str]:
+    """Find markdown persona files in a directory.
+
+    Unlike ``find_persona_files``, this does **not** require "persona" in the
+    filename -- any ``.md`` file whose stem does not start with ``_`` or ``.``
+    is considered a markdown persona definition.
+    """
+    if not os.path.exists(dir):
+        return []
+
+    try:
+        all_md_files = glob(os.path.join(dir, "*.md"))
+        md_files = []
+        for f in all_md_files:
+            stem = Path(f).stem
+            if not (stem.startswith("_") or stem.startswith(".")):
+                md_files.append(f)
+        return md_files
+    except Exception:
+        return []
+
+
+def load_markdown_personas_from_dir(
+    dir: str,
+    log: Logger,
+    ep_persona_classes: list[dict] | None = None,
+    default_persona_id: str | None = None,
+) -> list[dict]:
+    """
+    Load markdown persona definitions from ``.md`` files in a directory.
+
+    Each valid markdown file produces a dict entry whose ``persona_class`` is
+    a dynamically-created subclass of the target persona (resolved via
+    *ep_persona_classes*).  If the target cannot be resolved, a fallback
+    ``MarkdownPersona(BasePersona)`` is used instead and a warning is logged.
+    Invalid files produce error entries with a ``traceback``.
+    """
+    persona_entries: list[dict] = []
+
+    md_files = find_markdown_persona_files(dir)
+    if not md_files:
+        return persona_entries
+
+    log.info(
+        f"Loading markdown persona files from {dir}: "
+        f"{[Path(f).name for f in md_files]}"
+    )
+
+    for md_file in md_files:
+        try:
+            # Validate that the file parses correctly
+            frontmatter, _ = parse_markdown_persona(md_file)
+
+            # Resolve target_persona to an installed persona class.
+            # If target_persona is not specified, derive the target from
+            # the default persona ID.
+            target_name = frontmatter.target_persona
+            if target_name is None and default_persona_id:
+                # Extract class name from ID format:
+                # "jupyter-ai-personas::{package}::{ClassName}"
+                parts = default_persona_id.split("::")
+                if len(parts) >= 3:
+                    target_name = parts[-1]
+                    log.info(
+                        f"  - No target_persona specified for '{md_file}'; "
+                        f"using default persona class '{target_name}'."
+                    )
+
+            resolved_class = _resolve_target_persona(
+                target_name, ep_persona_classes, log
+            ) if target_name else None
+
+            if resolved_class is not None:
+                persona_class = create_markdown_persona_class(resolved_class)
+            else:
+                log.warning(
+                    f"  - Could not resolve target_persona "
+                    f"'{target_name}' for '{md_file}'; "
+                    f"falling back to BasePersona."
+                )
+                persona_class = MarkdownPersona
+
+            persona_entries.append(
+                {
+                    "module": md_file,
+                    "persona_class": persona_class,
+                    "traceback": None,
+                    "kwargs": {"md_path": md_file},
+                }
+            )
+            log.info(f"  - Validated markdown persona file '{md_file}'")
+        except Exception:
+            tb_str = traceback.format_exc()
+            log.exception(
+                f"Unable to parse markdown persona from '{md_file}', "
+                f"exception details printed below.\n{tb_str}"
+            )
+            persona_entries.append(
+                {
+                    "module": md_file,
+                    "persona_class": None,
+                    "traceback": tb_str,
+                }
+            )
+
+    return persona_entries
+
+
+def _resolve_target_persona(
+    target_name: str,
+    ep_persona_classes: list[dict] | None,
+    log: Logger,
+) -> type | None:
+    """
+    Look up *target_name* among the loaded entry-point persona classes.
+
+    Returns the persona class if found, or ``None`` if unresolved.
+    """
+    if not ep_persona_classes:
+        return None
+
+    for ep in ep_persona_classes:
+        persona_class = ep.get("persona_class")
+        if persona_class is None:
+            continue
+
+        # Match against entry point name OR the class name itself
+        ep_name = ep.get("module", "")
+        class_name = persona_class.__name__
+
+        if target_name in (ep_name, class_name):
+            log.info(
+                f"  - Resolved target_persona '{target_name}' to "
+                f"{class_name}"
+            )
+            return persona_class
+
+    return None
 
 
 def get_first_word(input_str: str) -> str | None:

@@ -2,13 +2,20 @@
 Test the persona manager functionality.
 """
 
+import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
-from jupyter_ai_persona_manager.base_persona import BasePersona
-from jupyter_ai_persona_manager.persona_manager import find_persona_files, load_from_dir
+from traitlets.config import LoggingConfigurable
+
+from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
+from jupyter_ai_persona_manager.persona_manager import (
+    PersonaManager,
+    find_persona_files,
+    load_from_dir,
+)
 
 
 @pytest.fixture
@@ -118,3 +125,57 @@ class TestPersona(BasePersona):
         assert result[0]["persona_class"] is None
         assert result[0]["traceback"] is not None
         assert "ZeroDivisionError" in result[0]["traceback"]
+
+
+class TestInitPersonasKwargs:
+    """Test that _init_personas passes extra kwargs to persona constructors."""
+
+    def test_kwargs_passed_to_persona_constructor(self, mock_ychat):
+        """Verify that 'kwargs' from persona class entries are forwarded."""
+
+        received_kwargs = {}
+
+        class StubPersona(BasePersona):
+            def __init__(self, *args, extra_arg=None, **kwargs):
+                received_kwargs["extra_arg"] = extra_arg
+                super().__init__(*args, **kwargs)
+
+            @property
+            def defaults(self):
+                return PersonaDefaults(
+                    name="Stub",
+                    description="stub",
+                    avatar_path="/stub.svg",
+                    system_prompt="stub",
+                )
+
+            async def process_message(self, message):
+                pass
+
+        manager = LoggingConfigurable.__new__(PersonaManager)
+        LoggingConfigurable.__init__(manager)
+        manager.ychat = mock_ychat
+        manager.log = Mock()
+        manager._local_persona_classes = None
+
+        # Inject persona classes directly, bypassing entry point loading
+        PersonaManager._ep_persona_classes = [
+            {
+                "module": "test",
+                "persona_class": StubPersona,
+                "traceback": None,
+                "kwargs": {"extra_arg": "hello"},
+            }
+        ]
+
+        try:
+            # Patch asyncio.create_task to avoid "no running event loop"
+            # from PersonaAwareness heartbeat initialization
+            with patch(
+                "jupyter_ai_persona_manager.persona_awareness.asyncio.create_task"
+            ):
+                personas = manager._init_personas()
+            assert received_kwargs["extra_arg"] == "hello"
+            assert len(personas) == 1
+        finally:
+            PersonaManager._ep_persona_classes = None
