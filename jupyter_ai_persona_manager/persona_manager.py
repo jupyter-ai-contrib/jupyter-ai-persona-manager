@@ -539,12 +539,13 @@ class PersonaManager(LoggingConfigurable):
         Returns the MCP config for the current chat by reading from
         .jupyter/mcp_settings.json, merged with builtin_mcp_servers.
         Deduplicates by URL for HTTP servers and by name for stdio servers.
-        Built-in servers take precedence over user-defined servers.
+        User-defined servers take precedence over built-in servers.
         Returns None if no servers are configured.
         """
         dotjupyter_dir = self.get_dotjupyter_dir()
         user_settings: McpSettings | None = None
 
+        # Parse user-defined servers
         if dotjupyter_dir is not None:
             mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
             if mcp_config_path.exists():
@@ -570,29 +571,30 @@ class PersonaManager(LoggingConfigurable):
                     f"Skipping invalid builtin MCP server entry: {entry}"
                 )
 
-        builtin_http_urls = {s.url for s in builtin_servers if isinstance(s, McpServerHttp)}
-        builtin_stdio_names = {s.name for s in builtin_servers if isinstance(s, McpServerStdio)}
+        user_servers = user_settings.mcp_servers if user_settings else []
+        user_http_urls = {s.url for s in user_servers if isinstance(s, McpServerHttp)}
+        user_stdio_names = {s.name for s in user_servers if isinstance(s, McpServerStdio)}
 
-        # Filter out user servers that duplicate a builtin
-        user_servers = []
-        for s in (user_settings.mcp_servers if user_settings else []):
-            if isinstance(s, McpServerHttp) and s.url in builtin_http_urls:
+        # Filter out builtin servers that duplicate a user-defined server
+        filtered_builtins = []
+        for s in builtin_servers:
+            if isinstance(s, McpServerHttp) and s.url in user_http_urls:
                 self.log.info(
-                    f"Skipping HTTP MCP server '{s.name}' in settings file since it is already provided through built-ins."
+                    f"Skipping builtin HTTP MCP server '{s.name}' since it is overridden by user settings."
                 )
-            elif isinstance(s, McpServerStdio) and s.name in builtin_stdio_names:
+            elif isinstance(s, McpServerStdio) and s.name in user_stdio_names:
                 self.log.info(
-                    f"Skipping stdio MCP server '{s.name}' in settings file since it is already provided through built-ins."
+                    f"Skipping builtin stdio MCP server '{s.name}' since it is overridden by user settings."
                 )
             else:
-                user_servers.append(s)
+                filtered_builtins.append(s)
 
-        all_servers = builtin_servers + user_servers
+        all_servers = user_servers + filtered_builtins
         if not all_servers:
             return None
 
         self.log.info(
-            f"MCP servers loaded: {len(builtin_servers)} builtin, {len(user_servers)} from settings file."
+            f"MCP servers loaded: {len(filtered_builtins)} builtin, {len(user_servers)} from settings file."
         )
         return McpSettings(mcp_servers=all_servers)
 
