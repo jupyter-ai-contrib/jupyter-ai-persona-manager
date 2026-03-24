@@ -55,11 +55,11 @@ class PersonaManagerExtension(ExtensionApp):
         """Initialize persona manager settings and router integration."""
         start = time.time()
 
-        # Ensure 'jupyter-ai.persona-manager' is in `self.settings`, which gets
+        # Ensure 'jupyter-ai.persona-managers' is in `self.settings`, which gets
         # copied to `self.serverapp.web_app.settings` after this method returns
         if 'jupyter-ai' not in self.settings:
             self.settings['jupyter-ai'] = {}
-        if 'persona-manager' not in self.settings['jupyter-ai']:
+        if 'persona-managers' not in self.settings['jupyter-ai']:
             self.settings['jupyter-ai']['persona-managers'] = {}
 
         # Set up router integration task
