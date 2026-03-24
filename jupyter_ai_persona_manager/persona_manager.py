@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
-from traitlets import Unicode
+from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
-from .mcp_server_models import McpSettings
+from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -65,6 +65,37 @@ class PersonaManager(LoggingConfigurable):
         allow_none=True,
         config=True,
     )
+
+    builtin_mcp_servers = List(
+        allow_none=True,
+        help=(
+            "List of built-in MCP server dicts (matching the McpServerHttp / "
+            "McpServerStdio schema) that are enabled by default. "
+            "Set to [] to disable all built-in MCP servers."
+        ),
+    ).tag(config=True)
+
+    @default("builtin_mcp_servers")
+    def _default_builtin_mcp_servers(self):
+        """Returns the jupyter_server_mcp HTTP server if the package is installed."""
+        try:
+            import jupyter_server_mcp  # noqa: F401
+        except Exception:
+            return []
+
+        mcp_port = self.config.get("MCPExtensionApp", {}).get("mcp_port", 3001)
+        mcp_name = self.config.get("MCPExtensionApp", {}).get(
+            "mcp_name", "Jupyter MCP Server"
+        )
+
+        return [
+            {
+                "type": "http",
+                "name": mcp_name,
+                "url": f"http://localhost:{mcp_port}/mcp",
+                "headers": [],
+            }
+        ]
 
     # class attr storing persona classes from entry points
     # We treat this as a class attribute so that we only have to load them once
@@ -506,30 +537,66 @@ class PersonaManager(LoggingConfigurable):
     def get_mcp_settings(self) -> McpSettings | None:
         """
         Returns the MCP config for the current chat by reading from
-        .jupyter/mcp_settings.json. Returns None if the file doesn't exist
-        or if an error occurs.
+        .jupyter/mcp_settings.json, merged with builtin_mcp_servers.
+        Deduplicates by URL for HTTP servers and by name for stdio servers.
+        User-defined servers take precedence over built-in servers.
+        Returns None if no servers are configured.
         """
         dotjupyter_dir = self.get_dotjupyter_dir()
-        if dotjupyter_dir is None:
+        user_settings: McpSettings | None = None
+
+        # Parse user-defined servers
+        if dotjupyter_dir is not None:
+            mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
+            if mcp_config_path.exists():
+                try:
+                    with open(mcp_config_path, 'r') as f:
+                        config_data = json.load(f)
+                    user_settings = McpSettings(**config_data)
+                except Exception:
+                    self.log.exception(
+                        f"Failed to read or parse MCP config from {mcp_config_path}."
+                    )
+
+        # Parse builtin servers
+        builtin_servers = []
+        for entry in (self.builtin_mcp_servers or []):
+            try:
+                if entry.get("type") == "http":
+                    builtin_servers.append(McpServerHttp(**entry))
+                else:
+                    builtin_servers.append(McpServerStdio(**entry))
+            except Exception:
+                self.log.warning(
+                    f"Skipping invalid builtin MCP server entry: {entry}"
+                )
+
+        user_servers = user_settings.mcp_servers if user_settings else []
+        user_http_urls = {s.url for s in user_servers if isinstance(s, McpServerHttp)}
+        user_stdio_names = {s.name for s in user_servers if isinstance(s, McpServerStdio)}
+
+        # Filter out builtin servers that duplicate a user-defined server
+        filtered_builtins = []
+        for s in builtin_servers:
+            if isinstance(s, McpServerHttp) and s.url in user_http_urls:
+                self.log.info(
+                    f"Skipping builtin HTTP MCP server '{s.name}' since it is overridden by user settings."
+                )
+            elif isinstance(s, McpServerStdio) and s.name in user_stdio_names:
+                self.log.info(
+                    f"Skipping builtin stdio MCP server '{s.name}' since it is overridden by user settings."
+                )
+            else:
+                filtered_builtins.append(s)
+
+        all_servers = user_servers + filtered_builtins
+        if not all_servers:
             return None
 
-        mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
-
-        if not mcp_config_path.exists():
-            self.log.info(
-                f"MCP config file not found at {mcp_config_path}."
-            )
-            return None
-
-        try:
-            with open(mcp_config_path, 'r') as f:
-                config_data = json.load(f)
-            return McpSettings(**config_data)
-        except Exception:
-            self.log.exception(
-                f"Failed to read or parse MCP config from {mcp_config_path}."
-            )
-            return None
+        self.log.info(
+            f"MCP servers loaded: {len(filtered_builtins)} builtin, {len(user_servers)} from settings file."
+        )
+        return McpSettings(mcp_servers=all_servers)
 
     def get_active_human_users(self):
         """Returns active human users in a chat session"""
