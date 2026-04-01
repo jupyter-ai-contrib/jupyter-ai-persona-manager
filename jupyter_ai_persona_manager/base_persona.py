@@ -413,7 +413,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.error(f"Failed to resolve attachment {attachment_id}: {e}")
             return None
 
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
         """
         Shuts the persona down. This method should:
 

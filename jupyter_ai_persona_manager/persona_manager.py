@@ -627,7 +627,7 @@ class PersonaManager(LoggingConfigurable):
 
         # Then, shut down each persona
         for persona in self.personas.values():
-            persona.shutdown()
+            await persona.shutdown()
 
 
 def is_persona(username: str):

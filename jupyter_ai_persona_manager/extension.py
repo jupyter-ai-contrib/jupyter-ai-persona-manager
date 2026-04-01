@@ -200,7 +200,7 @@ class PersonaManagerExtension(ExtensionApp):
             try:
                 await persona_manager.shutdown_personas()
             except Exception as e:
-                self.log.error(f"Error cleaning up persona manager for room {room_id}: {e}")
+                self.log.exception(f"Error cleaning up persona manager for room {room_id}")
 
         persona_managers_by_room.clear()
     
