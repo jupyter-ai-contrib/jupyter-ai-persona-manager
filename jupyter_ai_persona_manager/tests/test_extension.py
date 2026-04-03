@@ -66,7 +66,7 @@ async def test_stop_extension_with_failing_shutdown(extension, mock_server_app):
     await extension.stop_extension()
 
     # Assert: error was logged
-    assert extension.log.error.called
+    assert extension.log.exception.called
 
 
 @pytest.mark.asyncio
