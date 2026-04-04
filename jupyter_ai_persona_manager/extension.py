@@ -65,6 +65,15 @@ class PersonaManagerExtension(ExtensionApp):
         # Set up router integration task
         self.event_loop.create_task(self._setup_router_integration())
 
+        # Dictionary of room_id -> Task for rooms currently being stopped
+        self._stopping_rooms: dict[str, asyncio.Task] = {}
+
+        # Lock to serialize persona manager shutdowns. This prevents a race
+        # condition where two ACP personas sharing a subprocess both see each
+        # other's sessions as active and neither kills the subprocess. This is
+        # fine because persona shutdown is fast (just ends the ACP session).
+        self._stop_lock = asyncio.Lock()
+
         # Log server extension startup time
         self.log.info(f"Registered {self.name} server extension")
         startup_time = round((time.time() - start) * 1000)
@@ -97,6 +106,7 @@ class PersonaManagerExtension(ExtensionApp):
             
             # Register callback for new chat initialization
             router.observe_chat_init(self._on_router_chat_init)
+            router.observe_chat_stop(self._on_router_chat_stop)
             
             # Store reference to router for later use
             self.router = router
@@ -134,6 +144,19 @@ class PersonaManagerExtension(ExtensionApp):
 
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(room_id, persona_manager.on_chat_message)
+    
+    def _on_router_chat_stop(self, room_id: str) -> None:
+        """
+        Callback for when a chat room's YRoom is permanently stopped.
+        Shuts down personas and removes the PersonaManager for that room.
+        """
+        persona_managers = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
+        if room_id not in persona_managers:
+            return
+
+        self.log.info(f"Chat room '{room_id}' stopped. Shutting down persona manager.")
+        task = self.event_loop.create_task(self._stop_persona_manager(room_id))
+        self._stopping_rooms[room_id] = task
     
     def _init_persona_manager(
         self, room_id: str, ychat: "YChat"
@@ -179,6 +202,23 @@ class PersonaManagerExtension(ExtensionApp):
         finally:
             return persona_manager
     
+    async def _stop_persona_manager(self, room_id: str) -> None:
+        """Shuts down personas for a room and removes it from settings."""
+        async with self._stop_lock:
+            persona_managers = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
+            persona_manager = persona_managers.get(room_id)
+            if persona_manager is None:
+                return
+
+            try:
+                await persona_manager.shutdown_personas()
+                self.log.info(f"Shut down persona manager in room '{room_id}'.")
+            except Exception as e:
+                self.log.exception(f"Error shutting down persona manager in room '{room_id}'.")
+            finally:
+                persona_managers.pop(room_id, None)
+                self._stopping_rooms.pop(room_id, None)
+    
     async def stop_extension(self):
         """
         Public method called by Jupyter Server when the server is stopping.
@@ -194,15 +234,18 @@ class PersonaManagerExtension(ExtensionApp):
         Private method that defines the cleanup code to run when the server is
         stopping.
         """
-        # Clean up persona managers
-        persona_managers_by_room = self.serverapp.web_app.settings.get('jupyter-ai', {}).get('persona-managers', {})
-        for room_id, persona_manager in persona_managers_by_room.items():
-            try:
-                await persona_manager.shutdown_personas()
-            except Exception as e:
-                self.log.exception(f"Error cleaning up persona manager for room {room_id}")
+        # Await all in-progress stop tasks from chat_stop events
+        if self._stopping_rooms:
+            await asyncio.gather(*self._stopping_rooms.values(), return_exceptions=True)
 
-        persona_managers_by_room.clear()
+        # Stop any remaining rooms that did not receive a stop event
+        persona_managers = self.serverapp.web_app.settings.get('jupyter-ai', {}).get('persona-managers', {})
+        if not persona_managers:
+            return
+
+        for room_id in list(persona_managers.keys()):
+            self.log.warning(f"Room '{room_id}' did not receive a stop event. Stopping it manually.")
+            await self._stop_persona_manager(room_id)
     
     def _link_jupyter_server_extension(self, server_app: ServerApp):
         """Setup custom config needed by this extension."""
