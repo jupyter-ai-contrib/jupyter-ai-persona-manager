@@ -13,6 +13,8 @@ def extension(mock_server_app):
     ext = PersonaManagerExtension()
     ext.serverapp = mock_server_app
     ext.log = mock_server_app.log
+    ext._stopping_rooms = {}
+    ext._stop_lock = __import__('asyncio').Lock()
     return ext
 
 
