@@ -1,6 +1,6 @@
 {
     "name": "@jupyter-ai/persona-manager",
-    "version": "0.0.10-a0",
+    "version": "0.0.10",
     "description": "The core manager & registry for AI personas in Jupyter AI",
     "keywords": [
         "jupyter",
