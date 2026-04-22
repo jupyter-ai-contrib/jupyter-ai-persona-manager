@@ -4,11 +4,16 @@ Test the persona manager functionality.
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from jupyterlab_chat.models import Message
 from jupyter_ai_persona_manager.base_persona import BasePersona
-from jupyter_ai_persona_manager.persona_manager import find_persona_files, load_from_dir
+from jupyter_ai_persona_manager.persona_manager import (
+    _safe_process,
+    find_persona_files,
+    load_from_dir,
+)
 
 
 @pytest.fixture
@@ -118,3 +123,83 @@ class TestPersona(BasePersona):
         assert result[0]["persona_class"] is None
         assert result[0]["traceback"] is not None
         assert "ZeroDivisionError" in result[0]["traceback"]
+
+
+# ---------------------------------------------------------------------------
+# TestSafeProcess
+# ---------------------------------------------------------------------------
+
+def _make_mock_persona():
+    persona = MagicMock()
+    persona.name = "TestPersona"
+    persona.log = MagicMock()
+    persona.process_message = AsyncMock()
+    persona.handle_uncaught_exception = AsyncMock()
+    return persona
+
+
+def _make_mock_message():
+    return MagicMock(spec=Message)
+
+
+class TestSafeProcess:
+
+    @pytest.mark.asyncio
+    async def test_calls_process_message(self):
+        persona = _make_mock_persona()
+        message = _make_mock_message()
+        await _safe_process(persona, message)
+        persona.process_message.assert_awaited_once_with(message)
+
+    @pytest.mark.asyncio
+    async def test_calls_handle_uncaught_exception_on_failure(self):
+        exc = RuntimeError("test error")
+        persona = _make_mock_persona()
+        persona.process_message.side_effect = exc
+        message = _make_mock_message()
+
+        await _safe_process(persona, message)
+
+        persona.handle_uncaught_exception.assert_awaited_once_with(exc)
+
+    @pytest.mark.asyncio
+    async def test_logs_error_before_handle(self):
+        persona = _make_mock_persona()
+        persona.process_message.side_effect = RuntimeError("fail")
+        message = _make_mock_message()
+
+        await _safe_process(persona, message)
+
+        persona.log.error.assert_called_once()
+        persona.log.exception.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_exception_propagates_on_process_message_failure(self):
+        persona = _make_mock_persona()
+        persona.process_message.side_effect = RuntimeError("fail")
+        message = _make_mock_message()
+
+        # Should not raise
+        await _safe_process(persona, message)
+
+    @pytest.mark.asyncio
+    async def test_catches_secondary_exception_from_handle_uncaught_exception(self):
+        persona = _make_mock_persona()
+        persona.process_message.side_effect = RuntimeError("primary")
+        persona.handle_uncaught_exception.side_effect = RuntimeError("secondary")
+        message = _make_mock_message()
+
+        # Should not raise even when handle_uncaught_exception also raises
+        await _safe_process(persona, message)
+
+        # Secondary exception logged
+        assert persona.log.exception.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_handle_not_called_on_success(self):
+        persona = _make_mock_persona()
+        message = _make_mock_message()
+
+        await _safe_process(persona, message)
+
+        persona.handle_uncaught_exception.assert_not_called()

@@ -1,5 +1,7 @@
 import asyncio
+import html
 import os
+import traceback
 from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
 from logging import Logger
@@ -301,6 +303,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 f"Persona '{self.name}' encountered an exception printed below when attempting to stream output."
             )
             self.log.exception(e)
+            raise
         finally:
             self.awareness.set_local_state_field("isWriting", False)
 
@@ -309,6 +312,30 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Sends a new message to the chat from this persona.
         """
         self.ychat.add_message(NewMessage(body=body, sender=self.id))
+
+    async def handle_uncaught_exception(self, exc: Exception) -> None:
+        """
+        Called by PersonaManager when process_message() raises an unhandled
+        exception. Override this method to customize error reporting.
+
+        The default implementation sends a message to the chat with the error
+        type and message visible in the summary, and the full traceback hidden
+        under a collapsible <details> element.
+        """
+        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        error_type = type(exc).__name__
+        error_msg = str(exc)
+        if len(error_msg) > 120:
+            error_msg = error_msg[:120] + "…"
+        summary = f"{html.escape(error_type)}: {html.escape(error_msg)}"
+        body = (
+            f"An error occurred while processing your message.\n\n"
+            f'<details class="jp-jai-error-details">\n'
+            f"<summary>Error details ({summary})</summary>\n"
+            f'<pre class="jp-jai-error-traceback">{html.escape(tb)}</pre>\n'
+            f"</details>"
+        )
+        self.send_message(body)
 
     def get_chat_path(self, relative: bool = False) -> str:
         """

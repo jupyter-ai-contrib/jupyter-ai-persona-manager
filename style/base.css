@@ -3,3 +3,49 @@
 
     https://jupyterlab.readthedocs.io/en/stable/developer/css.html
 */
+
+/* Specificity (0,4,1) beats jupyter-chat's .jp-chat-rendered-message .jp-RenderedMarkdown pre (0,3,1) */
+.jp-ThemedContainer
+  .jp-chat-rendered-message
+  .jp-RenderedMarkdown
+  pre.jp-jai-error-traceback,
+.jp-ThemedContainer
+  .jp-chat-welcome-message
+  .jp-RenderedMarkdown
+  pre.jp-jai-error-traceback {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
+  margin: 4px 0 0;
+}
+
+.jp-jai-error-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.jp-jai-error-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jp-jai-error-details > summary::before {
+  content: '✗';
+  color: var(--jp-error-color1, #d32f2f);
+  margin-right: 4px;
+}
+
+.jp-jai-error-details > summary::after {
+  content: '';
+  display: inline-block;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentcolor;
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.5;
+}
+
+.jp-jai-error-details[open] > summary::after {
+  border-top: none;
+  border-bottom: 5px solid currentcolor;
+}
