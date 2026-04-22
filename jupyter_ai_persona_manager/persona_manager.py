@@ -49,6 +49,27 @@ class PersonaRequirementsUnmet(RuntimeError):
     pass
 
 
+async def _safe_process(persona: "BasePersona", message: Message) -> None:
+    """
+    Wraps persona.process_message() to catch unhandled exceptions and deliver
+    an error message to the user via persona.handle_uncaught_exception().
+    """
+    try:
+        await persona.process_message(message)
+    except Exception as exc:
+        persona.log.error(
+            f"Persona '{persona.name}' raised an unhandled exception in process_message()."
+        )
+        persona.log.exception(exc)
+        try:
+            await persona.handle_uncaught_exception(exc)
+        except Exception:
+            persona.log.exception(
+                f"Persona '{persona.name}' raised a secondary exception in "
+                f"handle_uncaught_exception(); error message not delivered to user."
+            )
+
+
 class PersonaManager(LoggingConfigurable):
     """
     Class that manages all personas for a single chat.
@@ -464,7 +485,7 @@ class PersonaManager(LoggingConfigurable):
             to_personas if isinstance(to_personas, list) else list(to_personas.values())
         )
         for persona in persona_list:
-            self.event_loop.create_task(persona.process_message(message))
+            self.event_loop.create_task(_safe_process(persona, message))
         return
 
     async def refresh_personas(self):

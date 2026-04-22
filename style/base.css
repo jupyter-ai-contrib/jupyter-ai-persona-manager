@@ -3,3 +3,27 @@
 
     https://jupyterlab.readthedocs.io/en/stable/developer/css.html
 */
+
+/* Style <details> error blocks rendered inside chat messages */
+.jp-ThemedContainer .jp-chat-rendered-message .jp-RenderedMarkdown details {
+  border: var(--jp-border-width) solid var(--jp-cell-editor-border-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-top: 0.5em;
+}
+
+.jp-ThemedContainer .jp-chat-rendered-message .jp-RenderedMarkdown details summary {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+
+.jp-ThemedContainer .jp-chat-rendered-message .jp-RenderedMarkdown details[open] summary {
+  margin-bottom: 6px;
+}
+
+.jp-ThemedContainer .jp-chat-rendered-message .jp-RenderedMarkdown details pre {
+  border: none;
+  margin-top: 0;
+  margin-bottom: 0;
+}
