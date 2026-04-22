@@ -328,11 +328,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         if len(error_msg) > 120:
             error_msg = error_msg[:120] + "…"
         summary = f"{html.escape(error_type)}: {html.escape(error_msg)}"
+        tb_html = html.escape(tb).replace("\n", "<br>\n")
         body = (
             f"An error occurred while processing your message.\n\n"
-            f"<details>\n"
+            f'<details class="jp-jai-error-details">\n'
             f"<summary>Error details ({summary})</summary>\n"
-            f"<pre><code>{html.escape(tb)}</code></pre>\n"
+            f"{tb_html}\n"
             f"</details>"
         )
         self.send_message(body)
