@@ -99,7 +99,7 @@ class TestHandleUncaughtException:
         body = mock_ychat.add_message.call_args[0][0].body
         assert "ValueError" in body
         assert "traceback test" in body
-        assert "<br>" in body
+        assert "<pre" in body
 
     @pytest.mark.asyncio
     async def test_html_special_chars_are_escaped(self, mock_ychat):
