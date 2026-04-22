@@ -1,6 +1,6 @@
 """Tests for BasePersona.handle_uncaught_exception() and stream_message() re-raise."""
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
