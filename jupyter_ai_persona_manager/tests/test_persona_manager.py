@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from jupyterlab_chat.models import Message
-from jupyter_ai_persona_manager.base_persona import BasePersona
+from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
 from jupyter_ai_persona_manager.persona_manager import (
+    PersonaManager,
+    PersonaRequirementsUnmet,
     _safe_process,
     find_persona_files,
     load_from_dir,
@@ -123,6 +125,82 @@ class TestPersona(BasePersona):
         assert result[0]["persona_class"] is None
         assert result[0]["traceback"] is not None
         assert "ZeroDivisionError" in result[0]["traceback"]
+
+
+class RefreshedEntryPointPersona(BasePersona):
+    def __init__(self, *args, ychat, **kwargs):
+        self.ychat = ychat
+
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="Refreshed Entry Point Persona",
+            description="A persona that becomes available after refresh",
+            avatar_path="/test/avatar.svg",
+            system_prompt="Test system prompt"
+        )
+
+    async def process_message(self, message: Message):
+        pass
+
+    async def shutdown(self) -> None:
+        pass
+
+
+class TestRefreshPersonas:
+    @pytest.mark.asyncio
+    async def test_refresh_personas_rescans_entry_points(
+        self, monkeypatch, tmp_dir
+    ):
+        load_results = [
+            PersonaRequirementsUnmet("missing CLI"),
+            RefreshedEntryPointPersona
+        ]
+
+        class MockEntryPoint:
+            name = "refreshed-persona"
+            value = "test_persona_manager:RefreshedEntryPointPersona"
+
+            def load(self):
+                result = load_results.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        class MockEntryPoints:
+            def select(self, group):
+                return [MockEntryPoint()]
+
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", None)
+        monkeypatch.setattr(
+            "jupyter_ai_persona_manager.persona_manager.entry_points",
+            lambda: MockEntryPoints()
+        )
+
+        mock_ychat = Mock()
+        mock_ychat.get_id.return_value = "test-chat-id"
+        mock_ychat._background_tasks = set()
+
+        mock_fileid_manager = Mock()
+        mock_fileid_manager.get_path.return_value = "chat.ipynb"
+
+        manager = PersonaManager(
+            room_id="room:chat:file-id",
+            ychat=mock_ychat,
+            fileid_manager=mock_fileid_manager,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+            default_persona_id=""
+        )
+        manager.send_system_message = Mock()
+
+        assert manager.personas == {}
+
+        await manager.refresh_personas()
+
+        assert len(manager.personas) == 1
+        refreshed_persona = next(iter(manager.personas.values()))
+        assert refreshed_persona.name == "Refreshed Entry Point Persona"
 
 
 # ---------------------------------------------------------------------------
