@@ -46,10 +46,14 @@ class PersonaManagerExtension(ExtensionApp):
         
     @property
     def event_loop(self) -> AbstractEventLoop:
-        """
-        Returns a reference to the asyncio event loop.
-        """
-        return get_event_loop_policy().get_event_loop()
+        if self.serverapp is not None:
+            if getattr(self.serverapp, "io_loop", None) is not None:
+                return self.serverapp.io_loop.asyncio_loop
+
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.get_event_loop_policy().get_event_loop()
     
     def initialize_settings(self):
         """Initialize persona manager settings and router integration."""
