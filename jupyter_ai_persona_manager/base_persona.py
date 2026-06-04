@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
+from jupyter_mcp_manager import McpSettings
 from pydantic import BaseModel
 from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable

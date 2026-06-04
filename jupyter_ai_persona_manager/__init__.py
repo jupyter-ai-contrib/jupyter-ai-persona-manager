@@ -8,6 +8,9 @@ except ImportError:
     warnings.warn("Importing 'jupyter_ai_persona_manager' outside a proper installation.")
     __version__ = "dev"
 
+# Backward compatibility
+from jupyter_mcp_manager import McpSettings, McpServerHttp, McpServerStdio
+
 from .base_persona import BasePersona, PersonaDefaults
 from .doc_markers import (
     ContractLevel,
@@ -34,7 +37,6 @@ from .awareness_models import (
     SettingOption,
     Usage,
 )
-from .mcp_server_models import McpSettings, McpServerHttp, McpServerStdio
 from .extension import PersonaManagerExtension
 
 
