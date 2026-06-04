@@ -490,9 +490,9 @@ class PersonaManager(LoggingConfigurable):
 
     async def refresh_personas(self):
         """
-        Method that reloads all persona classes defined locally under
-        `.jupyter/personas`, and re-initializes each persona class available in
-        the current chat.
+        Method that reloads all persona classes defined by entry points and
+        locally under `.jupyter/personas`, and re-initializes each persona class
+        available in the current chat.
 
         This method is public because it is called by `jupyter_ai_chat_commands`
         when the `/refresh-personas` slash command is sent.
@@ -500,7 +500,8 @@ class PersonaManager(LoggingConfigurable):
         # Shutdown all personas
         await self.shutdown_personas()
 
-        # Refresh local personas and re-initialize persona instances
+        # Refresh entry-point and local personas, then re-initialize persona instances
+        self._init_ep_persona_classes()
         self._init_local_persona_classes()
         self._personas = self._init_personas()
 
