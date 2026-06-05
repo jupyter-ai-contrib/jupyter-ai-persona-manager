@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import inspect
-import json
 import os
 import sys
 import traceback
@@ -16,7 +15,7 @@ from typing import TYPE_CHECKING, Optional
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyter_mcp_manager import McpServerManager, McpSettings
-from traitlets import List, Unicode, default
+from traitlets import Unicode
 from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
@@ -87,37 +86,6 @@ class PersonaManager(LoggingConfigurable):
         allow_none=True,
         config=True,
     )
-
-    builtin_mcp_servers = List(
-        allow_none=True,
-        help=(
-            "List of built-in MCP server dicts (matching the McpServerHttp / "
-            "McpServerStdio schema) that are enabled by default. "
-            "Set to [] to disable all built-in MCP servers."
-        ),
-    ).tag(config=True)
-
-    @default("builtin_mcp_servers")
-    def _default_builtin_mcp_servers(self):
-        """Returns the jupyter_server_mcp HTTP server if the package is installed."""
-        try:
-            import jupyter_server_mcp  # noqa: F401
-        except Exception:
-            return []
-
-        mcp_port = self.config.get("MCPExtensionApp", {}).get("mcp_port", 3001)
-        mcp_name = self.config.get("MCPExtensionApp", {}).get(
-            "mcp_name", "Jupyter MCP Server"
-        )
-
-        return [
-            {
-                "type": "http",
-                "name": mcp_name,
-                "url": f"http://localhost:{mcp_port}/mcp",
-                "headers": [],
-            }
-        ]
 
     # class attr storing persona classes from entry points
     # We treat this as a class attribute so that we only have to load them once
