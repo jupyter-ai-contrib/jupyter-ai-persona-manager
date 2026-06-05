@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from asyncio import get_event_loop_policy
 from typing import TYPE_CHECKING
 
+from jupyter_mcp_manager import McpServerManager
 from jupyter_server.extension.application import ExtensionApp
 from jupyter_server.serverapp import ServerApp
 from jupyter_server_fileid.manager import BaseFileIdManager
@@ -108,6 +108,22 @@ class PersonaManagerExtension(ExtensionApp):
 
         try:
             self.log.info("Found jupyter-ai-router, registering persona manager callbacks")
+
+            # Register default MCP server if jupyter_server_mcp is installed
+            mcp_manager: McpServerManager = self.serverapp.web_app.settings.get("mcp_manager")
+            if mcp_manager:
+                try:
+                    import jupyter_server_mcp  # noqa: F401
+                    mcp_port = self.config.get("MCPExtensionApp", {}).get("mcp_port", 3001)
+                    mcp_name = self.config.get("MCPExtensionApp", {}).get("mcp_name", "Jupyter MCP Server")
+                    mcp_manager.add_server({
+                        "type": "http",
+                        "name": mcp_name,
+                        "url": f"http://localhost:{mcp_port}/mcp",
+                        "headers": [],
+                    })
+                except ImportError:
+                    pass
 
             # Register callback for new chat initialization
             router.observe_chat_init(self._on_router_chat_init)
