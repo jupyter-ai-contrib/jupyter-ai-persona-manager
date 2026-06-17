@@ -84,7 +84,6 @@ class PersonaDefaults(BaseModel):
     ################################################
     # optional fields
     ################################################
-    slash_commands: set[str] = set("*")  # change this to enable/disable slash commands
     model_uid: Optional[str] = None  # e.g. "ollama:deepseek-coder-v2"
     # ^^^ set this to automatically default to a model after a fresh start, no config file
 
