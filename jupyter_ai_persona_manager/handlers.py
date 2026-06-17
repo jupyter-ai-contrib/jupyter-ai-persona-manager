@@ -1,11 +1,15 @@
 import json
 import mimetypes
 import os
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 from urllib.parse import unquote
 
-from jupyter_server.base.handlers import JupyterHandler
+from jupyter_server.base.handlers import APIHandler, JupyterHandler
 import tornado
+
+if TYPE_CHECKING:
+    from jupyter_server_fileid.manager import BaseFileIdManager
+    from .persona_manager import PersonaManager
 
 
 # Maximum avatar file size (5MB)
@@ -97,3 +101,75 @@ class AvatarHandler(JupyterHandler):
         so this is an O(1) lookup instead of iterating all personas.
         """
         return _avatar_cache.get(persona_id)
+
+
+class PersonaCommandsHandler(APIHandler):
+    """
+    GET /api/ai/persona-commands?chat_path=<path>[&persona=<mention_name>]
+
+    Returns the list of `/commands` registered (via `@persona_command`) on the
+    persona identified by `persona` (an `@`-mention name) in the chat at
+    `chat_path`. If `persona` is omitted, returns the commands of the chat's
+    `last_mentioned_persona` falling back to the `default_persona`.
+
+    Response shape: `{"commands": [{"name": "/cmd", "description": "..."}, ...]}`.
+
+    Returns an empty `commands` list when the chat is unknown, the persona is
+    unknown, or the persona has no registered handlers, so the autocomplete UI
+    can degrade gracefully without surfacing an error.
+    """
+
+    @property
+    def file_id_manager(self) -> "BaseFileIdManager":
+        manager = self.serverapp.web_app.settings["file_id_manager"]
+        assert manager
+        return manager
+
+    @tornado.web.authenticated
+    def get(self):
+        chat_path = self.get_argument("chat_path", None)
+        if not chat_path:
+            raise tornado.web.HTTPError(
+                400, "chat_path is required as a URL query parameter"
+            )
+
+        file_id = self.file_id_manager.get_id(chat_path)
+        if not file_id:
+            self.finish({"commands": []})
+            return
+        room_id = f"text:chat:{file_id}"
+
+        persona_managers = (
+            self.serverapp.web_app.settings.get("jupyter-ai", {})
+            .get("persona-managers", {})
+        )
+        persona_manager: "PersonaManager | None" = persona_managers.get(room_id)
+        if not persona_manager:
+            self.finish({"commands": []})
+            return
+
+        persona_mention = self.get_argument("persona", "") or ""
+        persona = None
+        if persona_mention:
+            target = persona_mention.lstrip("@")
+            for p in persona_manager.personas.values():
+                if p.as_user().mention_name == target:
+                    persona = p
+                    break
+        else:
+            persona = (
+                persona_manager.last_mentioned_persona
+                or persona_manager.default_persona
+            )
+
+        if persona is None:
+            self.finish({"commands": []})
+            return
+
+        commands = []
+        for cmd in persona.get_commands():
+            name = cmd.name if cmd.name.startswith("/") else f"/{cmd.name}"
+            commands.append({"name": name, "description": cmd.description})
+
+        self.finish({"commands": commands})
+

@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 import json
 import os
+import re
 import sys
 import traceback
 from glob import glob
@@ -480,13 +481,53 @@ class PersonaManager(LoggingConfigurable):
     ) -> None:
         """
         Broadcasts a message to all personas in a given list or dictionary.
+
+        If the message body looks like `@<mention> /<cmd> <args>` (after
+        stripping any number of leading `@-mentions`), and a target persona has
+        a registered `/<cmd>` handler (via `@persona_command`), the persona
+        receives `dispatch_command(cmd, args, message)` instead of
+        `process_message(message)`.
         """
         persona_list: list[BasePersona] = (
             to_personas if isinstance(to_personas, list) else list(to_personas.values())
         )
+        cmd_match = self._extract_persona_command(message)
         for persona in persona_list:
-            self.event_loop.create_task(_safe_process(persona, message))
+            if cmd_match is not None and persona.has_command(cmd_match[0]):
+                cmd, args = cmd_match
+                self.event_loop.create_task(
+                    persona.dispatch_command(cmd, args, message)
+                )
+            else:
+                self.event_loop.create_task(_safe_process(persona, message))
         return
+
+    @staticmethod
+    def _extract_persona_command(message: Message) -> tuple[str, str] | None:
+        """
+        Inspects `message.body` for a leading persona-command pattern. Strips
+        any sequence of `@-mention` tokens at the start of the body and, if the
+        next word starts with `/`, returns `(command_name, args)`. Otherwise
+        returns `None`.
+
+        The `command_name` does not include the leading slash; `args` is the
+        remainder of the body (may be empty).
+        """
+        body = (message.body or "").lstrip()
+        # Strip any number of leading `@mention` tokens followed by whitespace.
+        while True:
+            m = re.match(r"@[\w-]+\s+", body)
+            if not m:
+                break
+            body = body[m.end():]
+        if not body.startswith("/"):
+            return None
+        parts = body[1:].split(None, 1)
+        if not parts or not parts[0]:
+            return None
+        cmd = parts[0]
+        args = parts[1] if len(parts) > 1 else ""
+        return cmd, args
 
     async def refresh_personas(self):
         """

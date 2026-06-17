@@ -6,7 +6,7 @@ from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
 from logging import Logger
 from time import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, TypeVar
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
@@ -15,6 +15,46 @@ from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable
 
 from .persona_awareness import PersonaAwareness
+
+
+F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
+
+
+class PersonaCommand(BaseModel):
+    """
+    Metadata for a `/command` registered by a persona.
+    """
+    name: str
+    description: str = ""
+
+
+def persona_command(name: str, description: str = "") -> Callable[[F], F]:
+    """
+    Decorator that marks a `BasePersona` method as a `/command` handler.
+
+    The decorated method must be async and accept `(args: str, message: Message)`,
+    where `args` is the rest of the message body after the command token.
+
+    Example:
+
+        class MyPersona(BasePersona):
+            @persona_command("ping", description="Reply with 'pong'")
+            async def cmd_ping(self, args: str, message: Message) -> None:
+                self.send_message("pong")
+    """
+    if not name or not isinstance(name, str):
+        raise ValueError("persona_command(name=...) must be a non-empty string")
+    if name.startswith("/"):
+        name = name[1:]
+
+    def decorator(fn: F) -> F:
+        setattr(fn, "_persona_command_meta", {
+            "name": name,
+            "description": description,
+        })
+        return fn
+
+    return decorator
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -113,6 +153,20 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         # Register this persona as a user in the chat
         self.ychat.set_user(self.as_user())
+
+        # Discover all `@persona_command` decorated methods on the subclass MRO
+        # and store them in `self._commands`. Walk the MRO in reverse so that
+        # subclass overrides win over base-class definitions.
+        self._commands: dict[str, dict[str, str]] = {}
+        for klass in reversed(type(self).__mro__):
+            for attr_name, attr in vars(klass).items():
+                meta = getattr(attr, "_persona_command_meta", None)
+                if not meta:
+                    continue
+                self._commands[meta["name"]] = {
+                    "method_name": attr_name,
+                    "description": meta.get("description", ""),
+                }
 
     ################################################
     # abstract methods, required by subclasses.
@@ -439,6 +493,48 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         except Exception as e:
             self.log.error(f"Failed to resolve attachment {attachment_id}: {e}")
             return None
+
+    def get_commands(self) -> list[PersonaCommand]:
+        """
+        Returns metadata for every `/command` registered on this persona via the
+        `@persona_command` decorator. Used by the chat UI to populate
+        autocomplete suggestions when the user types `@persona /`.
+        """
+        return [
+            PersonaCommand(name=name, description=spec["description"])
+            for name, spec in self._commands.items()
+        ]
+
+    def has_command(self, command: str) -> bool:
+        """
+        Returns whether this persona has a registered `/command` with the given
+        name (with or without leading slash).
+        """
+        if command.startswith("/"):
+            command = command[1:]
+        return command in self._commands
+
+    async def dispatch_command(
+        self, command: str, args: str, message: Message
+    ) -> None:
+        """
+        Dispatches `/command args` to the registered handler method. Handler
+        method may be sync or async; both are awaited correctly.
+
+        Raises `ValueError` if the persona has no registered handler for the
+        given command.
+        """
+        if command.startswith("/"):
+            command = command[1:]
+        spec = self._commands.get(command)
+        if not spec:
+            raise ValueError(
+                f"Persona '{self.name}' has no /{command} handler registered"
+            )
+        method = getattr(self, spec["method_name"])
+        result = method(args, message)
+        if asyncio.iscoroutine(result):
+            await result
 
     async def shutdown(self) -> None:
         """
