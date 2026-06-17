@@ -8,7 +8,7 @@ except ImportError:
     warnings.warn("Importing 'jupyter_ai_persona_manager' outside a proper installation.")
     __version__ = "dev"
 
-from .base_persona import BasePersona, PersonaDefaults
+from .base_persona import BasePersona, PersonaDefaults, PersonaCommand, persona_command
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
 from .persona_awareness import PersonaAwareness
 from .mcp_server_models import McpSettings, McpServerHttp, McpServerStdio
