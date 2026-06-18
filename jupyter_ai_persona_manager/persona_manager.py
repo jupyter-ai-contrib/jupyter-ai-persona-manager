@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
-from traitlets import List, Unicode, default
+from traitlets import Bool, List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
@@ -87,6 +87,17 @@ class PersonaManager(LoggingConfigurable):
         config=True,
     )
 
+    mention_updates_active = Bool(
+        default_value=True,
+        help=""
+        "When True, an `@`-mention also sets the active persona that replies to "
+        "subsequent unmentioned messages (the multi-participant model). When "
+        "False, `@`-mentions are ignored for routing and only the active-persona "
+        "selector chooses who replies (the single-active-persona model). "
+        "Defaults to: True. ",
+        config=True,
+    )
+
     builtin_mcp_servers = List(
         allow_none=True,
         help=(
@@ -128,7 +139,13 @@ class PersonaManager(LoggingConfigurable):
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
-    last_mentioned_persona: BasePersona | None
+    active_persona: BasePersona | None
+    """
+    The persona that replies to unmentioned messages in a single-human chat. Set
+    by the active-persona selector or by an `@`-mention (when
+    `mention_updates_active` is True). `None` means no one replies. Initialized
+    from chat metadata, falling back to the default persona.
+    """
 
     log: Logger  # type: ignore
     """
@@ -167,13 +184,14 @@ class PersonaManager(LoggingConfigurable):
         # Store file ID
         self.file_id = room_id.split(":")[2]
 
-        # Initialize last_mentioned_persona to None
-        self.last_mentioned_persona = None
-
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
+
+        # Initialize the active persona from chat metadata, falling back to the
+        # default persona (or the sole persona if there is exactly one).
+        self.active_persona = self._init_active_persona()
         if self.default_persona:
             self.log.info(
                 f"Default persona set to '{self.default_persona.name}' in chat '{self.room_id}'."
@@ -407,6 +425,37 @@ class PersonaManager(LoggingConfigurable):
             return None
         return self.personas.get(self.default_persona_id)
 
+    ACTIVE_PERSONA_METADATA_KEY = "active_persona_id"
+
+    def _init_active_persona(self) -> BasePersona | None:
+        """
+        Resolve the active persona at startup: from chat metadata if it was set
+        before, otherwise the default persona, otherwise the sole persona if the
+        chat has exactly one. An empty stored value means "no one replies".
+        """
+        metadata = self.ychat.get_metadata() or {}
+        if self.ACTIVE_PERSONA_METADATA_KEY in metadata:
+            stored_id = metadata[self.ACTIVE_PERSONA_METADATA_KEY]
+            if not stored_id:
+                return None
+            return self.personas.get(stored_id)
+        if self.default_persona:
+            return self.default_persona
+        if len(self.personas) == 1:
+            return next(iter(self.personas.values()))
+        return None
+
+    def set_active_persona(self, persona: BasePersona | None) -> None:
+        """
+        Set the persona that replies to unmentioned messages, and persist the
+        choice with the chat so it survives a reload. `None` means no one
+        replies.
+        """
+        self.active_persona = persona
+        self.ychat.set_metadata(
+            self.ACTIVE_PERSONA_METADATA_KEY, persona.id if persona else ""
+        )
+
     def get_mentioned_personas(self, new_message: Message) -> list[BasePersona]:
         """
         Returns a list of all personas `@`-mentioned in a chat message, given a
@@ -427,12 +476,11 @@ class PersonaManager(LoggingConfigurable):
         - If the chat has multiple users, then each persona only replies
           when `@`-mentioned.
 
-        - If there is only one user, the last mentioned persona replies
-          unless another persona is `@`-mentioned. The last mentioned persona
-          defaults to `PersonaManager.default_persona` after starting the server.
-
-        - If only one persona exists as well, then the persona always replies,
-          regardless of whether it is `@`-mentioned.
+        - If there is only one user, the active persona replies. An `@`-mention
+          is an override that also updates the active persona (when
+          `mention_updates_active`). Selecting no one (`active_persona is None`)
+          means no one replies. The active persona defaults to
+          `PersonaManager.default_persona`.
         """
 
         # Gather routing context
@@ -440,36 +488,33 @@ class PersonaManager(LoggingConfigurable):
         sender_not_human = (
             is_persona(message.sender) or message.sender == SYSTEM_USERNAME
         )
-        sender_is_human = not sender_not_human
         mentioned_personas = self.get_mentioned_personas(message)
         human_user_count = len(human_users)
-        persona_count = len(self.personas)
 
         # Multi-user case & non-human message case: only route message to
-        # mentioned personas
+        # mentioned personas, so the AI does not interject in a conversation
+        # between humans.
         if sender_not_human or human_user_count > 1:
             if mentioned_personas:
                 self._broadcast(message, to_personas=mentioned_personas)
             return
 
-        # Single user + multiple personas case: route message to mentioned
-        # personas if present. Otherwise route message to last mentioned
-        # persona, falling back to the default set by the
-        # `PersonaManager.default_persona_id` configurable trait.
-        if persona_count > 1:
-            # Update last mentioned persona
-            if mentioned_personas and sender_is_human:
-                self.last_mentioned_persona = mentioned_personas[0]
-
-            default_persona = self.last_mentioned_persona or self.default_persona
+        # Single-human case: route to the active persona. An `@`-mention is an
+        # override that replies to the mentioned personas and (when
+        # `mention_updates_active`) updates the active persona.
+        if mentioned_personas and self.mention_updates_active:
+            self.set_active_persona(mentioned_personas[0])
             targeted_personas = mentioned_personas
-            if default_persona and not targeted_personas:
-                targeted_personas = [default_persona]
-            self._broadcast(message, to_personas=targeted_personas)
-            return
+        else:
+            targeted_personas = [self.active_persona] if self.active_persona else []
 
-        # Default case (single user, 0/1 personas): persona always replies if present
-        self._broadcast(message, to_personas=self.personas)
+        self.log.info(
+            "Routing message (single human): active=%s, mentioned=%s -> %s",
+            self.active_persona.name if self.active_persona else None,
+            [p.name for p in mentioned_personas],
+            [p.name for p in targeted_personas],
+        )
+        self._broadcast(message, to_personas=targeted_personas)
         return
     
     def _broadcast(
