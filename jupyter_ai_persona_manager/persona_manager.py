@@ -484,35 +484,35 @@ class PersonaManager(LoggingConfigurable):
         Method that routes an incoming message to the correct personas by
         calling their `process_message()` methods.
 
-        - If the chat has multiple users, then each persona only replies
-          when `@`-mentioned.
+        - Messages from a persona or the system only go to explicitly mentioned
+          personas, to avoid persona-to-persona reply loops.
 
-        - If there is only one user, the active persona replies. An `@`-mention
-          is an override that also updates the active persona (when
-          `mention_updates_active`). Selecting no one (`active_persona is None`)
-          means no one replies. The active persona defaults to
-          `PersonaManager.default_persona`.
+        - A message from a human goes to the active persona, in single- and
+          multi-human chats alike. An `@`-mention overrides this, replying to
+          the mentioned personas and (when `mention_updates_active`) updating
+          the active persona. Selecting no one (`active_persona is None`) means
+          no one replies, which is how a user opts out of AI replies in a shared
+          chat. The active persona defaults to `PersonaManager.default_persona`.
         """
 
         # Gather routing context
-        human_users = self.get_active_human_users()
         sender_not_human = (
             is_persona(message.sender) or message.sender == SYSTEM_USERNAME
         )
         mentioned_personas = self.get_mentioned_personas(message)
-        human_user_count = len(human_users)
 
-        # Multi-user case & non-human message case: only route message to
-        # mentioned personas, so the AI does not interject in a conversation
-        # between humans.
-        if sender_not_human or human_user_count > 1:
+        # Messages from a persona or the system only go to mentioned personas,
+        # to avoid persona-to-persona reply loops.
+        if sender_not_human:
             if mentioned_personas:
                 self._broadcast(message, to_personas=mentioned_personas)
             return
 
-        # Single-human case: route to the active persona. An `@`-mention is an
-        # override that replies to the mentioned personas and (when
-        # `mention_updates_active`) updates the active persona.
+        # Human sender: route to the active persona. An `@`-mention overrides
+        # this, replying to the mentioned personas and (when
+        # `mention_updates_active`) updating the active persona. This is the same
+        # in single- and multi-human chats; the selector (including "no one") is
+        # the explicit control over who replies.
         if mentioned_personas and self.mention_updates_active:
             self.set_active_persona(mentioned_personas[0])
             targeted_personas = mentioned_personas
@@ -520,7 +520,7 @@ class PersonaManager(LoggingConfigurable):
             targeted_personas = [self.active_persona] if self.active_persona else []
 
         self.log.info(
-            "Routing message (single human): active=%s, mentioned=%s -> %s",
+            "Routing message: active=%s, mentioned=%s -> %s",
             self.active_persona.name if self.active_persona else None,
             [p.name for p in mentioned_personas],
             [p.name for p in targeted_personas],
