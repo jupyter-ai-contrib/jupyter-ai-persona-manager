@@ -679,15 +679,6 @@ class PersonaManager(LoggingConfigurable):
         )
         return McpSettings(mcp_servers=all_servers)
 
-    def get_active_human_users(self):
-        """Returns active human users in a chat session"""
-        users = []
-        for value in [k for k in self.ychat.awareness.states.values()]:
-            if "user" in value.keys() and not is_persona(value["user"]["username"]):
-                users.append(value["user"])
-
-        return users
-
     async def shutdown_personas(self):
         """
         Shuts down each persona. See `BasePersona.shutdown()` for more info.
