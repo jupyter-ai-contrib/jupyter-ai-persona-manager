@@ -437,8 +437,19 @@ class PersonaManager(LoggingConfigurable):
         if self.ACTIVE_PERSONA_METADATA_KEY in metadata:
             stored_id = metadata[self.ACTIVE_PERSONA_METADATA_KEY]
             if not stored_id:
+                # Empty string is an explicit "no one replies" selection.
                 return None
-            return self.personas.get(stored_id)
+            persona = self.personas.get(stored_id)
+            if persona is not None:
+                return persona
+            # The stored persona was uninstalled or renamed. Fall back to the
+            # default rather than silently disabling all replies.
+            self.log.warning(
+                "Stored active persona '%s' not found in chat '%s'; "
+                "falling back to the default persona.",
+                stored_id,
+                self.room_id,
+            )
         if self.default_persona:
             return self.default_persona
         if len(self.personas) == 1:
@@ -548,6 +559,10 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
+
+        # Re-resolve the active persona against the fresh instances, since the
+        # previous instance was just shut down. The id is persisted in metadata.
+        self.active_persona = self._init_active_persona()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings
