@@ -495,31 +495,23 @@ class PersonaManager(LoggingConfigurable):
           chat. The active persona defaults to `PersonaManager.default_persona`.
         """
 
-        # Gather routing context
         sender_not_human = (
             is_persona(message.sender) or message.sender == SYSTEM_USERNAME
         )
         mentioned_personas = self.get_mentioned_personas(message)
 
-        # Messages from a persona or the system only go to mentioned personas,
-        # to avoid persona-to-persona reply loops.
         if sender_not_human:
             if mentioned_personas:
                 self._broadcast(message, to_personas=mentioned_personas)
             return
 
-        # Human sender: route to the active persona. An `@`-mention overrides
-        # this, replying to the mentioned personas and (when
-        # `mention_updates_active`) updating the active persona. This is the same
-        # in single- and multi-human chats; the selector (including "no one") is
-        # the explicit control over who replies.
         if mentioned_personas and self.mention_updates_active:
             self.set_active_persona(mentioned_personas[0])
             targeted_personas = mentioned_personas
         else:
             targeted_personas = [self.active_persona] if self.active_persona else []
 
-        self.log.info(
+        self.log.debug(
             "Routing message: active=%s, mentioned=%s -> %s",
             self.active_persona.name if self.active_persona else None,
             [p.name for p in mentioned_personas],
