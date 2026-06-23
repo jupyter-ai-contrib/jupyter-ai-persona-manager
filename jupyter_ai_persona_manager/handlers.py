@@ -66,6 +66,7 @@ class MessageHandler(JupyterHandler):
             message_text = data.get("message")
             if not persona_name or not message_text:
                 raise tornado.web.HTTPError(400, "Missing 'persona' or 'message' field")
+            metadata = data.get("metadata")
         except Exception as e:
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
@@ -115,6 +116,7 @@ class MessageHandler(JupyterHandler):
                         display_name=DEFAULT_SENDER_NAME).username,
             mentions=[target_persona.id],
             raw_time=False,
+            metadata=metadata
         )
 
         done_event = asyncio.Event()
