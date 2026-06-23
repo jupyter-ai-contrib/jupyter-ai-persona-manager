@@ -259,7 +259,7 @@ class TestOnChatMessageRouting:
         assert _replied_to(pm) == [mentioned]
         assert pm.active_persona is mentioned
 
-    def test_mention_does_not_change_active_when_flag_is_off(self):
+    def test_mention_is_ignored_for_routing_when_flag_is_off(self):
         active = _make_mock_persona()
         mentioned = _make_mock_persona()
         pm = _routing_manager(active_persona=active, mention_updates_active=False)
@@ -267,6 +267,7 @@ class TestOnChatMessageRouting:
 
         pm.on_chat_message("room", _message(HUMAN_SENDER))
 
+        assert _replied_to(pm) == [active]
         assert pm.active_persona is active
 
     def test_no_active_persona_means_no_one_replies(self):
@@ -299,3 +300,59 @@ class TestOnChatMessageRouting:
         pm.on_chat_message("room", _message(SYSTEM_USERNAME))
 
         pm._broadcast.assert_not_called()
+
+
+class TestActivePersonaResolution:
+    """How the active persona is resolved at startup (_init_active_persona)."""
+
+    def _manager(self, *, metadata, personas, default_id=""):
+        pm = PersonaManager.__new__(PersonaManager)
+        pm.default_persona_id = default_id
+        pm.room_id = "room"
+        pm._personas = personas
+        pm.ychat = Mock()
+        pm.ychat.get_metadata.return_value = metadata
+        return pm
+
+    def test_uses_the_stored_active_persona_when_it_still_exists(self):
+        stored = _make_mock_persona()
+        pm = self._manager(metadata={"active_persona_id": "p1"}, personas={"p1": stored})
+
+        assert pm._init_active_persona() is stored
+
+    def test_empty_stored_value_means_no_one(self):
+        pm = self._manager(
+            metadata={"active_persona_id": ""}, personas={"p1": _make_mock_persona()}
+        )
+
+        assert pm._init_active_persona() is None
+
+    def test_falls_back_to_default_when_the_stored_persona_is_gone(self):
+        default = _make_mock_persona()
+        pm = self._manager(
+            metadata={"active_persona_id": "gone"},
+            personas={"d": default},
+            default_id="d",
+        )
+
+        assert pm._init_active_persona() is default
+
+    def test_uses_the_default_persona_when_nothing_is_stored(self):
+        default = _make_mock_persona()
+        pm = self._manager(metadata={}, personas={"d": default}, default_id="d")
+
+        assert pm._init_active_persona() is default
+
+    def test_uses_the_sole_persona_when_no_default_and_only_one(self):
+        only = _make_mock_persona()
+        pm = self._manager(metadata={}, personas={"only": only})
+
+        assert pm._init_active_persona() is only
+
+    def test_no_one_when_no_default_and_several_personas(self):
+        pm = self._manager(
+            metadata={},
+            personas={"a": _make_mock_persona(), "b": _make_mock_persona()},
+        )
+
+        assert pm._init_active_persona() is None
