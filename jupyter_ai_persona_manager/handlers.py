@@ -121,7 +121,7 @@ class MessageHandler(JupyterHandler):
         await target_persona.process_message(msg)
         def on_awareness_change(event, *args, **kwargs):
             local_state = target_persona.awareness.get_local_state()
-            if local_state.get('isWriting', False):
+            if not local_state.get('isWriting', False):
                 done_event.set()
 
         ychat.awareness.observe(on_awareness_change)
