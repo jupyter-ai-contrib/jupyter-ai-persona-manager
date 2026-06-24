@@ -4,7 +4,6 @@ import mimetypes
 import os
 import time
 import uuid
-from typing import Dict, Optional
 from urllib.parse import unquote
 
 from jupyter_server.base.handlers import JupyterHandler
@@ -23,7 +22,7 @@ DEFAULT_RESPONSE_TIMEOUT = 120.0
 
 # Module-level cache: {persona_id: avatar_path}
 # This is populated when personas are initialized/refreshed
-_avatar_cache: Dict[str, str] = {}
+_avatar_cache: dict[str, str] = {}
 
 
 def build_avatar_cache(persona_managers: dict) -> None:
@@ -191,7 +190,7 @@ class AvatarHandler(JupyterHandler):
             self.log.error(f"Error serving avatar file: {e}")
             raise tornado.web.HTTPError(500, f"Error serving avatar file: {str(e)}")
 
-    def _find_avatar_file(self, persona_id: str) -> Optional[str]:
+    def _find_avatar_file(self, persona_id: str) -> str | None:
         """
         Find the avatar file path by persona ID using the module-level cache.
 

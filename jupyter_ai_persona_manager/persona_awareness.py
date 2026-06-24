@@ -3,7 +3,7 @@ import random
 from contextlib import contextmanager
 from dataclasses import asdict
 from logging import Logger
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from jupyterlab_chat.models import User
 from pycrdt import Awareness
@@ -35,13 +35,13 @@ class PersonaAwareness:
 
     awareness: Awareness
     log: Logger
-    user: Optional[User]
+    user: User | None
 
     _original_client_id: int
     _custom_client_id: int
     _heartbeat_task: asyncio.Task
 
-    def __init__(self, *, ychat: "YChat", log: Logger, user: Optional[User]):
+    def __init__(self, *, ychat: "YChat", log: Logger, user: User | None):
         # Bind instance attributes
         self.log = log
         self.user = user
@@ -99,14 +99,14 @@ class PersonaAwareness:
         with self.as_custom_client():
             self.awareness.set_local_state_field("user", asdict(self.user))
 
-    def get_local_state(self) -> Optional[dict[str, Any]]:
+    def get_local_state(self) -> dict[str, Any] | None:
         """
         Returns the local state of the awareness instance.
         """
         with self.as_custom_client():
             return self.awareness.get_local_state()
 
-    def set_local_state(self, state: Optional[dict[str, Any]]) -> None:
+    def set_local_state(self, state: dict[str, Any] | None) -> None:
         """
         Sets the local state of this persona in the awareness map, indexed by
         this instance's custom client ID.
