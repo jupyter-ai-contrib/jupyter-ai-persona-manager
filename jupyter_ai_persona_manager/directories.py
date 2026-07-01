@@ -1,17 +1,16 @@
 from pathlib import Path
-from typing import Optional
 
 
 def find_dot_dir(
-    dir: str, dot_dir: str, root_dir: Optional[str] = None
-) -> Optional[str]:
+    dir: str, dot_dir: str, root_dir: str | None = None
+) -> str | None:
     """
     Find the nearest dot directory by traversing up from the given directory.
 
     Args:
         dir (str): The starting directory path
         dot_dir (str): The dot directory name to search for (e.g., '.jupyter', '.git')
-        root_dir (Optional[str]): The root directory to stop searching at.
+        root_dir (str | None): The root directory to stop searching at.
             If None, searches to filesystem root.
 
     Returns:
@@ -47,7 +46,7 @@ def find_dot_dir(
     return None
 
 
-def find_workspace_dir(dir: str, root_dir: Optional[str] = None) -> str:
+def find_workspace_dir(dir: str, root_dir: str | None = None) -> str:
     """
     Find the workspace directory using the following algorithm:
 
@@ -59,7 +58,7 @@ def find_workspace_dir(dir: str, root_dir: Optional[str] = None) -> str:
 
     Args:
         dir (str): The starting directory path
-        root_dir (Optional[str]): The root directory to stop searching at. If None, searches to filesystem root.
+        root_dir (str | None): The root directory to stop searching at. If None, searches to filesystem root.
 
     Returns:
         str: The absolute path to the workspace directory

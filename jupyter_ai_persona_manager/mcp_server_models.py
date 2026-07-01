@@ -5,7 +5,7 @@ Pydantic models for MCP server descriptions and the MCP server config file
 These follow the schemas set by Agent Client Protocol.
 """
 
-from typing import Annotated, List, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,12 +15,12 @@ class EnvVariable(BaseModel):
 
 class McpServerStdio(BaseModel):
     args: Annotated[
-        List[str],
+        list[str],
         Field(description="Command-line arguments to pass to the MCP server."),
     ]
     command: Annotated[str, Field(description="Path to the MCP server executable.")]
     env: Annotated[
-        List[EnvVariable],
+        list[EnvVariable],
         Field(description="Environment variables to set when launching the MCP server."),
     ] = []
     name: Annotated[str, Field(description="Human-readable name identifying this MCP server.")]
@@ -32,7 +32,7 @@ class HttpHeader(BaseModel):
 class McpServerHttp(BaseModel):
     type: Literal['http']
     headers: Annotated[
-        List[HttpHeader],
+        list[HttpHeader],
         Field(description="HTTP headers to set when making requests to the MCP server."),
     ] = []
     name: Annotated[str, Field(description="Human-readable name identifying this MCP server.")]
@@ -43,4 +43,4 @@ class McpSettings(BaseModel):
     The Pydantic model defining the schema of the MCP server settings file,
     `.jupyter/mcp_settings.json`.
     """
-    mcp_servers: list[Union[McpServerStdio, McpServerHttp]]
+    mcp_servers: list[McpServerStdio | McpServerHttp]
