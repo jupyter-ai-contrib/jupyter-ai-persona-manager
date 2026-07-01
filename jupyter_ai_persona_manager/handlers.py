@@ -1,19 +1,28 @@
+import asyncio
 import json
 import mimetypes
 import os
-from typing import Dict, Optional
+import time
+import uuid
 from urllib.parse import unquote
 
 from jupyter_server.base.handlers import JupyterHandler
+from jupyter_ydoc.ybasedoc import YBaseDoc
+from jupyterlab_chat.models import Message, User
+from jupyterlab_chat.ychat import YChat
+from pycrdt import Awareness
 import tornado
 
 
 # Maximum avatar file size (5MB)
 MAX_AVATAR_SIZE = 5 * 1024 * 1024
+DEFAULT_SENDER = "user"
+DEFAULT_SENDER_NAME = "User"
+DEFAULT_RESPONSE_TIMEOUT = 120.0
 
 # Module-level cache: {persona_id: avatar_path}
 # This is populated when personas are initialized/refreshed
-_avatar_cache: Dict[str, str] = {}
+_avatar_cache: dict[str, str] = {}
 
 
 def build_avatar_cache(persona_managers: dict) -> None:
@@ -40,6 +49,98 @@ def clear_avatar_cache() -> None:
     """Clear the avatar cache. Called during persona refresh."""
     global _avatar_cache
     _avatar_cache = {}
+
+
+class MessageHandler(JupyterHandler):
+    """
+    Handler to receive a persona ID and a message, route it through a temporary PersonaManager,
+    and return the persona's response.
+    """
+
+    @tornado.web.authenticated
+    async def post(self, persona_name: str):
+        try:
+            data = json.loads(self.request.body)
+            persona_name = unquote(persona_name)
+            message_text = data.get("message")
+            if not persona_name or not message_text:
+                raise tornado.web.HTTPError(400, "Missing 'persona' or 'message' field")
+            metadata = data.get("metadata")
+        except Exception as e:
+            raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
+
+        serverapp = self.serverapp
+        fileid_manager = serverapp.web_app.settings.get("file_id_manager")
+        contents_manager = serverapp.contents_manager
+        root_dir = getattr(contents_manager, "root_dir", "")
+        base_url = serverapp.web_app.settings.get("base_url", "/")
+        uid = uuid.uuid4()
+        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
+        temp_room_id = f"text:chat:{room_uid}"
+
+        # Obtain or create a PersonaManager for this temporary room
+        # Reuse existing if present, otherwise instantiate a minimal manager
+        ychat = YChat()
+        ychat.awareness = Awareness(ydoc=ychat._ydoc)
+        # Retrieve required managers from server settings
+        # Instantiate PersonaManager
+        from .persona_manager import PersonaManager
+
+        persona_manager = PersonaManager(
+            room_id=temp_room_id,
+            ychat=ychat,
+            fileid_manager=fileid_manager,
+            root_dir=root_dir,
+            event_loop=asyncio.get_event_loop(),
+            base_url=base_url,
+        )
+        # Capture output by temporarily overriding send_message of the target persona
+        target_persona = next(
+            (
+                p
+                for p in persona_manager.personas.values()
+                if getattr(p, "name", None) == persona_name
+            ),
+            None,
+        )
+        if not target_persona:
+            raise tornado.web.HTTPError(404, f"Persona '{persona_name}' not found")
+
+        msg = Message(
+            id="msgid",
+            body=message_text,
+            time=time.time(),
+            sender=User(username=DEFAULT_SENDER,
+                        name=DEFAULT_SENDER_NAME,
+                        display_name=DEFAULT_SENDER_NAME).username,
+            mentions=[target_persona.id],
+            raw_time=False,
+            metadata=metadata
+        )
+
+        done_event = asyncio.Event()
+        await target_persona.process_message(msg)
+        def on_awareness_change(event, *args, **kwargs):
+            local_state = target_persona.awareness.get_local_state()
+            if not local_state.get('isWriting', False):
+                done_event.set()
+
+        ychat.awareness.observe(on_awareness_change)
+
+        try:
+            # If currently writing, wait for the event that indicates it's done
+            if target_persona.awareness.get_local_state().get('isWriting', False):
+                await asyncio.wait_for(done_event.wait(), timeout=DEFAULT_RESPONSE_TIMEOUT)
+        except asyncio.TimeoutError:
+            self.log.warning("Timeout waiting for persona to finish writing")
+
+        # Return the captured response
+        response = "".join(
+            msg.body if getattr(msg, "body", None) is not None else str(msg)
+            for msg in ychat.get_messages()
+        )
+        self.set_header("Content-Type", "application/json")
+        self.finish(json.dumps({"response": response}))
 
 
 class AvatarHandler(JupyterHandler):
@@ -89,7 +190,7 @@ class AvatarHandler(JupyterHandler):
             self.log.error(f"Error serving avatar file: {e}")
             raise tornado.web.HTTPError(500, f"Error serving avatar file: {str(e)}")
 
-    def _find_avatar_file(self, persona_id: str) -> Optional[str]:
+    def _find_avatar_file(self, persona_id: str) -> str | None:
         """
         Find the avatar file path by persona ID using the module-level cache.
 

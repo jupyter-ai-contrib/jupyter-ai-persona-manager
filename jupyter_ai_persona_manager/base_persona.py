@@ -6,7 +6,7 @@ from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
 from logging import Logger
 from time import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
@@ -45,7 +45,7 @@ class PersonaDefaults(BaseModel):
     # optional fields
     ################################################
     slash_commands: set[str] = set("*")  # change this to enable/disable slash commands
-    model_uid: Optional[str] = None  # e.g. "ollama:deepseek-coder-v2"
+    model_uid: str | None = None  # e.g. "ollama:deepseek-coder-v2"
     # ^^^ set this to automatically default to a model after a fresh start, no config file
 
 
@@ -258,7 +258,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         - Triggers mention detection after streaming completes, allowing
         personas to mention each other in their responses.
         """
-        stream_id: Optional[str] = None
+        stream_id: str | None = None
         try:
             self.awareness.set_local_state_field("isWriting", True)
             async for chunk in reply_stream:
@@ -353,7 +353,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_chat_dir()
 
-    def get_dotjupyter_dir(self) -> Optional[str]:
+    def get_dotjupyter_dir(self) -> str | None:
         """
         Returns the path to the .jupyter directory for the current chat.
         """
@@ -371,7 +371,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_mcp_settings()
 
-    def process_attachments(self, message: Message) -> Optional[str]:
+    def process_attachments(self, message: Message) -> str | None:
         """
         Process file attachments in the message and return their content as a string.
         """
@@ -412,7 +412,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         result = "\n\n".join(context_parts) if context_parts else None
         return result
 
-    def resolve_attachment_to_path(self, attachment_id: str) -> Optional[str]:
+    def resolve_attachment_to_path(self, attachment_id: str) -> str | None:
         """
         Resolve an attachment ID to its file path using multiple strategies.
         """
