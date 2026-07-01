@@ -2,6 +2,34 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.0.12
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.0.11...c3f1123f99ed6a64577c1210ef17bdbf2ad9047b))
+
+### Enhancements made
+
+- Update to python 3.10 [#55](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/55) ([@srdas](https://github.com/srdas), [@claude](https://github.com/claude))
+- add message handler [#53](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/53) ([@joequant](https://github.com/joequant), [@dlqqq](https://github.com/dlqqq), [@srdas](https://github.com/srdas))
+
+### Bugs fixed
+
+- Fix event loop handling and Python 3.14 compat [#46](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/46) ([@dhirschfeld](https://github.com/dhirschfeld), [@dlqqq](https://github.com/dlqqq))
+
+### Maintenance and upkeep improvements
+
+- Drop python 3.9, include python 3.14 [#50](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/50) ([@brichet](https://github.com/brichet), [@dlqqq](https://github.com/dlqqq), [@jtpio](https://github.com/jtpio))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-04-22&to=2026-07-01&type=c))
+
+@brichet ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abrichet+updated%3A2026-04-22..2026-07-01&type=Issues)) | @claude ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aclaude+updated%3A2026-04-22..2026-07-01&type=Issues)) | @dhirschfeld ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adhirschfeld+updated%3A2026-04-22..2026-07-01&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-04-22..2026-07-01&type=Issues)) | @joequant ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Ajoequant+updated%3A2026-04-22..2026-07-01&type=Issues)) | @jtpio ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Ajtpio+updated%3A2026-04-22..2026-07-01&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-04-22..2026-07-01&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.0.11
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.0.10...9a9c6e4775c0dede453be9aefc24910e192779c1))
@@ -18,8 +46,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-04-21&to=2026-04-22&type=c))
 
 @andrii-i ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aandrii-i+updated%3A2026-04-21..2026-04-22&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-04-21..2026-04-22&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.0.10
 
