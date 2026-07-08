@@ -34,7 +34,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "importlib_metadata>=4.0.0",
     "jupyter_ai_router>=0.0.4a0",
-    "jupyter_mcp_manager>=0.1.2",
+    "jupyter_mcp_manager>=0.2.0",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
