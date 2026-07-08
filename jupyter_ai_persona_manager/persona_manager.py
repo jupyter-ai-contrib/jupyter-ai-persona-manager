@@ -542,7 +542,7 @@ class PersonaManager(LoggingConfigurable):
         self.event_loop.create_task(_safe_prepare(persona))
         return True
 
-    async def refresh_personas(self):
+    async def refresh_personas(self, silent=False):
         """
         Method that reloads all persona classes defined by entry points and
         locally under `.jupyter/personas`, and re-initializes each persona class
@@ -573,8 +573,9 @@ class PersonaManager(LoggingConfigurable):
         except Exception as e:
             self.log.error(f"Error rebuilding avatar cache: {e}")
 
-        # Write success message to chat & logs
-        self.send_system_message("Refreshed all AI personas in this chat.")
+        # Write success message to chat (if not silent) & logs
+        if not silent:
+            self.send_system_message("Refreshed all AI personas in this chat.")
         self.log.info(f"Refreshed all AI personas in chat '{self.chat_path}'.")
 
     @property
@@ -644,7 +645,7 @@ class PersonaManager(LoggingConfigurable):
         Callback when MCP servers are updated.
         Refresh the personas to load the new MCP server.
         """
-        await self.refresh_personas()
+        await self.refresh_personas(True)
 
     async def shutdown_personas(self):
         """
