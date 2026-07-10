@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
-from traitlets import Bool, List, Unicode, default
+from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
@@ -80,21 +80,10 @@ class PersonaManager(LoggingConfigurable):
         default_value="jupyter-ai-personas::jupyter_ai::JupyternautPersona",
         help=""
         "The ID of the default persona. If configured, the default persona "
-        "will automatically reply in a single-user chats until another "
-        "persona is `@`-mentioned. "
+        "replies to messages that don't name a target persona in their "
+        "metadata (until the picker selects someone else). "
         "Defaults to: 'jupyter-ai-personas::jupyter_ai::JupyternautPersona'. ",
         allow_none=True,
-        config=True,
-    )
-
-    mention_updates_active = Bool(
-        default_value=True,
-        help=""
-        "When True, an `@`-mention also sets the active persona that replies to "
-        "subsequent unmentioned messages (the multi-participant model). When "
-        "False, `@`-mentions are ignored for routing and only the active-persona "
-        "selector chooses who replies (the single-active-persona model). "
-        "Defaults to: True. ",
         config=True,
     )
 
@@ -141,10 +130,9 @@ class PersonaManager(LoggingConfigurable):
     base_url: str
     active_persona: BasePersona | None
     """
-    The persona that replies to unmentioned messages in a single-human chat. Set
-    by the active-persona selector or by an `@`-mention (when
-    `mention_updates_active` is True). `None` means no one replies. Initialized
-    from chat metadata, falling back to the default persona.
+    The fallback persona that replies to messages whose metadata names no target
+    persona. Set by the active-persona selector. `None` means no one replies.
+    Initialized from chat metadata, falling back to the default persona.
     """
 
     log: Logger  # type: ignore
@@ -467,59 +455,56 @@ class PersonaManager(LoggingConfigurable):
             self.ACTIVE_PERSONA_METADATA_KEY, persona.id if persona else ""
         )
 
-    def get_mentioned_personas(self, new_message: Message) -> list[BasePersona]:
+    PERSONA_METADATA_KEY = "persona"
+    """
+    Key in a message's `metadata` dict holding the ID of the persona that should
+    reply to it. Stamped onto outgoing messages by the chat input's persona
+    picker.
+    """
+
+    def get_target_persona(self, message: Message) -> BasePersona | None:
         """
-        Returns a list of all personas `@`-mentioned in a chat message, given a
-        reference to the chat message.
+        Returns the persona a message is addressed to, read from its metadata.
+
+        The chat input stamps `metadata["persona"]` with the ID of the selected
+        persona. Returns `None` if the message carries no persona (e.g. an older
+        message or an external client), or if the named persona is not installed
+        in this chat; callers fall back to the active persona in that case.
         """
-        mentioned_ids = set(new_message.mentions or [])
-        persona_list: list[BasePersona] = []
-        for mentioned_id in mentioned_ids:
-            if mentioned_id in self.personas:
-                persona_list.append(self.personas[mentioned_id])
-        return persona_list
+        metadata = message.metadata or {}
+        persona_id = metadata.get(self.PERSONA_METADATA_KEY)
+        if not persona_id:
+            return None
+        return self.personas.get(persona_id)
 
     def on_chat_message(self, room_id: str, message: Message):
         """
-        Method that routes an incoming message to the correct personas by
-        calling their `process_message()` methods.
+        Routes an incoming message to a single persona by calling its
+        `process_message()` method.
 
-        - Messages from a persona or the system only go to explicitly mentioned
-          personas, to avoid persona-to-persona reply loops.
+        The target is read from the message's own metadata
+        (`metadata["persona"]`), which the chat input's persona picker stamps
+        onto each outgoing message. When a message carries no persona — an older
+        message, or one from a client that doesn't set it — we fall back to the
+        chat's active persona (which defaults to `PersonaManager.default_persona`
+        and is `None` when the user has opted out of AI replies).
 
-        - A message from a human goes to the active persona, in single- and
-          multi-human chats alike. An `@`-mention overrides this, replying to
-          the mentioned personas and (when `mention_updates_active`) updating
-          the active persona. Selecting no one (`active_persona is None`) means
-          no one replies, which is how a user opts out of AI replies in a shared
-          chat. The active persona defaults to `PersonaManager.default_persona`.
+        Messages from a persona or the system are ignored, to avoid
+        persona-to-persona reply loops.
         """
-
-        sender_not_human = (
-            is_persona(message.sender) or message.sender == SYSTEM_USERNAME
-        )
-        mentioned_personas = self.get_mentioned_personas(message)
-
-        if sender_not_human:
-            if mentioned_personas:
-                self._broadcast(message, to_personas=mentioned_personas)
+        if is_persona(message.sender) or message.sender == SYSTEM_USERNAME:
             return
 
-        if mentioned_personas and self.mention_updates_active:
-            self.set_active_persona(mentioned_personas[0])
-            targeted_personas = mentioned_personas
-        else:
-            targeted_personas = [self.active_persona] if self.active_persona else []
-
+        target_persona = self.get_target_persona(message) or self.active_persona
         self.log.debug(
-            "Routing message: active=%s, mentioned=%s -> %s",
-            self.active_persona.name if self.active_persona else None,
-            [p.name for p in mentioned_personas],
-            [p.name for p in targeted_personas],
+            "Routing message to persona: %s",
+            target_persona.name if target_persona else None,
         )
-        self._broadcast(message, to_personas=targeted_personas)
+        self._broadcast(
+            message, to_personas=[target_persona] if target_persona else []
+        )
         return
-    
+
     def _broadcast(
         self,
         message: Message,

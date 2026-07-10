@@ -211,24 +211,24 @@ PERSONA_SENDER = "jupyter-ai-personas::pkg::Bot"
 HUMAN_SENDER = "human-1"
 
 
-def _routing_manager(active_persona=None, mention_updates_active=True):
+def _routing_manager(active_persona=None, personas=None):
     """A PersonaManager with only the state on_chat_message routing reads.
 
     Uses ``__new__`` to get the traitlets machinery without the heavy ``__init__``
     (which loads personas), then sets just the attributes routing touches.
     """
     pm = PersonaManager.__new__(PersonaManager)
-    pm.mention_updates_active = mention_updates_active
     pm.active_persona = active_persona
+    pm._personas = personas or {}
     pm.ychat = Mock()
-    pm.get_mentioned_personas = Mock(return_value=[])
     pm._broadcast = Mock()
     return pm
 
 
-def _message(sender):
+def _message(sender, metadata=None):
     message = Mock(spec=Message)
     message.sender = sender
+    message.metadata = metadata
     return message
 
 
@@ -241,65 +241,93 @@ class TestOnChatMessageRouting:
     """Who replies to a message. Asserts on the routing decision (the persona
     list handed to delivery), not on how delivery happens."""
 
-    def test_human_message_goes_to_the_active_persona(self):
+    def test_routes_to_the_persona_named_in_metadata(self):
+        target = _make_mock_persona()
+        active = _make_mock_persona()
+        pm = _routing_manager(active_persona=active, personas={"p1": target})
+
+        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "p1"}))
+
+        assert _replied_to(pm) == [target]
+
+    def test_falls_back_to_active_persona_when_metadata_has_no_persona(self):
         active = _make_mock_persona()
         pm = _routing_manager(active_persona=active)
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+        pm.on_chat_message("room", _message(HUMAN_SENDER, metadata=None))
 
         assert _replied_to(pm) == [active]
 
-    def test_mention_replies_to_the_mentioned_persona_and_makes_it_active(self):
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=None, mention_updates_active=True)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
-
-        assert _replied_to(pm) == [mentioned]
-        assert pm.active_persona is mentioned
-
-    def test_mention_is_ignored_for_routing_when_flag_is_off(self):
+    def test_falls_back_to_active_persona_when_named_persona_is_unknown(self):
         active = _make_mock_persona()
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=active, mention_updates_active=False)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
+        pm = _routing_manager(active_persona=active, personas={})
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "gone"}))
 
         assert _replied_to(pm) == [active]
-        assert pm.active_persona is active
 
-    def test_no_active_persona_means_no_one_replies(self):
+    def test_no_active_persona_and_no_metadata_means_no_one_replies(self):
         pm = _routing_manager(active_persona=None)
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+        pm.on_chat_message("room", _message(HUMAN_SENDER, metadata=None))
 
         assert _replied_to(pm) == []
 
-    def test_persona_sender_without_mention_is_ignored(self):
-        pm = _routing_manager(active_persona=_make_mock_persona())
-
-        pm.on_chat_message("room", _message(PERSONA_SENDER))
-
-        pm._broadcast.assert_not_called()
-
-    def test_persona_sender_with_mention_replies_to_the_mentioned_persona(self):
+    def test_metadata_persona_wins_over_active_persona(self):
+        target = _make_mock_persona()
         active = _make_mock_persona()
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=active)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
+        pm = _routing_manager(active_persona=active, personas={"p1": target})
 
-        pm.on_chat_message("room", _message(PERSONA_SENDER))
+        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "p1"}))
 
-        assert _replied_to(pm) == [mentioned]
+        assert _replied_to(pm) == [target]
+        # Routing by metadata does not mutate the active persona.
+        assert pm.active_persona is active
 
-    def test_system_sender_without_mention_is_ignored(self):
-        pm = _routing_manager(active_persona=_make_mock_persona())
+    def test_persona_sender_is_ignored(self):
+        pm = _routing_manager(
+            active_persona=_make_mock_persona(),
+            personas={"p1": _make_mock_persona()},
+        )
 
-        pm.on_chat_message("room", _message(SYSTEM_USERNAME))
+        pm.on_chat_message("room", _message(PERSONA_SENDER, {"persona": "p1"}))
 
         pm._broadcast.assert_not_called()
+
+    def test_system_sender_is_ignored(self):
+        pm = _routing_manager(
+            active_persona=_make_mock_persona(),
+            personas={"p1": _make_mock_persona()},
+        )
+
+        pm.on_chat_message("room", _message(SYSTEM_USERNAME, {"persona": "p1"}))
+
+        pm._broadcast.assert_not_called()
+
+
+class TestGetTargetPersona:
+    """Reading the addressed persona from a message's metadata."""
+
+    def test_returns_the_persona_named_in_metadata(self):
+        target = _make_mock_persona()
+        pm = _routing_manager(personas={"p1": target})
+
+        assert pm.get_target_persona(_message(HUMAN_SENDER, {"persona": "p1"})) is target
+
+    def test_returns_none_when_metadata_is_missing(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
+
+        assert pm.get_target_persona(_message(HUMAN_SENDER, metadata=None)) is None
+
+    def test_returns_none_when_metadata_has_no_persona(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
+
+        assert pm.get_target_persona(_message(HUMAN_SENDER, {"other": "x"})) is None
+
+    def test_returns_none_when_named_persona_is_unknown(self):
+        pm = _routing_manager(personas={})
+
+        assert pm.get_target_persona(_message(HUMAN_SENDER, {"persona": "gone"})) is None
 
 
 class TestActivePersonaResolution:
