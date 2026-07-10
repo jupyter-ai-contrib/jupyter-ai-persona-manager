@@ -2,9 +2,10 @@
 Test the persona manager functionality.
 """
 
+import logging
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from jupyterlab_chat.models import Message
@@ -211,17 +212,16 @@ PERSONA_SENDER = "jupyter-ai-personas::pkg::Bot"
 HUMAN_SENDER = "human-1"
 
 
-def _routing_manager(active_persona=None, personas=None):
+def _routing_manager(personas=None):
     """A PersonaManager with only the state on_chat_message routing reads.
 
     Uses ``__new__`` to get the traitlets machinery without the heavy ``__init__``
     (which loads personas), then sets just the attributes routing touches.
     """
     pm = PersonaManager.__new__(PersonaManager)
-    pm.active_persona = active_persona
     pm._personas = personas or {}
-    pm.ychat = Mock()
-    pm._broadcast = Mock()
+    pm.log = logging.getLogger("test-persona-manager")
+    pm.event_loop = Mock()
     return pm
 
 
@@ -232,155 +232,54 @@ def _message(sender, metadata=None):
     return message
 
 
-def _replied_to(pm):
-    """The personas on_chat_message decided should reply."""
-    return pm._broadcast.call_args.kwargs["to_personas"]
-
-
 class TestOnChatMessageRouting:
-    """Who replies to a message. Asserts on the routing decision (the persona
-    list handed to delivery), not on how delivery happens."""
+    """Who a message is routed to. Patches ``_safe_process`` (the per-persona
+    delivery coroutine) to assert which persona a message reaches."""
+
+    def _route(self, pm, message):
+        """Run routing with ``_safe_process`` patched; return the personas it
+        was called with."""
+        # Patch with a plain (non-async) mock so no coroutine is created — the
+        # real `_safe_process` is a coroutine function, and we don't run it here.
+        with patch(
+            "jupyter_ai_persona_manager.persona_manager._safe_process",
+            new=MagicMock(),
+        ) as safe_process:
+            pm.on_chat_message("room", message)
+        return [call.args[0] for call in safe_process.call_args_list]
 
     def test_routes_to_the_persona_named_in_metadata(self):
         target = _make_mock_persona()
-        active = _make_mock_persona()
-        pm = _routing_manager(active_persona=active, personas={"p1": target})
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "p1"}))
-
-        assert _replied_to(pm) == [target]
-
-    def test_falls_back_to_active_persona_when_metadata_has_no_persona(self):
-        active = _make_mock_persona()
-        pm = _routing_manager(active_persona=active)
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER, metadata=None))
-
-        assert _replied_to(pm) == [active]
-
-    def test_falls_back_to_active_persona_when_named_persona_is_unknown(self):
-        active = _make_mock_persona()
-        pm = _routing_manager(active_persona=active, personas={})
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "gone"}))
-
-        assert _replied_to(pm) == [active]
-
-    def test_no_active_persona_and_no_metadata_means_no_one_replies(self):
-        pm = _routing_manager(active_persona=None)
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER, metadata=None))
-
-        assert _replied_to(pm) == []
-
-    def test_metadata_persona_wins_over_active_persona(self):
-        target = _make_mock_persona()
-        active = _make_mock_persona()
-        pm = _routing_manager(active_persona=active, personas={"p1": target})
-
-        pm.on_chat_message("room", _message(HUMAN_SENDER, {"persona": "p1"}))
-
-        assert _replied_to(pm) == [target]
-        # Routing by metadata does not mutate the active persona.
-        assert pm.active_persona is active
-
-    def test_persona_sender_is_ignored(self):
-        pm = _routing_manager(
-            active_persona=_make_mock_persona(),
-            personas={"p1": _make_mock_persona()},
-        )
-
-        pm.on_chat_message("room", _message(PERSONA_SENDER, {"persona": "p1"}))
-
-        pm._broadcast.assert_not_called()
-
-    def test_system_sender_is_ignored(self):
-        pm = _routing_manager(
-            active_persona=_make_mock_persona(),
-            personas={"p1": _make_mock_persona()},
-        )
-
-        pm.on_chat_message("room", _message(SYSTEM_USERNAME, {"persona": "p1"}))
-
-        pm._broadcast.assert_not_called()
-
-
-class TestGetTargetPersona:
-    """Reading the addressed persona from a message's metadata."""
-
-    def test_returns_the_persona_named_in_metadata(self):
-        target = _make_mock_persona()
         pm = _routing_manager(personas={"p1": target})
 
-        assert pm.get_target_persona(_message(HUMAN_SENDER, {"persona": "p1"})) is target
+        routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "p1"}))
 
-    def test_returns_none_when_metadata_is_missing(self):
+        assert routed == [target]
+
+    def test_no_target_persona_means_no_one_is_routed_to(self):
         pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
-        assert pm.get_target_persona(_message(HUMAN_SENDER, metadata=None)) is None
+        routed = self._route(pm, _message(HUMAN_SENDER, metadata=None))
 
-    def test_returns_none_when_metadata_has_no_persona(self):
+        assert routed == []
+
+    def test_unknown_target_persona_means_no_one_is_routed_to(self):
         pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
-        assert pm.get_target_persona(_message(HUMAN_SENDER, {"other": "x"})) is None
+        routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "gone"}))
 
-    def test_returns_none_when_named_persona_is_unknown(self):
-        pm = _routing_manager(personas={})
+        assert routed == []
 
-        assert pm.get_target_persona(_message(HUMAN_SENDER, {"persona": "gone"})) is None
+    def test_persona_sender_is_ignored(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
+        routed = self._route(pm, _message(PERSONA_SENDER, {"to_persona": "p1"}))
 
-class TestActivePersonaResolution:
-    """How the active persona is resolved at startup (_init_active_persona)."""
+        assert routed == []
 
-    def _manager(self, *, metadata, personas, default_id=""):
-        pm = PersonaManager.__new__(PersonaManager)
-        pm.default_persona_id = default_id
-        pm.room_id = "room"
-        pm._personas = personas
-        pm.ychat = Mock()
-        pm.ychat.get_metadata.return_value = metadata
-        return pm
+    def test_system_sender_is_ignored(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
-    def test_uses_the_stored_active_persona_when_it_still_exists(self):
-        stored = _make_mock_persona()
-        pm = self._manager(metadata={"active_persona_id": "p1"}, personas={"p1": stored})
+        routed = self._route(pm, _message(SYSTEM_USERNAME, {"to_persona": "p1"}))
 
-        assert pm._init_active_persona() is stored
-
-    def test_empty_stored_value_means_no_one(self):
-        pm = self._manager(
-            metadata={"active_persona_id": ""}, personas={"p1": _make_mock_persona()}
-        )
-
-        assert pm._init_active_persona() is None
-
-    def test_falls_back_to_default_when_the_stored_persona_is_gone(self):
-        default = _make_mock_persona()
-        pm = self._manager(
-            metadata={"active_persona_id": "gone"},
-            personas={"d": default},
-            default_id="d",
-        )
-
-        assert pm._init_active_persona() is default
-
-    def test_uses_the_default_persona_when_nothing_is_stored(self):
-        default = _make_mock_persona()
-        pm = self._manager(metadata={}, personas={"d": default}, default_id="d")
-
-        assert pm._init_active_persona() is default
-
-    def test_uses_the_sole_persona_when_no_default_and_only_one(self):
-        only = _make_mock_persona()
-        pm = self._manager(metadata={}, personas={"only": only})
-
-        assert pm._init_active_persona() is only
-
-    def test_no_one_when_no_default_and_several_personas(self):
-        pm = self._manager(
-            metadata={},
-            personas={"a": _make_mock_persona(), "b": _make_mock_persona()},
-        )
-
-        assert pm._init_active_persona() is None
+        assert routed == []

@@ -128,12 +128,6 @@ class PersonaManager(LoggingConfigurable):
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
-    active_persona: BasePersona | None
-    """
-    The fallback persona that replies to messages whose metadata names no target
-    persona. Set by the active-persona selector. `None` means no one replies.
-    Initialized from chat metadata, falling back to the default persona.
-    """
 
     log: Logger  # type: ignore
     """
@@ -177,9 +171,6 @@ class PersonaManager(LoggingConfigurable):
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
 
-        # Initialize the active persona from chat metadata, falling back to the
-        # default persona (or the sole persona if there is exactly one).
-        self.active_persona = self._init_active_persona()
         if self.default_persona:
             self.log.info(
                 f"Default persona set to '{self.default_persona.name}' in chat '{self.room_id}'."
@@ -413,113 +404,36 @@ class PersonaManager(LoggingConfigurable):
             return None
         return self.personas.get(self.default_persona_id)
 
-    ACTIVE_PERSONA_METADATA_KEY = "active_persona_id"
-
-    def _init_active_persona(self) -> BasePersona | None:
-        """
-        Resolve the active persona at startup: from chat metadata if it was set
-        before, otherwise the default persona, otherwise the sole persona if the
-        chat has exactly one. An empty stored value means "no one replies".
-        """
-        metadata = self.ychat.get_metadata() or {}
-        if self.ACTIVE_PERSONA_METADATA_KEY in metadata:
-            stored_id = metadata[self.ACTIVE_PERSONA_METADATA_KEY]
-            if not stored_id:
-                # Empty string is an explicit "no one replies" selection.
-                return None
-            persona = self.personas.get(stored_id)
-            if persona is not None:
-                return persona
-            # The stored persona was uninstalled or renamed. Fall back to the
-            # default rather than silently disabling all replies.
-            self.log.warning(
-                "Stored active persona '%s' not found in chat '%s'; "
-                "falling back to the default persona.",
-                stored_id,
-                self.room_id,
-            )
-        if self.default_persona:
-            return self.default_persona
-        if len(self.personas) == 1:
-            return next(iter(self.personas.values()))
-        return None
-
-    def set_active_persona(self, persona: BasePersona | None) -> None:
-        """
-        Set the persona that replies to unmentioned messages, and persist the
-        choice with the chat so it survives a reload. `None` means no one
-        replies.
-        """
-        self.active_persona = persona
-        self.ychat.set_metadata(
-            self.ACTIVE_PERSONA_METADATA_KEY, persona.id if persona else ""
-        )
-
-    PERSONA_METADATA_KEY = "persona"
+    TO_PERSONA_METADATA_KEY = "to_persona"
     """
-    Key in a message's `metadata` dict holding the ID of the persona that should
-    reply to it. Stamped onto outgoing messages by the chat input's persona
-    picker.
+    Key in a message's `metadata` dict holding the ID of the persona the message
+    is directed to. The chat input's persona picker stamps this onto each
+    outgoing message.
     """
-
-    def get_target_persona(self, message: Message) -> BasePersona | None:
-        """
-        Returns the persona a message is addressed to, read from its metadata.
-
-        The chat input stamps `metadata["persona"]` with the ID of the selected
-        persona. Returns `None` if the message carries no persona (e.g. an older
-        message or an external client), or if the named persona is not installed
-        in this chat; callers fall back to the active persona in that case.
-        """
-        metadata = message.metadata or {}
-        persona_id = metadata.get(self.PERSONA_METADATA_KEY)
-        if not persona_id:
-            return None
-        return self.personas.get(persona_id)
 
     def on_chat_message(self, room_id: str, message: Message):
         """
-        Routes an incoming message to a single persona by calling its
-        `process_message()` method.
+        Routes an incoming message to the persona it is addressed to.
 
-        The target is read from the message's own metadata
-        (`metadata["persona"]`), which the chat input's persona picker stamps
-        onto each outgoing message. When a message carries no persona — an older
-        message, or one from a client that doesn't set it — we fall back to the
-        chat's active persona (which defaults to `PersonaManager.default_persona`
-        and is `None` when the user has opted out of AI replies).
+        The target persona's ID is read from the message's own metadata
+        (`metadata["to_persona"]`), which the chat input's persona picker stamps
+        onto each outgoing message. The message is delivered to exactly that
+        persona by calling its `process_message()` method.
 
-        Messages from a persona or the system are ignored, to avoid
-        persona-to-persona reply loops.
+        A message is not routed anywhere when it names no target persona, names
+        one that isn't installed in this chat, or is sent by a persona or the
+        system (the last avoids persona-to-persona reply loops).
         """
         if is_persona(message.sender) or message.sender == SYSTEM_USERNAME:
             return
 
-        target_persona = self.get_target_persona(message) or self.active_persona
+        persona_id = (message.metadata or {}).get(self.TO_PERSONA_METADATA_KEY)
+        persona = self.personas.get(persona_id) if persona_id else None
         self.log.debug(
-            "Routing message to persona: %s",
-            target_persona.name if target_persona else None,
+            "Routing message to persona: %s", persona.name if persona else None
         )
-        self._broadcast(
-            message, to_personas=[target_persona] if target_persona else []
-        )
-        return
-
-    def _broadcast(
-        self,
-        message: Message,
-        *,
-        to_personas: list[BasePersona] | dict[str, BasePersona],
-    ) -> None:
-        """
-        Broadcasts a message to all personas in a given list or dictionary.
-        """
-        persona_list: list[BasePersona] = (
-            to_personas if isinstance(to_personas, list) else list(to_personas.values())
-        )
-        for persona in persona_list:
+        if persona:
             self.event_loop.create_task(_safe_process(persona, message))
-        return
 
     async def refresh_personas(self):
         """
@@ -536,10 +450,6 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
-
-        # Re-resolve the active persona against the fresh instances, since the
-        # previous instance was just shut down. The id is persisted in metadata.
-        self.active_persona = self._init_active_persona()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings
