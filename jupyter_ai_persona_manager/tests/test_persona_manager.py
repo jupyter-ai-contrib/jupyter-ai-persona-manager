@@ -270,16 +270,13 @@ class TestOnChatMessageRouting:
 
         assert routed == []
 
-    def test_persona_sender_is_ignored(self):
-        pm = _routing_manager(personas={"p1": _make_mock_persona()})
+    def test_routes_by_metadata_regardless_of_sender(self):
+        # Routing keys only on `to_persona`; the sender is not consulted. A
+        # persona addressing another persona via metadata is explicit and
+        # intentional, so there is no sender-based guard.
+        target = _make_mock_persona()
+        pm = _routing_manager(personas={"p1": target})
 
-        routed = self._route(pm, _message(PERSONA_SENDER, {"to_persona": "p1"}))
-
-        assert routed == []
-
-    def test_system_sender_is_ignored(self):
-        pm = _routing_manager(personas={"p1": _make_mock_persona()})
-
-        routed = self._route(pm, _message(SYSTEM_USERNAME, {"to_persona": "p1"}))
-
-        assert routed == []
+        for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
+            routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
+            assert routed == [target]

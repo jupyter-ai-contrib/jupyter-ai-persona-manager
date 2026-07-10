@@ -420,13 +420,9 @@ class PersonaManager(LoggingConfigurable):
         onto each outgoing message. The message is delivered to exactly that
         persona by calling its `process_message()` method.
 
-        A message is not routed anywhere when it names no target persona, names
-        one that isn't installed in this chat, or is sent by a persona or the
-        system (the last avoids persona-to-persona reply loops).
+        A message is not routed anywhere when it names no target persona or names
+        one that isn't installed in this chat.
         """
-        if is_persona(message.sender) or message.sender == SYSTEM_USERNAME:
-            return
-
         persona_id = (message.metadata or {}).get(self.TO_PERSONA_METADATA_KEY)
         persona = self.personas.get(persona_id) if persona_id else None
         self.log.debug(
