@@ -52,9 +52,16 @@ def clear_avatar_cache() -> None:
 
 
 class MessageHandler(JupyterHandler):
-    """
-    Handler to receive a persona ID and a message, route it through a temporary PersonaManager,
-    and return the persona's response.
+    """Handler to receive a persona ID and a message, route it through a
+    temporary PersonaManager, and return the persona's response.
+
+    metadata can contain a room argument which persists a room
+    argument into a thread which remembers chats
+
+    example
+ ```
+    %%ai @Jupyternaut -m '{"model_id": "openai/openclaw", "model_args": {"api_base": "http://openclaw:18789/v1"}, "room": "test1"}' 
+ ```
     """
 
     @tornado.web.authenticated
@@ -66,6 +73,7 @@ class MessageHandler(JupyterHandler):
             if not persona_name or not message_text:
                 raise tornado.web.HTTPError(400, "Missing 'persona' or 'message' field")
             metadata = data.get("metadata")
+            room = metadata.get("room")
         except Exception as e:
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
@@ -73,28 +81,33 @@ class MessageHandler(JupyterHandler):
         fileid_manager = serverapp.web_app.settings.get("file_id_manager")
         contents_manager = serverapp.contents_manager
         root_dir = getattr(contents_manager, "root_dir", "")
-        base_url = serverapp.web_app.settings.get("base_url", "/")
-        uid = uuid.uuid4()
-        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
-        temp_room_id = f"text:chat:{room_uid}"
+        temp_room = False
+        if room is None:
+            room =  uuid.uuid4()
+            temp_room = True
+        elif metadata.get("model_args", {}).get("persistence") is None:
+            metadata.setdefault("model_args", {}).setdefault("persistence", "true")
 
-        # Obtain or create a PersonaManager for this temporary room
-        # Reuse existing if present, otherwise instantiate a minimal manager
-        ychat = YChat()
-        ychat.awareness = Awareness(ydoc=ychat._ydoc)
-        # Retrieve required managers from server settings
-        # Instantiate PersonaManager
-        from .persona_manager import PersonaManager
+        room_uid = fileid_manager.index(os.path.join(root_dir, f"{room}"))
+        room_id = f"text:chat:{room_uid}"
+        router = self.serverapp.web_app.settings.get(
+            "jupyter-ai", {}
+        ).get("router")
+        if router and room_id in router.active_chats:
+            self.log.info(f"Found room_id {room_id} for {room}")
+            ychat = router.active_chats[room_id]
+        else:
+            self.log.info(f"Create new room_id {room_id} for {room}")
+            ychat = YChat()
+            ychat.awareness = Awareness(ydoc=ychat._ydoc)
+            ychat.set_id(room_id)
+            router.connect_chat(room_id, ychat)
 
-        persona_manager = PersonaManager(
-            room_id=temp_room_id,
-            ychat=ychat,
-            fileid_manager=fileid_manager,
-            root_dir=root_dir,
-            event_loop=asyncio.get_event_loop(),
-            base_url=base_url,
-        )
-        # Capture output by temporarily overriding send_message of the target persona
+        persona_managers = self.serverapp.web_app.settings[
+            "jupyter-ai"
+        ]["persona-managers"]
+        persona_manager = persona_managers.get(room_id)
+
         target_persona = next(
             (
                 p
@@ -104,12 +117,14 @@ class MessageHandler(JupyterHandler):
             None,
         )
         if not target_persona:
-            raise tornado.web.HTTPError(404, f"Persona '{persona_name}' not found")
-
+            raise tornado.web.HTTPError(
+                404, f"Persona '{persona_name}' not found"
+            )
+        msg_time = time.time()
         msg = Message(
             id="msgid",
             body=message_text,
-            time=time.time(),
+            time=msg_time,
             sender=User(username=DEFAULT_SENDER,
                         name=DEFAULT_SENDER_NAME,
                         display_name=DEFAULT_SENDER_NAME).username,
@@ -128,8 +143,12 @@ class MessageHandler(JupyterHandler):
 
         try:
             # If currently writing, wait for the event that indicates it's done
-            if target_persona.awareness.get_local_state().get('isWriting', False):
-                await asyncio.wait_for(done_event.wait(), timeout=DEFAULT_RESPONSE_TIMEOUT)
+            if target_persona.awareness.get_local_state().get(
+                    'isWriting', False
+            ):
+                await asyncio.wait_for(
+                    done_event.wait(), timeout=DEFAULT_RESPONSE_TIMEOUT
+                )
         except asyncio.TimeoutError:
             self.log.warning("Timeout waiting for persona to finish writing")
 
@@ -137,6 +156,7 @@ class MessageHandler(JupyterHandler):
         response = "".join(
             msg.body if getattr(msg, "body", None) is not None else str(msg)
             for msg in ychat.get_messages()
+            if getattr(msg, "time", None) and msg.time > msg_time
         )
         self.set_header("Content-Type", "application/json")
         self.finish(json.dumps({"response": response}))
