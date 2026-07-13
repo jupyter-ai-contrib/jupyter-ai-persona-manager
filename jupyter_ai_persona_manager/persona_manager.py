@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
-from traitlets import Bool, List, Unicode, default
+from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
 from .base_persona import BasePersona
@@ -80,21 +80,10 @@ class PersonaManager(LoggingConfigurable):
         default_value="jupyter-ai-personas::jupyter_ai::JupyternautPersona",
         help=""
         "The ID of the default persona. If configured, the default persona "
-        "will automatically reply in a single-user chats until another "
-        "persona is `@`-mentioned. "
+        "replies to messages that don't name a target persona in their "
+        "metadata (until the picker selects someone else). "
         "Defaults to: 'jupyter-ai-personas::jupyter_ai::JupyternautPersona'. ",
         allow_none=True,
-        config=True,
-    )
-
-    mention_updates_active = Bool(
-        default_value=True,
-        help=""
-        "When True, an `@`-mention also sets the active persona that replies to "
-        "subsequent unmentioned messages (the multi-participant model). When "
-        "False, `@`-mentions are ignored for routing and only the active-persona "
-        "selector chooses who replies (the single-active-persona model). "
-        "Defaults to: True. ",
         config=True,
     )
 
@@ -139,13 +128,6 @@ class PersonaManager(LoggingConfigurable):
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
-    active_persona: BasePersona | None
-    """
-    The persona that replies to unmentioned messages in a single-human chat. Set
-    by the active-persona selector or by an `@`-mention (when
-    `mention_updates_active` is True). `None` means no one replies. Initialized
-    from chat metadata, falling back to the default persona.
-    """
 
     log: Logger  # type: ignore
     """
@@ -189,9 +171,6 @@ class PersonaManager(LoggingConfigurable):
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
 
-        # Initialize the active persona from chat metadata, falling back to the
-        # default persona (or the sole persona if there is exactly one).
-        self.active_persona = self._init_active_persona()
         if self.default_persona:
             self.log.info(
                 f"Default persona set to '{self.default_persona.name}' in chat '{self.room_id}'."
@@ -425,116 +404,32 @@ class PersonaManager(LoggingConfigurable):
             return None
         return self.personas.get(self.default_persona_id)
 
-    ACTIVE_PERSONA_METADATA_KEY = "active_persona_id"
-
-    def _init_active_persona(self) -> BasePersona | None:
-        """
-        Resolve the active persona at startup: from chat metadata if it was set
-        before, otherwise the default persona, otherwise the sole persona if the
-        chat has exactly one. An empty stored value means "no one replies".
-        """
-        metadata = self.ychat.get_metadata() or {}
-        if self.ACTIVE_PERSONA_METADATA_KEY in metadata:
-            stored_id = metadata[self.ACTIVE_PERSONA_METADATA_KEY]
-            if not stored_id:
-                # Empty string is an explicit "no one replies" selection.
-                return None
-            persona = self.personas.get(stored_id)
-            if persona is not None:
-                return persona
-            # The stored persona was uninstalled or renamed. Fall back to the
-            # default rather than silently disabling all replies.
-            self.log.warning(
-                "Stored active persona '%s' not found in chat '%s'; "
-                "falling back to the default persona.",
-                stored_id,
-                self.room_id,
-            )
-        if self.default_persona:
-            return self.default_persona
-        if len(self.personas) == 1:
-            return next(iter(self.personas.values()))
-        return None
-
-    def set_active_persona(self, persona: BasePersona | None) -> None:
-        """
-        Set the persona that replies to unmentioned messages, and persist the
-        choice with the chat so it survives a reload. `None` means no one
-        replies.
-        """
-        self.active_persona = persona
-        self.ychat.set_metadata(
-            self.ACTIVE_PERSONA_METADATA_KEY, persona.id if persona else ""
-        )
-
-    def get_mentioned_personas(self, new_message: Message) -> list[BasePersona]:
-        """
-        Returns a list of all personas `@`-mentioned in a chat message, given a
-        reference to the chat message.
-        """
-        mentioned_ids = set(new_message.mentions or [])
-        persona_list: list[BasePersona] = []
-        for mentioned_id in mentioned_ids:
-            if mentioned_id in self.personas:
-                persona_list.append(self.personas[mentioned_id])
-        return persona_list
+    TO_PERSONA_METADATA_KEY = "to_persona"
+    """
+    Key in a message's `metadata` dict holding the ID of the persona the message
+    is directed to. The chat input's persona picker stamps this onto each
+    outgoing message.
+    """
 
     def on_chat_message(self, room_id: str, message: Message):
         """
-        Method that routes an incoming message to the correct personas by
-        calling their `process_message()` methods.
+        Routes an incoming message to the persona it is addressed to.
 
-        - Messages from a persona or the system only go to explicitly mentioned
-          personas, to avoid persona-to-persona reply loops.
+        The target persona's ID is read from the message's own metadata
+        (`metadata["to_persona"]`), which the chat input's persona picker stamps
+        onto each outgoing message. The message is delivered to exactly that
+        persona by calling its `process_message()` method.
 
-        - A message from a human goes to the active persona, in single- and
-          multi-human chats alike. An `@`-mention overrides this, replying to
-          the mentioned personas and (when `mention_updates_active`) updating
-          the active persona. Selecting no one (`active_persona is None`) means
-          no one replies, which is how a user opts out of AI replies in a shared
-          chat. The active persona defaults to `PersonaManager.default_persona`.
+        A message is not routed anywhere when it names no target persona or names
+        one that isn't installed in this chat.
         """
-
-        sender_not_human = (
-            is_persona(message.sender) or message.sender == SYSTEM_USERNAME
-        )
-        mentioned_personas = self.get_mentioned_personas(message)
-
-        if sender_not_human:
-            if mentioned_personas:
-                self._broadcast(message, to_personas=mentioned_personas)
-            return
-
-        if mentioned_personas and self.mention_updates_active:
-            self.set_active_persona(mentioned_personas[0])
-            targeted_personas = mentioned_personas
-        else:
-            targeted_personas = [self.active_persona] if self.active_persona else []
-
+        persona_id = (message.metadata or {}).get(self.TO_PERSONA_METADATA_KEY)
+        persona = self.personas.get(persona_id) if persona_id else None
         self.log.debug(
-            "Routing message: active=%s, mentioned=%s -> %s",
-            self.active_persona.name if self.active_persona else None,
-            [p.name for p in mentioned_personas],
-            [p.name for p in targeted_personas],
+            "Routing message to persona: %s", persona.name if persona else None
         )
-        self._broadcast(message, to_personas=targeted_personas)
-        return
-    
-    def _broadcast(
-        self,
-        message: Message,
-        *,
-        to_personas: list[BasePersona] | dict[str, BasePersona],
-    ) -> None:
-        """
-        Broadcasts a message to all personas in a given list or dictionary.
-        """
-        persona_list: list[BasePersona] = (
-            to_personas if isinstance(to_personas, list) else list(to_personas.values())
-        )
-        for persona in persona_list:
+        if persona:
             self.event_loop.create_task(_safe_process(persona, message))
-        return
 
     async def refresh_personas(self):
         """
@@ -551,10 +446,6 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
-
-        # Re-resolve the active persona against the fresh instances, since the
-        # previous instance was just shut down. The id is persisted in metadata.
-        self.active_persona = self._init_active_persona()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings

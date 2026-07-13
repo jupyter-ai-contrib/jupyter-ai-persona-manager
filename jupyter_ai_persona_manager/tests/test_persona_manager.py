@@ -2,9 +2,10 @@
 Test the persona manager functionality.
 """
 
+import logging
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from jupyterlab_chat.models import Message
@@ -211,148 +212,71 @@ PERSONA_SENDER = "jupyter-ai-personas::pkg::Bot"
 HUMAN_SENDER = "human-1"
 
 
-def _routing_manager(active_persona=None, mention_updates_active=True):
+def _routing_manager(personas=None):
     """A PersonaManager with only the state on_chat_message routing reads.
 
     Uses ``__new__`` to get the traitlets machinery without the heavy ``__init__``
     (which loads personas), then sets just the attributes routing touches.
     """
     pm = PersonaManager.__new__(PersonaManager)
-    pm.mention_updates_active = mention_updates_active
-    pm.active_persona = active_persona
-    pm.ychat = Mock()
-    pm.get_mentioned_personas = Mock(return_value=[])
-    pm._broadcast = Mock()
+    pm._personas = personas or {}
+    pm.log = logging.getLogger("test-persona-manager")
+    pm.event_loop = Mock()
     return pm
 
 
-def _message(sender):
+def _message(sender, metadata=None):
     message = Mock(spec=Message)
     message.sender = sender
+    message.metadata = metadata
     return message
 
 
-def _replied_to(pm):
-    """The personas on_chat_message decided should reply."""
-    return pm._broadcast.call_args.kwargs["to_personas"]
-
-
 class TestOnChatMessageRouting:
-    """Who replies to a message. Asserts on the routing decision (the persona
-    list handed to delivery), not on how delivery happens."""
+    """Who a message is routed to. Patches ``_safe_process`` (the per-persona
+    delivery coroutine) to assert which persona a message reaches."""
 
-    def test_human_message_goes_to_the_active_persona(self):
-        active = _make_mock_persona()
-        pm = _routing_manager(active_persona=active)
+    def _route(self, pm, message):
+        """Run routing with ``_safe_process`` patched; return the personas it
+        was called with."""
+        # Patch with a plain (non-async) mock so no coroutine is created — the
+        # real `_safe_process` is a coroutine function, and we don't run it here.
+        with patch(
+            "jupyter_ai_persona_manager.persona_manager._safe_process",
+            new=MagicMock(),
+        ) as safe_process:
+            pm.on_chat_message("room", message)
+        return [call.args[0] for call in safe_process.call_args_list]
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+    def test_routes_to_the_persona_named_in_metadata(self):
+        target = _make_mock_persona()
+        pm = _routing_manager(personas={"p1": target})
 
-        assert _replied_to(pm) == [active]
+        routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "p1"}))
 
-    def test_mention_replies_to_the_mentioned_persona_and_makes_it_active(self):
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=None, mention_updates_active=True)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
+        assert routed == [target]
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+    def test_no_target_persona_means_no_one_is_routed_to(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
-        assert _replied_to(pm) == [mentioned]
-        assert pm.active_persona is mentioned
+        routed = self._route(pm, _message(HUMAN_SENDER, metadata=None))
 
-    def test_mention_is_ignored_for_routing_when_flag_is_off(self):
-        active = _make_mock_persona()
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=active, mention_updates_active=False)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
+        assert routed == []
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+    def test_unknown_target_persona_means_no_one_is_routed_to(self):
+        pm = _routing_manager(personas={"p1": _make_mock_persona()})
 
-        assert _replied_to(pm) == [active]
-        assert pm.active_persona is active
+        routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "gone"}))
 
-    def test_no_active_persona_means_no_one_replies(self):
-        pm = _routing_manager(active_persona=None)
+        assert routed == []
 
-        pm.on_chat_message("room", _message(HUMAN_SENDER))
+    def test_routes_by_metadata_regardless_of_sender(self):
+        # Routing keys only on `to_persona`; the sender is not consulted. A
+        # persona addressing another persona via metadata is explicit and
+        # intentional, so there is no sender-based guard.
+        target = _make_mock_persona()
+        pm = _routing_manager(personas={"p1": target})
 
-        assert _replied_to(pm) == []
-
-    def test_persona_sender_without_mention_is_ignored(self):
-        pm = _routing_manager(active_persona=_make_mock_persona())
-
-        pm.on_chat_message("room", _message(PERSONA_SENDER))
-
-        pm._broadcast.assert_not_called()
-
-    def test_persona_sender_with_mention_replies_to_the_mentioned_persona(self):
-        active = _make_mock_persona()
-        mentioned = _make_mock_persona()
-        pm = _routing_manager(active_persona=active)
-        pm.get_mentioned_personas = Mock(return_value=[mentioned])
-
-        pm.on_chat_message("room", _message(PERSONA_SENDER))
-
-        assert _replied_to(pm) == [mentioned]
-
-    def test_system_sender_without_mention_is_ignored(self):
-        pm = _routing_manager(active_persona=_make_mock_persona())
-
-        pm.on_chat_message("room", _message(SYSTEM_USERNAME))
-
-        pm._broadcast.assert_not_called()
-
-
-class TestActivePersonaResolution:
-    """How the active persona is resolved at startup (_init_active_persona)."""
-
-    def _manager(self, *, metadata, personas, default_id=""):
-        pm = PersonaManager.__new__(PersonaManager)
-        pm.default_persona_id = default_id
-        pm.room_id = "room"
-        pm._personas = personas
-        pm.ychat = Mock()
-        pm.ychat.get_metadata.return_value = metadata
-        return pm
-
-    def test_uses_the_stored_active_persona_when_it_still_exists(self):
-        stored = _make_mock_persona()
-        pm = self._manager(metadata={"active_persona_id": "p1"}, personas={"p1": stored})
-
-        assert pm._init_active_persona() is stored
-
-    def test_empty_stored_value_means_no_one(self):
-        pm = self._manager(
-            metadata={"active_persona_id": ""}, personas={"p1": _make_mock_persona()}
-        )
-
-        assert pm._init_active_persona() is None
-
-    def test_falls_back_to_default_when_the_stored_persona_is_gone(self):
-        default = _make_mock_persona()
-        pm = self._manager(
-            metadata={"active_persona_id": "gone"},
-            personas={"d": default},
-            default_id="d",
-        )
-
-        assert pm._init_active_persona() is default
-
-    def test_uses_the_default_persona_when_nothing_is_stored(self):
-        default = _make_mock_persona()
-        pm = self._manager(metadata={}, personas={"d": default}, default_id="d")
-
-        assert pm._init_active_persona() is default
-
-    def test_uses_the_sole_persona_when_no_default_and_only_one(self):
-        only = _make_mock_persona()
-        pm = self._manager(metadata={}, personas={"only": only})
-
-        assert pm._init_active_persona() is only
-
-    def test_no_one_when_no_default_and_several_personas(self):
-        pm = self._manager(
-            metadata={},
-            personas={"a": _make_mock_persona(), "b": _make_mock_persona()},
-        )
-
-        assert pm._init_active_persona() is None
+        for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
+            routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
+            assert routed == [target]

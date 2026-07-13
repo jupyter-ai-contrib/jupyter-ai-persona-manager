@@ -3,7 +3,7 @@ Tests for the PersonaManagerExtension class.
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 from jupyter_ai_persona_manager.extension import PersonaManagerExtension
 
 
@@ -79,3 +79,51 @@ async def test_stop_extension_without_jupyter_ai_settings(extension, mock_server
 
     # Should not raise an exception
     await extension.stop_extension()
+
+
+from traitlets.config import Config
+
+from jupyter_ai_persona_manager.persona_manager import PersonaManager
+
+
+class TestDefaultPersonaId:
+    """The default persona ID resolved for the frontend PageConfig."""
+
+    def test_uses_the_trait_default_when_not_configured(self, extension):
+        assert (
+            extension._default_persona_id()
+            == PersonaManager.default_persona_id.default_value
+        )
+
+    def test_uses_a_user_configured_override(self, extension):
+        extension.config = Config(
+            {"PersonaManager": {"default_persona_id": "pkg::Custom"}}
+        )
+        assert extension._default_persona_id() == "pkg::Custom"
+
+    def test_returns_empty_string_when_default_is_disabled(self, extension):
+        # `default_persona_id` allows None to disable the default persona.
+        extension.config = Config({"PersonaManager": {"default_persona_id": None}})
+        assert extension._default_persona_id() == ""
+
+
+def test_initialize_settings_advertises_default_persona(extension, mock_server_app):
+    """initialize_settings writes the default persona ID into page_config_data
+    so the frontend can read it at startup."""
+    # `self.settings` mirrors the web app settings for an ExtensionApp; provide
+    # it so the method can seed the persona-managers dict.
+    extension.settings = mock_server_app.web_app.settings
+    # `initialize_settings` kicks off a router-integration task on the event
+    # loop; stub the loop (a read-only property) and the coroutine it schedules
+    # so the test needs no running loop.
+    with patch.object(
+        type(extension), "event_loop", new_callable=PropertyMock
+    ) as event_loop, patch.object(extension, "_setup_router_integration"):
+        event_loop.return_value = Mock()
+        extension.initialize_settings()
+
+    page_config = mock_server_app.web_app.settings["page_config_data"]
+    assert (
+        page_config["jupyter_ai_default_persona"]
+        == PersonaManager.default_persona_id.default_value
+    )

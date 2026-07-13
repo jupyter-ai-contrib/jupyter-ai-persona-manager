@@ -67,6 +67,13 @@ class PersonaManagerExtension(ExtensionApp):
         if 'persona-managers' not in self.settings['jupyter-ai']:
             self.settings['jupyter-ai']['persona-managers'] = {}
 
+        # Advertise the default persona ID to the frontend via PageConfig, so a
+        # chat with no prior persona selection can pre-select it without a
+        # network round-trip. Read on the frontend via
+        # `PageConfig.getOption('jupyter_ai_default_persona')`.
+        page_config = self.serverapp.web_app.settings.setdefault("page_config_data", {})
+        page_config["jupyter_ai_default_persona"] = self._default_persona_id()
+
         # Set up router integration task
         self.event_loop.create_task(self._setup_router_integration())
 
@@ -83,6 +90,19 @@ class PersonaManagerExtension(ExtensionApp):
         self.log.info(f"Registered {self.name} server extension")
         startup_time = round((time.time() - start) * 1000)
         self.log.info(f"Initialized Persona Manager server extension in {startup_time} ms.")
+
+    def _default_persona_id(self) -> str:
+        """
+        The configured default persona ID, resolving any user override of
+        `PersonaManager.default_persona_id` before any `PersonaManager` is
+        instantiated. Returns "" when the default is disabled (`allow_none`).
+        """
+        PersonaManagerClass = self.persona_manager_class
+        class_config = self.config.get(PersonaManagerClass.__name__, {})
+        if "default_persona_id" in class_config:
+            # An explicit `None` override disables the default persona.
+            return class_config["default_persona_id"] or ""
+        return PersonaManagerClass.default_persona_id.default_value or ""
 
     async def _setup_router_integration(self) -> None:
         """
