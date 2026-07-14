@@ -53,10 +53,10 @@ class TestAwarenessState:
                 "p2": _mock_persona("p2", "Two", 222, "/two"),
             }
         )
-        pm.update_awareness_state()
+        pm._publish_persona_list()
 
-        # Read the published personas back out through the public getter.
-        by_id = {p.id: p for p in pm.get_awareness_state()}
+        # Read the published personas back off the awareness slot.
+        by_id = {p.id: p for p in pm._awareness.personas}
         assert by_id["p1"].name == "One"
         assert by_id["p1"].yjs_client_id == 111
         assert by_id["p1"].avatar_url == "/one"
@@ -64,17 +64,17 @@ class TestAwarenessState:
 
     def test_empty_when_no_personas(self):
         pm = _manager({})
-        pm.update_awareness_state()
-        assert pm.get_awareness_state() == []
+        pm._publish_persona_list()
+        assert pm._awareness.personas == []
 
-    def test_update_republishes_after_personas_change(self):
+    def test_republishes_after_personas_change(self):
         pm = _manager({"p1": _mock_persona("p1", "One", 111)})
-        pm.update_awareness_state()
-        assert [p.id for p in pm.get_awareness_state()] == ["p1"]
+        pm._publish_persona_list()
+        assert [p.id for p in pm._awareness.personas] == ["p1"]
 
         pm._personas = {"p2": _mock_persona("p2", "Two", 222)}
-        pm.update_awareness_state()
-        assert [p.id for p in pm.get_awareness_state()] == ["p2"]
+        pm._publish_persona_list()
+        assert [p.id for p in pm._awareness.personas] == ["p2"]
 
     def test_fixed_client_id_constant_is_53_bit(self):
         # A 53-bit integer is representable exactly as a JS number.

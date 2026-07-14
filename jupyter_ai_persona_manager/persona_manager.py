@@ -194,7 +194,7 @@ class PersonaManager(LoggingConfigurable):
         # publish the list of personas. This is the source of truth the browser
         # reads for the persona selector, replacing REST polling.
         self._awareness = PersonaManagerAwareness(ychat=self.ychat, log=self.log)
-        self.update_awareness_state()
+        self._publish_persona_list()
 
         if self.default_persona:
             self.log.info(
@@ -423,14 +423,7 @@ class PersonaManager(LoggingConfigurable):
         """
         return self._personas
 
-    def get_awareness_state(self) -> list[PersonaOption]:
-        """
-        Return the list of personas currently published under the manager's
-        client ID, read back from the awareness slot.
-        """
-        return self._awareness.personas
-
-    def update_awareness_state(self) -> None:
+    def _publish_persona_list(self) -> None:
         """
         Rebuild the persona list from the current personas and publish it under
         the manager's client ID, which rebroadcasts it over the Yjs awareness
@@ -499,7 +492,7 @@ class PersonaManager(LoggingConfigurable):
 
         # Republish the persona list, since reloaded personas have new client
         # IDs and the set of personas may have changed.
-        self.update_awareness_state()
+        self._publish_persona_list()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings
