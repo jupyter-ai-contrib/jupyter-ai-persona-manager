@@ -143,57 +143,6 @@ class MessageHandler(JupyterHandler):
         self.finish(json.dumps({"response": response}))
 
 
-class PersonaManagerReadinessHandler(JupyterHandler):
-    """
-    Readiness endpoint for the persona-manager awareness channel.
-
-    Resolves only once the `PersonaManager` for the requested chat has been
-    registered (and, with it, its personas). Returns the fixed Yjs client ID
-    under which the manager publishes its persona list. The browser caches this
-    ID and reads the persona list from that slot of the awareness map, instead
-    of polling a REST API.
-    """
-
-    @property
-    def file_id_manager(self):
-        manager = self.serverapp.web_app.settings.get("file_id_manager")
-        assert manager
-        return manager
-
-    @tornado.web.authenticated
-    async def get(self):
-        from .persona_awareness import PERSONA_MANAGER_AWARENESS_CLIENT_ID
-
-        chat_path = self.get_argument("chat_path", None)
-        if not chat_path:
-            raise tornado.web.HTTPError(
-                400, "chat_path is required as a URL query parameter"
-            )
-
-        file_id = self.file_id_manager.get_id(chat_path)
-        if not file_id:
-            raise tornado.web.HTTPError(404, f"Chat not found: {chat_path}")
-        room_id = f"text:chat:{file_id}"
-
-        persona_managers = (
-            self.serverapp.web_app.settings.get("jupyter-ai", {})
-            .get("persona-managers", {})
-        )
-        persona_manager = persona_managers.get(room_id)
-        if persona_manager is None:
-            # The manager is not registered yet; the client should retry.
-            raise tornado.web.HTTPError(
-                503, f"Persona manager not ready for chat: {chat_path}"
-            )
-
-        self.set_header("Content-Type", "application/json")
-        self.finish(
-            json.dumps(
-                {"persona_manager_client_id": PERSONA_MANAGER_AWARENESS_CLIENT_ID}
-            )
-        )
-
-
 class AvatarHandler(JupyterHandler):
     """
     Handler for serving persona avatar files.

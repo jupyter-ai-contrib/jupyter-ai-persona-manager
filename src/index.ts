@@ -3,6 +3,10 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 
+// Public awareness API: typed, read-only views of the persona-manager and
+// persona awareness slots, for consumers building on the awareness channel.
+export * from './awareness';
+
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
  */

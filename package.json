@@ -58,6 +58,7 @@
         "watch:labextension": "jupyter labextension watch ."
     },
     "dependencies": {
+        "@jupyter/ydoc": "*",
         "@jupyterlab/application": "^4.0.0",
         "@jupyterlab/coreutils": "^6.0.0",
         "@jupyterlab/services": "^7.0.0"
@@ -110,7 +111,13 @@
             }
         },
         "extension": true,
-        "outputDir": "jupyter_ai_persona_manager/labextension"
+        "outputDir": "jupyter_ai_persona_manager/labextension",
+        "sharedPackages": {
+            "@jupyter/ydoc": {
+                "singleton": true,
+                "bundled": false
+            }
+        }
     },
     "eslintIgnore": [
         "node_modules",
