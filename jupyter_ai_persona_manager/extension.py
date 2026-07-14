@@ -11,7 +11,11 @@ from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
-from jupyter_ai_persona_manager.handlers import AvatarHandler, MessageHandler, build_avatar_cache
+from jupyter_ai_persona_manager.handlers import (
+    AvatarHandler,
+    MessageHandler,
+    build_avatar_cache,
+)
 
 from .persona_manager import PersonaManager
 

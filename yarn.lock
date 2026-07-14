@@ -1989,6 +1989,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@jupyter-ai/persona-manager@workspace:."
   dependencies:
+    "@jupyter/ydoc": "*"
     "@jupyterlab/application": ^4.0.0
     "@jupyterlab/builder": ^4.0.0
     "@jupyterlab/coreutils": ^6.0.0
@@ -2043,9 +2044,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyter/ydoc@npm:^3.1.0":
-  version: 3.1.0
-  resolution: "@jupyter/ydoc@npm:3.1.0"
+"@jupyter/ydoc@npm:*":
+  version: 4.1.1
+  resolution: "@jupyter/ydoc@npm:4.1.1"
   dependencies:
     "@jupyterlab/nbformat": ^3.0.0 || ^4.0.0-alpha.21 || ^4.0.0
     "@lumino/coreutils": ^1.11.0 || ^2.0.0
@@ -2053,7 +2054,21 @@ __metadata:
     "@lumino/signaling": ^1.10.0 || ^2.0.0
     y-protocols: ^1.0.5
     yjs: ^13.5.40
-  checksum: 7f2423752395ec590ed46754c10c87db4f5b804aa9608ef2869f52872e9a29cb5f9e32908325efb221d9ce4fad642a1f7e0dbb8f2ee40c352b8380e46ccba93d
+  checksum: 46ee6f70d2a971b352f5c89ab3bd36cf6e58317b3bdbb41b0d0e98f7fe7a96fe31eb733c3da0363a08d48cdaf0ecb596116e2fdbebd307e3b4c768da5b4d7e65
+  languageName: node
+  linkType: hard
+
+"@jupyter/ydoc@npm:^3.1.0":
+  version: 3.5.0
+  resolution: "@jupyter/ydoc@npm:3.5.0"
+  dependencies:
+    "@jupyterlab/nbformat": ^3.0.0 || ^4.0.0-alpha.21 || ^4.0.0
+    "@lumino/coreutils": ^1.11.0 || ^2.0.0
+    "@lumino/disposable": ^1.10.0 || ^2.0.0
+    "@lumino/signaling": ^1.10.0 || ^2.0.0
+    y-protocols: ^1.0.5
+    yjs: ^13.5.40
+  checksum: 7cf5459bb801a68097dcbe271ed9f620d6749943b9351bb04e13e82041aaf24c903af3492a367a3ed7bcae9ab6857cd78e61f47905521c1fb4c5bb048ebabbe5
   languageName: node
   linkType: hard
 
@@ -9726,13 +9741,13 @@ __metadata:
   linkType: hard
 
 "y-protocols@npm:^1.0.5":
-  version: 1.0.6
-  resolution: "y-protocols@npm:1.0.6"
+  version: 1.0.7
+  resolution: "y-protocols@npm:1.0.7"
   dependencies:
     lib0: ^0.2.85
   peerDependencies:
     yjs: ^13.0.0
-  checksum: 4b57c8811befcf2e45c3d47830005f8a33e626c734f78a42fe8a4fa3caad2233ba85a7c8bceefbd52ffc40130d3f3faee664fd0d1c324ff1fa8817a056ccdc1c
+  checksum: d58579ee542b6b9f4e3c3223fd24efcfd4af6f97acdb40a3d362713dcce812dd3dd086cc1f221a6ccb50bd373ff4b3d30fc2462a17f7804e0d1a8bd187099f31
   languageName: node
   linkType: hard
 

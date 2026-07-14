@@ -18,10 +18,15 @@ from jupyterlab_chat.models import Message, NewMessage, User
 from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
+from .awareness_models import PersonaOption
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
+from .persona_awareness import (
+    PERSONA_MANAGER_AWARENESS_CLIENT_ID,
+    PersonaManagerAwareness,
+)
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -53,8 +58,14 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     """
     Wraps persona.process_message() to catch unhandled exceptions and deliver
     an error message to the user via persona.handle_uncaught_exception().
+
+    Before processing, applies the model & settings specification carried on the
+    message's metadata (see `BasePersona.apply_specs_in_message()`), so
+    per-message user selections take effect for every persona without each
+    `process_message()` implementation having to apply them itself.
     """
     try:
+        await persona.apply_specs_in_message(message)
         await persona.process_message(message)
     except Exception as exc:
         persona.log.error(
@@ -141,6 +152,14 @@ class PersonaManager(LoggingConfigurable):
     _personas: dict[str, BasePersona]
     file_id: str
 
+    _awareness: PersonaManagerAwareness
+    """
+    The manager's awareness slot, publishing the persona list under the fixed
+    `PERSONA_MANAGER_AWARENESS_CLIENT_ID` via its `personas` property. Scoped to
+    a specific client ID because `pycrdt.Awareness` provides no native way to
+    write state under more than one client ID; see `ScopedAwareness` for details.
+    """
+
     def __init__(
         self,
         *args,
@@ -170,6 +189,12 @@ class PersonaManager(LoggingConfigurable):
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
+
+        # Register the manager's own awareness slot (under a fixed client ID) and
+        # publish the list of personas. This is the source of truth the browser
+        # reads for the persona selector, replacing REST polling.
+        self._awareness = PersonaManagerAwareness(ychat=self.ychat, log=self.log)
+        self._publish_persona_list()
 
         if self.default_persona:
             self.log.info(
@@ -398,6 +423,24 @@ class PersonaManager(LoggingConfigurable):
         """
         return self._personas
 
+    def _publish_persona_list(self) -> None:
+        """
+        Rebuild the persona list from the current personas and publish it under
+        the manager's client ID, which rebroadcasts it over the Yjs awareness
+        channel. Each `PersonaOption` carries the Yjs client ID of that persona's
+        awareness slot so the browser can look up its state in O(1). Called on
+        init and whenever the set of personas changes (e.g. `/refresh-personas`).
+        """
+        self._awareness.personas = [
+            PersonaOption(
+                id=persona.id,
+                name=persona.name,
+                avatar_url=persona.as_user().avatar_url,
+                yjs_client_id=persona.awareness.client_id,
+            )
+            for persona in self._personas.values()
+        ]
+
     @property
     def default_persona(self) -> BasePersona | None:
         if not self.default_persona_id:
@@ -446,6 +489,10 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
+
+        # Republish the persona list, since reloaded personas have new client
+        # IDs and the set of personas may have changed.
+        self._publish_persona_list()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings

@@ -10,7 +10,21 @@ except ImportError:
 
 from .base_persona import BasePersona, PersonaDefaults
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
-from .persona_awareness import PersonaAwareness
+from .persona_awareness import (
+    PersonaAwareness,
+    PersonaManagerAwareness,
+    ScopedAwareness,
+)
+from .awareness_models import (
+    CommandOption,
+    ModelConfiguration,
+    ModelOption,
+    ModelSpec,
+    PersonaOption,
+    SettingConfiguration,
+    SettingOption,
+    Usage,
+)
 from .mcp_server_models import McpSettings, McpServerHttp, McpServerStdio
 from .extension import PersonaManagerExtension
 

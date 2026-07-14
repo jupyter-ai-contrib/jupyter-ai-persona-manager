@@ -14,6 +14,13 @@ from pydantic import BaseModel
 from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable
 
+from .awareness_models import (
+    CommandOption,
+    ModelConfiguration,
+    ModelSpec,
+    SettingConfiguration,
+    Usage,
+)
 from .persona_awareness import PersonaAwareness
 
 # prevents a circular import
@@ -82,11 +89,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
     awareness: PersonaAwareness
     """
-    A custom wrapper around `self.ychat.awareness: pycrdt.Awareness`. The
-    default `Awareness` API does not support setting local state fields on
-    multiple AI personas, so any awareness method calls should be done through
-    this attribute (`self.awareness`) instead of `self.ychat.awareness`. See the
-    documentation in `PersonaAwareness` for more information.
+    This persona's awareness slot: a `PersonaAwareness` scoped to this persona's
+    own Yjs client ID. It holds the persona's broadcast session state (model
+    configuration, settings, usage, slash commands, writing status) as typed
+    properties, so `self.awareness.model = ...` publishes over the awareness
+    channel directly. Use this instead of `self.ychat.awareness`, whose default
+    API cannot set state for more than one client ID. See `PersonaAwareness` and
+    its base `ScopedAwareness` for details.
 
     Automatically set by `BasePersona`.
     """
@@ -106,9 +115,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # Bind arguments to instance attributes
         self.ychat = ychat
 
-        # Initialize custom awareness object for this persona
+        # Initialize this persona's awareness slot. It starts with a default
+        # (empty) session state already published; the persona fills in its
+        # model/settings/usage once it knows them (e.g. an ACP persona on session
+        # create/load), and a persona that never does simply carries the defaults.
         self.awareness = PersonaAwareness(
-            ychat=self.ychat, log=self.log, user=self.as_user()
+            ychat=self.ychat, log=self.log, user=self.as_user(), id=self.id
         )
 
         # Register this persona as a user in the chat
@@ -260,7 +272,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
-            self.awareness.set_local_state_field("isWriting", True)
+            self.awareness.is_writing = True
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -275,7 +287,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     stream_id = self.ychat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
-                    self.awareness.set_local_state_field("isWriting", stream_id)
+                    self.awareness.is_writing = stream_id
 
                 assert stream_id
                 self.ychat.update_message(
@@ -305,7 +317,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            self.awareness.set_local_state_field("isWriting", False)
+            self.awareness.is_writing = False
 
     def send_message(self, body: str) -> None:
         """
@@ -370,6 +382,210 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Returns the MCP config for the current chat.
         """
         return self.parent.get_mcp_settings()
+
+    ################################################
+    # reading session information
+    ################################################
+    # These `get_*` readers and the `report_*` setters below are thin views over
+    # `self.awareness`, whose typed properties are backed directly by the Yjs
+    # awareness slot — reading returns the currently-published value and setting
+    # rebroadcasts. There is no separate in-memory copy to keep in sync.
+    def get_model_configuration(self) -> ModelConfiguration:
+        """Return the current model, model settings, and all options for both."""
+        return self.awareness.model
+
+    def get_setting_configurations(self) -> list[SettingConfiguration]:
+        """Return the current value and all options for each general setting."""
+        return self.awareness.settings
+
+    def get_model(self) -> str | None:
+        """Return the current model ID, or None if using the default."""
+        return self.awareness.model.current
+
+    def get_model_settings(self) -> dict[str, str | None]:
+        """Return the current model settings, keyed by setting ID."""
+        return {s.id: s.current for s in self.awareness.model.settings}
+
+    def get_settings(self) -> dict[str, str | None]:
+        """
+        Return the current general settings, keyed by setting ID. This is
+        separate from the model settings returned by `get_model_settings()`.
+        """
+        return {s.id: s.current for s in self.awareness.settings}
+
+    def get_usage(self) -> Usage:
+        """Return the usage currently reported by this persona."""
+        return self.awareness.usage
+
+    def get_slash_commands(self) -> list[CommandOption]:
+        """Return the slash commands currently advertised by this persona."""
+        return self.awareness.slash_commands
+
+    ################################################
+    # reporting session information (called by the persona itself)
+    ################################################
+    # A persona calls these `report_*` methods to publish its own session state
+    # over awareness. They are the counterpart to the `get_*` readers, and are
+    # meant to be called by the persona (and its collaborators), not by
+    # consumers of the persona. Assigning an `self.awareness` property publishes
+    # it, so these just forward — except `report_usage`, which owns the merge.
+    def report_model_configuration(self, model: ModelConfiguration) -> None:
+        """
+        Publish the persona's model configuration (current model, model options,
+        and model settings). A persona calls this once it knows its models (e.g.
+        an ACP persona on session create/load).
+        """
+        self.awareness.model = model
+
+    def report_settings_configuration(
+        self, settings: list[SettingConfiguration]
+    ) -> None:
+        """Publish the persona's general (non-model) settings configuration."""
+        self.awareness.settings = settings
+
+    def report_usage(self, usage: Usage, *, append: bool = False) -> None:
+        """
+        Merge `usage` into the reported usage and rebroadcast. Only the fields
+        set on `usage` are touched, so a source that reports context and tokens
+        in separate calls composes into one Usage.
+
+        append=False (default): each provided field replaces the stored value.
+        Use for sources that already report totals — ACP reports cumulative
+        counts and a live context snapshot, so replace is correct, and it's what
+        we prioritize.
+
+        append=True: each provided field is added to the stored value, for
+        sources that emit per-turn deltas. Snapshot fields (context_*) should
+        not be sent this way — you don't sum window sizes.
+        """
+        current = self.awareness.usage
+        # Only the fields explicitly set on `usage` are merged; unset fields
+        # (still None because they were never provided) leave the stored value
+        # untouched.
+        provided = usage.model_dump(exclude_none=True)
+        for field, value in provided.items():
+            if append:
+                existing = getattr(current, field)
+                setattr(current, field, (existing or 0) + value)
+            else:
+                setattr(current, field, value)
+        self.awareness.usage = current
+
+    def report_slash_commands(self, commands: list[CommandOption]) -> None:
+        """Publish the advertised slash commands."""
+        self.awareness.slash_commands = commands
+
+    ################################################
+    # applying model & settings (overridden by configurable personas)
+    ################################################
+    # These `update_*` methods apply a user's specification: they tell the
+    # persona's backend to switch, and do NOT touch awareness (`BasePersona`
+    # records the new current values and rebroadcasts — see `apply_*_spec`
+    # below). A subclass overrides an `update_*` only if it also reports the
+    # corresponding configuration (via `report_model_configuration` /
+    # `report_settings_configuration`); a persona whose model or settings aren't
+    # configurable leaves the default no-op in place. There is deliberately no
+    # `update_*` for usage or slash commands — a user can't set those.
+    async def update_model(self, model_id: str) -> None:
+        """Switch this persona to the model identified by `model_id`."""
+
+    async def update_model_settings(self, settings: dict[str, str | None]) -> None:
+        """Apply the given model settings (e.g. context size), keyed by ID."""
+
+    async def update_settings(self, settings: dict[str, str | None]) -> None:
+        """
+        Apply the given general settings (e.g. mode, effort level), keyed by ID.
+        Separate from model settings.
+        """
+
+    ################################################
+    # applying a message's model & settings specification
+    ################################################
+    async def apply_model_spec(self, spec: ModelSpec) -> None:
+        """
+        Apply a user's specified model and model settings, then record the new
+        current values on the awareness slot (which rebroadcasts).
+
+        A None model ID or a None setting value means "use the persona's current
+        value", so it is skipped. The persona's backend is only asked to switch
+        (and the change only broadcast) when a specified value actually differs
+        from the current one.
+        """
+        model_changed = spec.id is not None and spec.id != self.get_model()
+        if model_changed:
+            await self.update_model(spec.id)
+
+        current = self.get_model_settings()
+        changed = {
+            key: value
+            for key, value in spec.settings.items()
+            if value is not None and value != current.get(key)
+        }
+        if changed:
+            await self.update_model_settings(changed)
+
+        if not (model_changed or changed):
+            return
+
+        # Record the new current values and republish (assigning the property
+        # rebroadcasts). Read a fresh copy, mutate, write it back.
+        model = self.awareness.model
+        if model_changed:
+            model.current = spec.id
+        for setting in model.settings:
+            if setting.id in changed:
+                setting.current = changed[setting.id]
+        self.awareness.model = model
+
+    async def apply_settings_spec(self, spec: dict[str, str | None]) -> None:
+        """
+        Apply a user's specified general settings, then record the new current
+        values on the awareness slot (which rebroadcasts).
+
+        A None value for a setting means "use the persona's current value", so
+        it is skipped. The persona's backend is only asked to switch (and the
+        change only broadcast) when a specified value actually differs from the
+        current one.
+        """
+        current = self.get_settings()
+        changed = {
+            key: value
+            for key, value in spec.items()
+            if value is not None and value != current.get(key)
+        }
+        if not changed:
+            return
+
+        await self.update_settings(changed)
+        settings = self.awareness.settings
+        for setting in settings:
+            if setting.id in changed:
+                setting.current = changed[setting.id]
+        self.awareness.settings = settings
+
+    async def apply_specs_in_message(self, message: Message) -> None:
+        """
+        Apply the model and settings specification carried on a message's
+        metadata before the message is processed. Called by the `PersonaManager`
+        for every routed message, so a persona picks up per-message selections
+        without each `process_message()` implementation having to do so itself.
+
+        A message with no relevant metadata is a no-op.
+        """
+        metadata = message.metadata or {}
+
+        model_meta = metadata.get("model")
+        if model_meta is not None:
+            spec = (
+                model_meta
+                if isinstance(model_meta, ModelSpec)
+                else ModelSpec(**model_meta)
+            )
+            await self.apply_model_spec(spec)
+
+        settings_meta = metadata.get("settings")
+        if settings_meta:
+            await self.apply_settings_spec(settings_meta)
 
     def process_attachments(self, message: Message) -> str | None:
         """

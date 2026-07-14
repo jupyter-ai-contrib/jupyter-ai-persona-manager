@@ -156,4 +156,5 @@ class TestStreamMessageReRaise:
         with pytest.raises(RuntimeError):
             await persona.stream_message(_failing_stream())
 
-        persona.awareness.set_local_state_field.assert_called_with("isWriting", False)
+        # The `finally` clears the writing status via the awareness property.
+        assert persona.awareness.is_writing is False

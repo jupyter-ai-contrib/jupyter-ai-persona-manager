@@ -137,6 +137,7 @@ def _make_mock_persona():
     persona.name = "TestPersona"
     persona.log = MagicMock()
     persona.process_message = AsyncMock()
+    persona.apply_specs_in_message = AsyncMock()
     persona.handle_uncaught_exception = AsyncMock()
     return persona
 
