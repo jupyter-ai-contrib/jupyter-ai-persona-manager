@@ -81,26 +81,25 @@ class TestPersonaAwarenessRoundTrip:
         state = ychat.awareness.states[persona.awareness.client_id]
         assert state["id"] == "bot"
 
-    async def test_set_configuration_visible_in_map(self, ychat):
+    async def test_report_model_configuration_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
-        persona.set_configuration(
-            ModelConfiguration(current="opus", options=[ModelOption(id="opus")]),
-            [],
+        persona.report_model_configuration(
+            ModelConfiguration(current="opus", options=[ModelOption(id="opus")])
         )
         state = ychat.awareness.states[persona.awareness.client_id]
         assert state["model"]["current"] == "opus"
         assert state["model"]["options"][0]["id"] == "opus"
 
-    async def test_update_usage_visible_in_map(self, ychat):
+    async def test_report_usage_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
-        persona.update_usage(Usage(input_tokens=7, context_size=1000))
+        persona.report_usage(Usage(input_tokens=7, context_size=1000))
         usage = ychat.awareness.states[persona.awareness.client_id]["usage"]
         assert usage["input_tokens"] == 7
         assert usage["context_size"] == 1000
 
-    async def test_update_slash_commands_visible_in_map(self, ychat):
+    async def test_report_slash_commands_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
-        persona.update_slash_commands([CommandOption(name="/compact")])
+        persona.report_slash_commands([CommandOption(name="/compact")])
         cmds = ychat.awareness.states[persona.awareness.client_id][
             "slash_commands"
         ]
@@ -111,7 +110,7 @@ class TestPersonaAwarenessRoundTrip:
         # rebroadcast must merge fields, not clobber it.
         persona = _make_persona(ychat)
         persona.awareness.set_local_state_field("isWriting", "msg-1")
-        persona.update_usage(Usage(input_tokens=1))
+        persona.report_usage(Usage(input_tokens=1))
         state = ychat.awareness.states[persona.awareness.client_id]
         assert state["isWriting"] == "msg-1"
         assert state["usage"]["input_tokens"] == 1

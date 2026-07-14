@@ -455,24 +455,32 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self._awareness_state.slash_commands
 
     ################################################
-    # awareness state: setting configuration, usage, and slash commands
+    # reporting session information (called by the persona itself)
     ################################################
-    def set_configuration(
-        self,
-        model: ModelConfiguration,
-        settings: list[SettingConfiguration],
-    ) -> None:
+    # A persona calls these `report_*` methods to publish its own session state
+    # over awareness. They are the counterpart to the `get_*` readers, and are
+    # meant to be called by the persona (and its collaborators), not by
+    # consumers of the persona. Each rebroadcasts after updating the state.
+    def report_model_configuration(self, model: ModelConfiguration) -> None:
         """
-        Replace the persona's model configuration (current model, model options,
-        and model settings) and its general (non-model) settings, then
-        rebroadcast. Personas call this once they know their configuration (e.g.
-        an ACP persona on session create/load).
+        Publish the persona's model configuration (current model, model options,
+        and model settings) and rebroadcast. A persona calls this once it knows
+        its models (e.g. an ACP persona on session create/load).
         """
         self._awareness_state.model = model
+        self._broadcast_awareness_state()
+
+    def report_settings_configuration(
+        self, settings: list[SettingConfiguration]
+    ) -> None:
+        """
+        Publish the persona's general (non-model) settings configuration and
+        rebroadcast.
+        """
         self._awareness_state.settings = settings
         self._broadcast_awareness_state()
 
-    def update_usage(self, usage: Usage, *, append: bool = False) -> None:
+    def report_usage(self, usage: Usage, *, append: bool = False) -> None:
         """
         Merge `usage` into the reported usage and rebroadcast. Only the fields
         set on `usage` are touched, so a source that reports context and tokens
@@ -500,19 +508,22 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setattr(current, field, value)
         self._broadcast_awareness_state()
 
-    def update_slash_commands(self, commands: list[CommandOption]) -> None:
-        """Replace the advertised slash commands and rebroadcast."""
+    def report_slash_commands(self, commands: list[CommandOption]) -> None:
+        """Publish the advertised slash commands and rebroadcast."""
         self._awareness_state.slash_commands = commands
         self._broadcast_awareness_state()
 
     ################################################
-    # switching model & settings (overridden by configurable personas)
+    # applying model & settings (overridden by configurable personas)
     ################################################
-    # These tell the persona's backend to switch; they do NOT touch awareness.
-    # `BasePersona` records the new current values and rebroadcasts (see the
-    # `apply_*_spec` methods below), so a subclass only implements the switch.
-    # A persona whose model or settings aren't configurable simply doesn't
-    # override the relevant method — the default is a no-op.
+    # These `update_*` methods apply a user's specification: they tell the
+    # persona's backend to switch, and do NOT touch awareness (`BasePersona`
+    # records the new current values and rebroadcasts — see `apply_*_spec`
+    # below). A subclass overrides an `update_*` only if it also reports the
+    # corresponding configuration (via `report_model_configuration` /
+    # `report_settings_configuration`); a persona whose model or settings aren't
+    # configurable leaves the default no-op in place. There is deliberately no
+    # `update_*` for usage or slash commands — a user can't set those.
     async def update_model(self, model_id: str) -> None:
         """Switch this persona to the model identified by `model_id`."""
 

@@ -1,7 +1,7 @@
 """
-Tests for the awareness-channel API on BasePersona: the getters, the setters
-that broadcast, apply_model_spec / apply_settings_spec, apply_message_metadata,
-and update_usage / update_slash_commands.
+Tests for the awareness-channel API on BasePersona: the getters, the `report_*`
+methods that broadcast, apply_model_spec / apply_settings_spec, and
+apply_message_metadata.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -143,30 +143,35 @@ def _broadcast_fields(persona) -> dict:
     }
 
 
-class TestSettersBroadcast:
-    def test_set_configuration_broadcasts_model_and_settings(self):
+class TestReportersBroadcast:
+    def test_report_model_configuration_broadcasts(self):
         persona = _make_persona()
         model = ModelConfiguration(current="opus", options=[ModelOption(id="opus")])
-        settings = [SettingConfiguration(id="mode", current="ask")]
-        persona.set_configuration(model, settings)
+        persona.report_model_configuration(model)
         assert persona._awareness_state.model is model
-        assert persona._awareness_state.settings is settings
         fields = _broadcast_fields(persona)
         assert fields["model"]["current"] == "opus"
+
+    def test_report_settings_configuration_broadcasts(self):
+        persona = _make_persona()
+        settings = [SettingConfiguration(id="mode", current="ask")]
+        persona.report_settings_configuration(settings)
+        assert persona._awareness_state.settings is settings
+        fields = _broadcast_fields(persona)
         assert fields["settings"][0]["id"] == "mode"
 
     def test_broadcast_flattens_state_fields_and_omits_isWriting(self):
         # The state is published as top-level slot entries; `isWriting` is owned
         # by the streaming hot path, so the config broadcast never writes it.
         persona = _make_persona()
-        persona.set_configuration(ModelConfiguration(), [])
+        persona.report_model_configuration(ModelConfiguration())
         fields = _broadcast_fields(persona)
         assert set(fields) == {"id", "model", "settings", "usage", "slash_commands"}
         assert "isWriting" not in fields
 
-    def test_update_slash_commands_replaces_and_broadcasts(self):
+    def test_report_slash_commands_replaces_and_broadcasts(self):
         persona = _make_persona()
-        persona.update_slash_commands([CommandOption(name="/compact")])
+        persona.report_slash_commands([CommandOption(name="/compact")])
         assert persona.get_slash_commands() == [CommandOption(name="/compact")]
         fields = _broadcast_fields(persona)
         assert fields["slash_commands"] == [
@@ -175,13 +180,13 @@ class TestSettersBroadcast:
 
 
 # ---------------------------------------------------------------------------
-# update_usage merge/append semantics
+# report_usage merge/append semantics
 # ---------------------------------------------------------------------------
 
-class TestUpdateUsage:
+class TestReportUsage:
     def test_replace_sets_provided_fields(self):
         persona = _make_persona()
-        persona.update_usage(Usage(input_tokens=10, output_tokens=5))
+        persona.report_usage(Usage(input_tokens=10, output_tokens=5))
         usage = persona.get_usage()
         assert usage.input_tokens == 10
         assert usage.output_tokens == 5
@@ -193,14 +198,14 @@ class TestUpdateUsage:
             )
         )
         # Only input_tokens provided; output_tokens untouched.
-        persona.update_usage(Usage(input_tokens=20))
+        persona.report_usage(Usage(input_tokens=20))
         assert persona.get_usage().input_tokens == 20
         assert persona.get_usage().output_tokens == 99
 
     def test_replace_composes_context_and_tokens_across_calls(self):
         persona = _make_persona()
-        persona.update_usage(Usage(context_tokens=100, context_size=1000))
-        persona.update_usage(Usage(input_tokens=5, output_tokens=7))
+        persona.report_usage(Usage(context_tokens=100, context_size=1000))
+        persona.report_usage(Usage(input_tokens=5, output_tokens=7))
         usage = persona.get_usage()
         assert usage.context_tokens == 100
         assert usage.context_size == 1000
@@ -211,18 +216,18 @@ class TestUpdateUsage:
         persona = _make_persona(
             PersonaAwarenessState(id="p1", usage=Usage(input_tokens=10))
         )
-        persona.update_usage(Usage(input_tokens=5, output_tokens=3), append=True)
+        persona.report_usage(Usage(input_tokens=5, output_tokens=3), append=True)
         assert persona.get_usage().input_tokens == 15
         assert persona.get_usage().output_tokens == 3
 
     def test_append_from_none_treats_existing_as_zero(self):
         persona = _make_persona()
-        persona.update_usage(Usage(total_tokens=7), append=True)
+        persona.report_usage(Usage(total_tokens=7), append=True)
         assert persona.get_usage().total_tokens == 7
 
-    def test_update_usage_broadcasts(self):
+    def test_report_usage_broadcasts(self):
         persona = _make_persona()
-        persona.update_usage(Usage(input_tokens=1))
+        persona.report_usage(Usage(input_tokens=1))
         fields = _broadcast_fields(persona)
         assert fields["usage"]["input_tokens"] == 1
 
