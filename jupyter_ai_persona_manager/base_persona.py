@@ -164,47 +164,6 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         This is an abstract method that must be implemented by subclasses.
         """
 
-    @abstractmethod
-    async def update_model(self, model_id: str) -> None:
-        """
-        Switch this persona to the model identified by `model_id`.
-
-        Called by `apply_model_spec()` when a message specifies a model that
-        differs from the current one. Implementations should perform the switch
-        and then update the broadcast model configuration (e.g. via
-        `set_model_configuration()`) so the new current model reaches clients.
-
-        This is an abstract method that must be implemented by subclasses.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def update_model_settings(self, settings: dict[str, str]) -> None:
-        """
-        Apply the given model settings (e.g. context size), keyed by setting ID.
-
-        Called by `apply_model_spec()` when a message specifies model settings
-        that differ from the current ones. Implementations should apply the
-        settings and update `self.awareness` so the new values are broadcast.
-
-        This is an abstract method that must be implemented by subclasses.
-        """
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def update_settings(self, settings: dict[str, str]) -> None:
-        """
-        Apply the given general settings (e.g. mode, effort level), keyed by
-        setting ID. This is separate from model settings.
-
-        Called by `apply_settings_spec()` when a message specifies settings that
-        differ from the current ones. Implementations should apply the settings
-        and update `self.awareness` so the new values are broadcast.
-
-        This is an abstract method that must be implemented by subclasses.
-        """
-        raise NotImplementedError()
-
     ################################################
     # base class methods, available to subclasses.
     ################################################
@@ -536,38 +495,83 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self._broadcast_awareness_state()
 
     ################################################
+    # switching model & settings (overridden by configurable personas)
+    ################################################
+    # These tell the persona's backend to switch; they do NOT touch awareness.
+    # `BasePersona` records the new current values and rebroadcasts (see the
+    # `apply_*_spec` methods below), so a subclass only implements the switch.
+    # A persona whose model or settings aren't configurable simply doesn't
+    # override the relevant method — the default is a no-op.
+    async def update_model(self, model_id: str) -> None:
+        """Switch this persona to the model identified by `model_id`."""
+
+    async def update_model_settings(self, settings: dict[str, str | None]) -> None:
+        """Apply the given model settings (e.g. context size), keyed by ID."""
+
+    async def update_settings(self, settings: dict[str, str | None]) -> None:
+        """
+        Apply the given general settings (e.g. mode, effort level), keyed by ID.
+        Separate from model settings.
+        """
+
+    ################################################
     # applying a message's model & settings specification
     ################################################
     async def apply_model_spec(self, spec: ModelSpec) -> None:
         """
-        Apply a user's specified model and model settings.
+        Apply a user's specified model and model settings, then record the new
+        current values in the awareness state and rebroadcast.
 
         A None model ID or a None setting value means "use the persona's current
-        value", so it is skipped. An `update_*` method is only called when a
-        specified value actually differs from the current one.
+        value", so it is skipped. The persona's backend is only asked to switch
+        (and the change only broadcast) when a specified value actually differs
+        from the current one.
         """
-        if spec.id is not None and spec.id != self.get_model():
+        model_changed = spec.id is not None and spec.id != self.get_model()
+        if model_changed:
             await self.update_model(spec.id)
 
-        current_model_settings = self.get_model_settings()
-        for key, value in spec.settings.items():
-            if value is not None and value != current_model_settings.get(key):
-                await self.update_model_settings(spec.settings)
-                break
+        current = self.get_model_settings()
+        changed = {
+            key: value
+            for key, value in spec.settings.items()
+            if value is not None and value != current.get(key)
+        }
+        if changed:
+            await self.update_model_settings(changed)
+
+        if model_changed:
+            self._awareness_state.model.current = spec.id
+        for setting in self._awareness_state.model.settings:
+            if setting.id in changed:
+                setting.current = changed[setting.id]
+        if model_changed or changed:
+            self._broadcast_awareness_state()
 
     async def apply_settings_spec(self, spec: dict[str, str | None]) -> None:
         """
-        Apply a user's specified general settings.
+        Apply a user's specified general settings, then record the new current
+        values in the awareness state and rebroadcast.
 
         A None value for a setting means "use the persona's current value", so
-        it is skipped. `update_settings` is only called when a specified value
-        actually differs from the current one.
+        it is skipped. The persona's backend is only asked to switch (and the
+        change only broadcast) when a specified value actually differs from the
+        current one.
         """
-        current_settings = self.get_settings()
-        for key, value in spec.items():
-            if value is not None and value != current_settings.get(key):
-                await self.update_settings(spec)
-                break
+        current = self.get_settings()
+        changed = {
+            key: value
+            for key, value in spec.items()
+            if value is not None and value != current.get(key)
+        }
+        if not changed:
+            return
+
+        await self.update_settings(changed)
+        for setting in self._awareness_state.settings:
+            if setting.id in changed:
+                setting.current = changed[setting.id]
+        self._broadcast_awareness_state()
 
     async def apply_message_metadata(self, message: Message) -> None:
         """

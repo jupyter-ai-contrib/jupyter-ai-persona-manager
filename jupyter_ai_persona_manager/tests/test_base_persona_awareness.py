@@ -58,6 +58,20 @@ def _make_persona(state: PersonaAwarenessState | None = None) -> _ConcretePerson
     return persona
 
 
+class _NonConfigurablePersona(BasePersona):
+    """A persona that never overrides update_model/settings — the defaults are
+    no-ops, so its model and settings aren't configurable."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Fixed", description="d", avatar_path="", system_prompt=""
+        )
+
+    async def process_message(self, message):
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Getters
 # ---------------------------------------------------------------------------
@@ -240,10 +254,43 @@ class TestApplyModelSpec:
             )
         )
         # Two changed settings, but update_model_settings is called only once
-        # with the whole dict.
+        # with the changed values.
         spec = ModelSpec(settings={"a": "9", "b": "8"})
         await persona.apply_model_spec(spec)
         assert persona.calls == [("update_model_settings", {"a": "9", "b": "8"})]
+
+    async def test_passes_only_changed_model_settings(self):
+        # Unchanged keys are filtered out before calling update_model_settings.
+        persona = _make_persona(
+            PersonaAwarenessState(
+                id="p1",
+                model=ModelConfiguration(
+                    settings=[
+                        SettingConfiguration(id="a", current="1"),
+                        SettingConfiguration(id="b", current="2"),
+                    ]
+                ),
+            )
+        )
+        await persona.apply_model_spec(ModelSpec(settings={"a": "9", "b": "2"}))
+        assert persona.calls == [("update_model_settings", {"a": "9"})]
+
+    async def test_records_new_current_values_and_broadcasts(self):
+        persona = _make_persona(
+            PersonaAwarenessState(
+                id="p1",
+                model=ModelConfiguration(
+                    current="opus",
+                    settings=[SettingConfiguration(id="a", current="1")],
+                ),
+            )
+        )
+        await persona.apply_model_spec(ModelSpec(id="fable", settings={"a": "2"}))
+        # The awareness state now reflects the applied selection...
+        assert persona.get_model() == "fable"
+        assert persona.get_model_settings() == {"a": "2"}
+        # ...and it was rebroadcast.
+        persona.awareness.set_local_state_field.assert_called()
 
     async def test_model_settings_none_value_skipped(self):
         persona = _make_persona(
@@ -286,6 +333,32 @@ class TestApplyModelSpec:
         ]
 
 
+class TestNonConfigurablePersona:
+    """A persona that doesn't override update_* still instantiates and applies
+    specs — the default update_* methods are no-ops (nothing to configure)."""
+
+    def test_instantiates_without_update_overrides(self):
+        # Would raise if update_* were abstract.
+        persona = _NonConfigurablePersona.__new__(_NonConfigurablePersona)
+        persona.awareness = MagicMock()
+        persona._awareness_state = PersonaAwarenessState(
+            id="p1", model=ModelConfiguration(current="opus")
+        )
+        assert persona.get_model() == "opus"
+
+    async def test_apply_model_spec_updates_awareness_without_override(self):
+        persona = _NonConfigurablePersona.__new__(_NonConfigurablePersona)
+        persona.awareness = MagicMock()
+        persona._awareness_state = PersonaAwarenessState(
+            id="p1", model=ModelConfiguration(current="opus")
+        )
+        # No update_model override, but the applier still records the new current
+        # value and rebroadcasts.
+        await persona.apply_model_spec(ModelSpec(id="fable"))
+        assert persona.get_model() == "fable"
+        persona.awareness.set_local_state_field.assert_called()
+
+
 # ---------------------------------------------------------------------------
 # apply_settings_spec
 # ---------------------------------------------------------------------------
@@ -309,7 +382,7 @@ class TestApplySettingsSpec:
         await persona.apply_settings_spec({"mode": "ask"})
         assert persona.calls == []
 
-    async def test_change_calls_update_settings_once(self):
+    async def test_change_calls_update_settings_once_with_changed_only(self):
         persona = _make_persona(
             PersonaAwarenessState(
                 id="p1",
@@ -319,9 +392,19 @@ class TestApplySettingsSpec:
                 ],
             )
         )
-        spec = {"mode": "code", "effort": "high"}
-        await persona.apply_settings_spec(spec)
-        assert persona.calls == [("update_settings", spec)]
+        # `effort` is unchanged, so only `mode` reaches update_settings.
+        await persona.apply_settings_spec({"mode": "code", "effort": "low"})
+        assert persona.calls == [("update_settings", {"mode": "code"})]
+
+    async def test_records_new_current_value_and_broadcasts(self):
+        persona = _make_persona(
+            PersonaAwarenessState(
+                id="p1", settings=[SettingConfiguration(id="mode", current="ask")]
+            )
+        )
+        await persona.apply_settings_spec({"mode": "code"})
+        assert persona.get_settings() == {"mode": "code"}
+        persona.awareness.set_local_state_field.assert_called()
 
 
 # ---------------------------------------------------------------------------
