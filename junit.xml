@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="9" failures="0" errors="0" time="2.383">
+  <testsuite name="@jupyter-ai/persona-manager" errors="0" failures="0" skipped="0" timestamp="2026-07-14T22:48:08" time="0.841" tests="1">
+    <testcase classname="@jupyter-ai/persona-manager should be tested" name="@jupyter-ai/persona-manager should be tested" time="0.014">
+    </testcase>
+  </testsuite>
+  <testsuite name="PersonaManagerAwareness.from" errors="0" failures="0" skipped="0" timestamp="2026-07-14T22:48:08" time="1.174" tests="8">
+    <testcase classname="PersonaManagerAwareness.from resolves immediately when the manager slot is already present" name="PersonaManagerAwareness.from resolves immediately when the manager slot is already present" time="0.005">
+    </testcase>
+    <testcase classname="PersonaManagerAwareness.personas reads the persona list from the manager slot" name="PersonaManagerAwareness.personas reads the persona list from the manager slot" time="0">
+    </testcase>
+    <testcase classname="PersonaManagerAwareness.personas is empty when the slot has no personas" name="PersonaManagerAwareness.personas is empty when the slot has no personas" time="0.001">
+    </testcase>
+    <testcase classname="PersonaAwareness.from reads a persona&apos;s slot via the option&apos;s client id" name="PersonaAwareness.from reads a persona&apos;s slot via the option&apos;s client id" time="0">
+    </testcase>
+    <testcase classname="PersonaAwareness.from exposes the persona id from the option, even before the slot exists" name="PersonaAwareness.from exposes the persona id from the option, even before the slot exists" time="0">
+    </testcase>
+    <testcase classname="PersonaAwareness.from falls back to safe defaults when the slot is absent" name="PersonaAwareness.from falls back to safe defaults when the slot is absent" time="0">
+    </testcase>
+    <testcase classname="PersonaAwareness.from reads isWriting (message id) while the persona is streaming" name="PersonaAwareness.from reads isWriting (message id) while the persona is streaming" time="0">
+    </testcase>
+    <testcase classname="the manager list + PersonaAwareness.from together resolves a persona by walking the published list" name="the manager list + PersonaAwareness.from together resolves a persona by walking the published list" time="0">
+    </testcase>
+  </testsuite>
+</testsuites>

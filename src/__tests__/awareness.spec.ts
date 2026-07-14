@@ -93,9 +93,19 @@ describe('PersonaAwareness.from', () => {
           ]
         },
         settings: [
-          { id: '__mode__', current: 'ask', name: 'Mode', description: null, options: [] }
+          {
+            id: '__mode__',
+            current: 'ask',
+            name: 'Mode',
+            description: null,
+            options: []
+          }
         ],
-        usage: { context_tokens: 1000, context_size: 200000, total_tokens: 4200 },
+        usage: {
+          context_tokens: 1000,
+          context_size: 200000,
+          total_tokens: 4200
+        },
         slash_commands: [{ name: '/compact', description: 'Compact context' }]
       })
     });
@@ -127,7 +137,9 @@ describe('PersonaAwareness.from', () => {
   });
 
   it('reads isWriting (message id) while the persona is streaming', () => {
-    const awareness = fakeAwareness({ 42: personaSlot({ isWriting: 'msg-1' }) });
+    const awareness = fakeAwareness({
+      42: personaSlot({ isWriting: 'msg-1' })
+    });
     expect(PersonaAwareness.from(awareness, KIRO).isWriting).toBe('msg-1');
   });
 });
@@ -136,11 +148,15 @@ describe('the manager list + PersonaAwareness.from together', () => {
   it('resolves a persona by walking the published list', async () => {
     const awareness = fakeAwareness({
       [PERSONA_MANAGER_AWARENESS_CLIENT_ID]: { personas: [KIRO] },
-      42: personaSlot({ slash_commands: [{ name: '/login', description: null }] })
+      42: personaSlot({
+        slash_commands: [{ name: '/login', description: null }]
+      })
     });
     const manager = await PersonaManagerAwareness.from(awareness);
     const option = manager.personas.find(p => p.id === 'kiro')!;
     const persona = PersonaAwareness.from(awareness, option);
-    expect(persona.slash_commands).toEqual([{ name: '/login', description: null }]);
+    expect(persona.slash_commands).toEqual([
+      { name: '/login', description: null }
+    ]);
   });
 });
