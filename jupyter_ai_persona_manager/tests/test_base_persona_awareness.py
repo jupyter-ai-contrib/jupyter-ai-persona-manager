@@ -4,15 +4,16 @@ Tests for the awareness-channel API on BasePersona: the `get_*` readers, the
 apply_specs_in_message.
 
 The persona's session state lives in its `PersonaAwareness` slot, so these tests
-back the persona with a `_FakePersonaAwareness` — a real `PersonaAwareness` whose
-low-level state access is a plain in-memory dict (no YChat, no heartbeat). Its
-typed properties (model, settings, usage, ...) run for real, so reads and writes
-go through the same code paths as production.
+back the persona with a real `PersonaAwareness` over an in-memory `YChat` — no
+mocking of the awareness layer, so reads and writes go through the same
+client-ID-scoped code paths as production.
 """
 
 from unittest.mock import MagicMock
 
-from jupyterlab_chat.models import Message
+from jupyterlab_chat.models import Message, User
+from jupyterlab_chat.ychat import YChat
+from pycrdt import Awareness
 
 from jupyter_ai_persona_manager.awareness_models import (
     CommandOption,
@@ -26,23 +27,13 @@ from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
 from jupyter_ai_persona_manager.persona_awareness import PersonaAwareness
 
 
-class _FakePersonaAwareness(PersonaAwareness):
-    """A PersonaAwareness backed by a plain dict — the typed properties work as
-    in production, but there's no YChat, client-ID juggling, or heartbeat."""
-
-    def __init__(self):
-        self._state: dict = {}
-        self.set_local_state_field("id", "p1")
-        self.is_writing = False
-
-    def get_local_state(self):
-        return self._state
-
-    def set_local_state(self, state):
-        self._state = state or {}
-
-    def set_local_state_field(self, field, value):
-        self._state[field] = value
+def _awareness(id: str = "p1") -> PersonaAwareness:
+    """A real PersonaAwareness over a fresh in-memory YChat. Constructed outside
+    an event loop, so the heartbeat is skipped — everything else is real."""
+    ychat = YChat()
+    ychat.awareness = Awareness(ydoc=ychat._ydoc)
+    user = User(username=id, name=id, display_name=id)
+    return PersonaAwareness(ychat=ychat, log=MagicMock(), user=user, id=id)
 
 
 class _ConcretePersona(BasePersona):
@@ -81,7 +72,7 @@ def _make_persona(
     seeded with the given session state."""
     persona = _ConcretePersona.__new__(_ConcretePersona)
     persona.log = MagicMock()
-    persona.awareness = _FakePersonaAwareness()
+    persona.awareness = _awareness()
     persona.awareness.model = model or ModelConfiguration()
     persona.awareness.settings = settings or []
     persona.awareness.usage = usage or Usage()
@@ -327,7 +318,7 @@ class _NonConfigurablePersona(BasePersona):
 def _make_nonconfigurable(model: ModelConfiguration) -> _NonConfigurablePersona:
     persona = _NonConfigurablePersona.__new__(_NonConfigurablePersona)
     persona.log = MagicMock()
-    persona.awareness = _FakePersonaAwareness()
+    persona.awareness = _awareness()
     persona.awareness.model = model
     persona.awareness.settings = []
     return persona

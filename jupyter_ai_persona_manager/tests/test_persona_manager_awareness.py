@@ -8,6 +8,8 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 from jupyterlab_chat.models import Message
+from jupyterlab_chat.ychat import YChat
+from pycrdt import Awareness
 
 from jupyter_ai_persona_manager.persona_awareness import (
     PERSONA_MANAGER_AWARENESS_CLIENT_ID,
@@ -17,21 +19,6 @@ from jupyter_ai_persona_manager.persona_manager import (
     PersonaManager,
     _safe_process,
 )
-
-
-class _FakeManagerAwareness(PersonaManagerAwareness):
-    """A PersonaManagerAwareness backed by a plain dict — its `personas`
-    property works as in production without a YChat or heartbeat."""
-
-    def __init__(self):
-        self._state: dict = {}
-        self.personas = []
-
-    def get_local_state(self):
-        return self._state
-
-    def set_local_state_field(self, field, value):
-        self._state[field] = value
 
 
 def _mock_persona(id: str, name: str, client_id: int, avatar_url: str = "/a"):
@@ -46,11 +33,15 @@ def _mock_persona(id: str, name: str, client_id: int, avatar_url: str = "/a"):
 
 
 def _manager(personas):
-    """A PersonaManager with only the state the awareness methods read."""
+    """A PersonaManager wired to a real PersonaManagerAwareness over an in-memory
+    YChat (no event loop, so no heartbeat), plus the state the awareness methods
+    read."""
+    ychat = YChat()
+    ychat.awareness = Awareness(ydoc=ychat._ydoc)
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-awareness")
-    pm._awareness = _FakeManagerAwareness()
+    pm._awareness = PersonaManagerAwareness(ychat=ychat, log=pm.log)
     return pm
 
 

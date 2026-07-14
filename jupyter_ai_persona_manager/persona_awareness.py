@@ -58,7 +58,7 @@ class ScopedAwareness:
 
     _original_client_id: int
     _custom_client_id: int
-    _heartbeat_task: asyncio.Task
+    _heartbeat_task: asyncio.Task | None
 
     def __init__(
         self,
@@ -90,8 +90,20 @@ class ScopedAwareness:
         if self.user:
             self._register_user()
 
-        # Start the awareness heartbeat task
-        self._heartbeat_task = asyncio.create_task(self._start_heartbeat())
+        # Start the awareness heartbeat task. It needs a running event loop,
+        # which is always the case in production (the server runs inside one).
+        # When constructed without a loop (e.g. a synchronous unit test), skip
+        # the heartbeat rather than fail — the awareness state is still fully
+        # usable, it just isn't kept alive past the outdated timeout.
+        self._heartbeat_task = None
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self.log.debug(
+                "No running event loop; awareness heartbeat not started."
+            )
+        else:
+            self._heartbeat_task = asyncio.create_task(self._start_heartbeat())
 
     @property
     def client_id(self) -> int:
@@ -184,7 +196,8 @@ class ScopedAwareness:
         Stops this instance's background tasks and removes this instance's
         custom client ID from the awareness map.
         """
-        self._heartbeat_task.cancel()
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
         self.set_local_state(None)
 
 
