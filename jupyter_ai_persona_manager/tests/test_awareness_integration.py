@@ -73,33 +73,45 @@ def _make_persona(ychat) -> _Persona:
 
 
 class TestPersonaAwarenessRoundTrip:
+    """Each field of the state is a top-level entry of the persona's awareness
+    slot (the slot *is* the state), so assertions index the slot directly."""
+
     async def test_initial_state_present_in_awareness_map(self, ychat):
         persona = _make_persona(ychat)
         state = ychat.awareness.states[persona.awareness.client_id]
-        assert state["persona"]["id"] == "bot"
+        assert state["id"] == "bot"
 
-    async def test_set_model_configuration_visible_in_map(self, ychat):
+    async def test_set_configuration_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
-        persona.set_model_configuration(
-            ModelConfiguration(current="opus", options=[ModelOption(id="opus")])
+        persona.set_configuration(
+            ModelConfiguration(current="opus", options=[ModelOption(id="opus")]),
+            [],
         )
         state = ychat.awareness.states[persona.awareness.client_id]
-        assert state["persona"]["model"]["current"] == "opus"
-        assert state["persona"]["model"]["options"][0]["id"] == "opus"
+        assert state["model"]["current"] == "opus"
+        assert state["model"]["options"][0]["id"] == "opus"
 
     async def test_update_usage_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
         persona.update_usage(Usage(input_tokens=7, context_size=1000))
-        usage = ychat.awareness.states[persona.awareness.client_id]["persona"][
-            "usage"
-        ]
+        usage = ychat.awareness.states[persona.awareness.client_id]["usage"]
         assert usage["input_tokens"] == 7
         assert usage["context_size"] == 1000
 
     async def test_update_slash_commands_visible_in_map(self, ychat):
         persona = _make_persona(ychat)
         persona.update_slash_commands([CommandOption(name="/compact")])
-        cmds = ychat.awareness.states[persona.awareness.client_id]["persona"][
+        cmds = ychat.awareness.states[persona.awareness.client_id][
             "slash_commands"
         ]
         assert cmds == [{"name": "/compact", "description": None}]
+
+    async def test_broadcast_preserves_directly_written_isWriting(self, ychat):
+        # `isWriting` is written directly on the streaming hot path; a config
+        # rebroadcast must merge fields, not clobber it.
+        persona = _make_persona(ychat)
+        persona.awareness.set_local_state_field("isWriting", "msg-1")
+        persona.update_usage(Usage(input_tokens=1))
+        state = ychat.awareness.states[persona.awareness.client_id]
+        assert state["isWriting"] == "msg-1"
+        assert state["usage"]["input_tokens"] == 1

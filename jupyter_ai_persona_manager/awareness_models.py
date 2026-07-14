@@ -19,7 +19,7 @@ User selections are *not* stored here. They ride on outgoing message metadata
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ################################################
 # PersonaManager awareness state
@@ -121,13 +121,27 @@ class CommandOption(BaseModel):
 
 
 class PersonaAwarenessState(BaseModel):
-    """A single persona's awareness state."""
+    """
+    A single persona's awareness state. This *is* the dict published under the
+    persona's Yjs client ID (each field is a top-level entry of the awareness
+    slot), so this model documents the exact shape clients read.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     id: str
     model: ModelConfiguration = Field(default_factory=ModelConfiguration)
     settings: list[SettingConfiguration] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     slash_commands: list[CommandOption] = Field(default_factory=list)
+
+    # Whether this persona is currently writing a reply. `False` when idle;
+    # while streaming, the ID of the message being written (jupyter-chat reads
+    # this to render the typing indicator and enable the stop button). Written
+    # directly to awareness on the hot path (see `BasePersona.stream_message`),
+    # not through the config broadcast — this annotation just types the slot.
+    # The awareness key is `isWriting` (camelCase) for jupyter-chat.
+    is_writing: bool | str = Field(default=False, alias="isWriting")
 
 
 ################################################

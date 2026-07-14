@@ -134,31 +134,42 @@ class TestGetters:
 # Setters broadcast
 # ---------------------------------------------------------------------------
 
+def _broadcast_fields(persona) -> dict:
+    """The awareness fields written by the last broadcast: the state is
+    published field-by-field, so collect every (field, value) call."""
+    return {
+        call.args[0]: call.args[1]
+        for call in persona.awareness.set_local_state_field.call_args_list
+    }
+
+
 class TestSettersBroadcast:
-    def test_set_model_configuration_broadcasts(self):
+    def test_set_configuration_broadcasts_model_and_settings(self):
         persona = _make_persona()
         model = ModelConfiguration(current="opus", options=[ModelOption(id="opus")])
-        persona.set_model_configuration(model)
-        assert persona._awareness_state.model is model
-        persona.awareness.set_local_state_field.assert_called_once()
-        field, payload = persona.awareness.set_local_state_field.call_args[0]
-        assert field == "persona"
-        assert payload["model"]["current"] == "opus"
-
-    def test_set_setting_configurations_broadcasts(self):
-        persona = _make_persona()
         settings = [SettingConfiguration(id="mode", current="ask")]
-        persona.set_setting_configurations(settings)
+        persona.set_configuration(model, settings)
+        assert persona._awareness_state.model is model
         assert persona._awareness_state.settings is settings
-        payload = persona.awareness.set_local_state_field.call_args[0][1]
-        assert payload["settings"][0]["id"] == "mode"
+        fields = _broadcast_fields(persona)
+        assert fields["model"]["current"] == "opus"
+        assert fields["settings"][0]["id"] == "mode"
+
+    def test_broadcast_flattens_state_fields_and_omits_isWriting(self):
+        # The state is published as top-level slot entries; `isWriting` is owned
+        # by the streaming hot path, so the config broadcast never writes it.
+        persona = _make_persona()
+        persona.set_configuration(ModelConfiguration(), [])
+        fields = _broadcast_fields(persona)
+        assert set(fields) == {"id", "model", "settings", "usage", "slash_commands"}
+        assert "isWriting" not in fields
 
     def test_update_slash_commands_replaces_and_broadcasts(self):
         persona = _make_persona()
         persona.update_slash_commands([CommandOption(name="/compact")])
         assert persona.get_slash_commands() == [CommandOption(name="/compact")]
-        payload = persona.awareness.set_local_state_field.call_args[0][1]
-        assert payload["slash_commands"] == [
+        fields = _broadcast_fields(persona)
+        assert fields["slash_commands"] == [
             {"name": "/compact", "description": None}
         ]
 
@@ -212,7 +223,8 @@ class TestUpdateUsage:
     def test_update_usage_broadcasts(self):
         persona = _make_persona()
         persona.update_usage(Usage(input_tokens=1))
-        persona.awareness.set_local_state_field.assert_called_once()
+        fields = _broadcast_fields(persona)
+        assert fields["usage"]["input_tokens"] == 1
 
 
 # ---------------------------------------------------------------------------

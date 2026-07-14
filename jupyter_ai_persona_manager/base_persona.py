@@ -399,15 +399,29 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # awareness state: reading & broadcasting session information
     ################################################
+    # `is_writing` is owned outside the config broadcast — it's set directly on
+    # the streaming hot path (see `stream_message`) — so the broadcast leaves it
+    # untouched rather than resetting it to the model's default.
+    _BROADCAST_EXCLUDE = {"is_writing"}
+
     def _broadcast_awareness_state(self) -> None:
         """
-        Write this persona's awareness state to `self.awareness`, which triggers
-        a rebroadcast over the Yjs awareness channel. Called after any change to
+        Publish this persona's awareness state to `self.awareness`, triggering a
+        rebroadcast over the Yjs awareness channel. Called after any change to
         `self._awareness_state`.
+
+        Each field of `PersonaAwarenessState` is written as a top-level entry of
+        the persona's awareness slot (so the slot *is* the state), merged field
+        by field rather than replacing the slot — that preserves the `user`
+        entry `PersonaAwareness` registers and the directly-written `isWriting`.
         """
-        self.awareness.set_local_state_field(
-            "persona", self._awareness_state.model_dump()
-        )
+        state = self._awareness_state.model_dump(by_alias=True)
+        for field, info in PersonaAwarenessState.model_fields.items():
+            if field in self._BROADCAST_EXCLUDE:
+                continue
+            # model_dump uses the alias when set (e.g. isWriting), so map back.
+            key = info.alias or field
+            self.awareness.set_local_state_field(key, state[key])
 
     def get_model_configuration(self) -> ModelConfiguration:
         """Return the current model, model settings, and all options for both."""
@@ -441,23 +455,20 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self._awareness_state.slash_commands
 
     ################################################
-    # awareness state: setting model, settings, usage, and slash commands
+    # awareness state: setting configuration, usage, and slash commands
     ################################################
-    def set_model_configuration(self, model: ModelConfiguration) -> None:
-        """
-        Replace the whole model configuration (current model, model options, and
-        model settings) and rebroadcast. Personas call this once they know their
-        model configuration (e.g. an ACP persona on session create/load).
-        """
-        self._awareness_state.model = model
-        self._broadcast_awareness_state()
-
-    def set_setting_configurations(
-        self, settings: list[SettingConfiguration]
+    def set_configuration(
+        self,
+        model: ModelConfiguration,
+        settings: list[SettingConfiguration],
     ) -> None:
         """
-        Replace the general (non-model) setting configurations and rebroadcast.
+        Replace the persona's model configuration (current model, model options,
+        and model settings) and its general (non-model) settings, then
+        rebroadcast. Personas call this once they know their configuration (e.g.
+        an ACP persona on session create/load).
         """
+        self._awareness_state.model = model
         self._awareness_state.settings = settings
         self._broadcast_awareness_state()
 
