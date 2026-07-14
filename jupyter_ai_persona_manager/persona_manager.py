@@ -18,10 +18,12 @@ from jupyterlab_chat.models import Message, NewMessage, User
 from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
+from .awareness_models import PersonaManagerAwarenessState, PersonaOption
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
+from .persona_awareness import PersonaAwareness
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -34,6 +36,15 @@ if TYPE_CHECKING:
 
 # EPG := entry point group
 EPG_NAME = "jupyter_ai.personas"
+
+PERSONA_MANAGER_AWARENESS_CLIENT_ID = 7133713371337
+"""
+The fixed, hardcoded Yjs client ID under which every `PersonaManager` publishes
+its `PersonaManagerAwarenessState` (the persona list). A chosen 53-bit constant
+so that it survives reconnects and the browser can locate the manager's state in
+the awareness map without enumerating clients. A single readiness REST endpoint
+hands this ID to the browser once the manager and its personas are registered.
+"""
 
 SYSTEM_USERNAME = "hidden::jupyter_ai_system"
 """
@@ -53,8 +64,14 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     """
     Wraps persona.process_message() to catch unhandled exceptions and deliver
     an error message to the user via persona.handle_uncaught_exception().
+
+    Before processing, applies the model & settings specification carried on the
+    message's metadata (see `BasePersona.apply_message_metadata()`), so
+    per-message user selections take effect for every persona without each
+    `process_message()` implementation having to apply them itself.
     """
     try:
+        await persona.apply_message_metadata(message)
         await persona.process_message(message)
     except Exception as exc:
         persona.log.error(
@@ -139,6 +156,7 @@ class PersonaManager(LoggingConfigurable):
     # Local persona classes are instance attributes to support frequent reloading
     _local_persona_classes: list[dict] | None = None
     _personas: dict[str, BasePersona]
+    _awareness: PersonaAwareness
     file_id: str
 
     def __init__(
@@ -170,6 +188,17 @@ class PersonaManager(LoggingConfigurable):
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
+
+        # Register the manager's own awareness client under a fixed client ID and
+        # broadcast the list of personas. This is the source of truth the browser
+        # reads for the persona selector, replacing REST polling.
+        self._awareness = PersonaAwareness(
+            ychat=self.ychat,
+            log=self.log,
+            user=None,
+            client_id=PERSONA_MANAGER_AWARENESS_CLIENT_ID,
+        )
+        self.broadcast_awareness_state()
 
         if self.default_persona:
             self.log.info(
@@ -399,6 +428,41 @@ class PersonaManager(LoggingConfigurable):
         return self._personas
 
     @property
+    def awareness(self) -> PersonaAwareness:
+        """
+        The manager's own awareness client, publishing the persona list under
+        the fixed `PERSONA_MANAGER_AWARENESS_CLIENT_ID`.
+        """
+        return self._awareness
+
+    def build_awareness_state(self) -> PersonaManagerAwarenessState:
+        """
+        Build the `PersonaManagerAwarenessState` broadcast to clients: one
+        `PersonaOption` per persona in this chat, each carrying the Yjs client ID
+        of that persona's awareness client so the browser can look up its state
+        in O(1).
+        """
+        personas = [
+            PersonaOption(
+                id=persona.id,
+                name=persona.name,
+                avatar_url=persona.as_user().avatar_url,
+                yjs_client_id=persona.awareness.client_id,
+            )
+            for persona in self._personas.values()
+        ]
+        return PersonaManagerAwarenessState(personas=personas)
+
+    def broadcast_awareness_state(self) -> None:
+        """
+        Write the current persona list to the manager's awareness client, which
+        rebroadcasts it over the Yjs awareness channel. Called on init and
+        whenever the set of personas changes (e.g. after `/refresh-personas`).
+        """
+        state = self.build_awareness_state()
+        self._awareness.set_local_state_field("personas", state.model_dump()["personas"])
+
+    @property
     def default_persona(self) -> BasePersona | None:
         if not self.default_persona_id:
             return None
@@ -446,6 +510,10 @@ class PersonaManager(LoggingConfigurable):
         # Refresh local personas and re-initialize persona instances
         self._init_local_persona_classes()
         self._personas = self._init_personas()
+
+        # Rebroadcast the persona list, since reloaded personas have new client
+        # IDs and the set of personas may have changed.
+        self.broadcast_awareness_state()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings

@@ -11,7 +11,12 @@ from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
-from jupyter_ai_persona_manager.handlers import AvatarHandler, MessageHandler, build_avatar_cache
+from jupyter_ai_persona_manager.handlers import (
+    AvatarHandler,
+    MessageHandler,
+    PersonaManagerReadinessHandler,
+    build_avatar_cache,
+)
 
 from .persona_manager import PersonaManager
 
@@ -33,6 +38,7 @@ class PersonaManagerExtension(ExtensionApp):
     handlers = [
         (r"/api/ai/avatars/(.*)", AvatarHandler),
         (r"/api/ai/message/(.*)", MessageHandler),
+        (r"/api/ai/persona_manager_awareness", PersonaManagerReadinessHandler),
     ]
     
     persona_manager_class = Type(

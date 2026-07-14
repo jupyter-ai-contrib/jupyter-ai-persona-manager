@@ -41,7 +41,14 @@ class PersonaAwareness:
     _custom_client_id: int
     _heartbeat_task: asyncio.Task
 
-    def __init__(self, *, ychat: "YChat", log: Logger, user: User | None):
+    def __init__(
+        self,
+        *,
+        ychat: "YChat",
+        log: Logger,
+        user: User | None,
+        client_id: int | None = None,
+    ):
         # Bind instance attributes
         self.log = log
         self.user = user
@@ -52,9 +59,15 @@ class PersonaAwareness:
         else:
             self.awareness = Awareness(ydoc=ychat._ydoc)
 
-        # Initialize a custom client ID & save the original client ID
+        # Initialize a custom client ID & save the original client ID. Callers
+        # may pass an explicit `client_id` to reserve a fixed, well-known slot in
+        # the awareness map (e.g. the `PersonaManager` uses a hardcoded constant
+        # so the browser can find its state across reconnects). When omitted, a
+        # random client ID is generated.
         self._original_client_id = self.awareness.client_id
-        self._custom_client_id = random.getrandbits(32)
+        self._custom_client_id = (
+            client_id if client_id is not None else random.getrandbits(32)
+        )
 
         # Initialize local awareness state using the custom client ID
         self.set_local_state({})
@@ -63,6 +76,15 @@ class PersonaAwareness:
 
         # Start the awareness heartbeat task
         self._heartbeat_task = asyncio.create_task(self._start_heartbeat())
+
+    @property
+    def client_id(self) -> int:
+        """
+        The Yjs client ID this instance writes its awareness state under. This
+        is the fixed ID passed to the constructor, or the random one generated
+        when none was passed.
+        """
+        return self._custom_client_id
 
     @contextmanager
     def as_custom_client(self) -> "Iterator[None]":

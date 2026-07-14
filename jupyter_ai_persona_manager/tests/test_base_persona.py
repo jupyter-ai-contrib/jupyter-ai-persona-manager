@@ -32,6 +32,15 @@ class _ConcretePersona(BasePersona):
     async def process_message(self, message):
         pass
 
+    async def update_model(self, model_id: str) -> None:
+        pass
+
+    async def update_model_settings(self, settings) -> None:
+        pass
+
+    async def update_settings(self, settings) -> None:
+        pass
+
 
 def _make_persona(mock_ychat):
     """Create a _ConcretePersona instance wired to a mock YChat.
