@@ -1,7 +1,7 @@
 """
-Tests for the PersonaManager awareness broadcast (the persona list published
-under the fixed client ID) and for metadata application happening before
-processing in the message-dispatch path.
+Tests for the PersonaManager awareness state (the persona list published under
+the fixed client ID) and for metadata application happening before processing
+in the message-dispatch path.
 """
 
 import logging
@@ -17,6 +17,20 @@ from jupyter_ai_persona_manager.persona_manager import (
 )
 
 
+class _FakeAwareness:
+    """A `PersonaAwareness` stand-in that round-trips local state, so
+    `update_awareness_state` -> `get_awareness_state` reads back what was set."""
+
+    def __init__(self):
+        self._state = None
+
+    def set_local_state(self, state):
+        self._state = state
+
+    def get_local_state(self):
+        return self._state
+
+
 def _mock_persona(id: str, name: str, client_id: int, avatar_url: str = "/a"):
     persona = MagicMock()
     persona.id = id
@@ -29,23 +43,26 @@ def _mock_persona(id: str, name: str, client_id: int, avatar_url: str = "/a"):
 
 
 def _manager(personas):
-    """A PersonaManager with only the state the awareness broadcast reads."""
+    """A PersonaManager with only the state the awareness methods read."""
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-awareness")
-    pm._awareness = MagicMock()
+    pm._awareness = _FakeAwareness()
     return pm
 
 
-class TestBuildAwarenessState:
-    def test_lists_every_persona_with_yjs_client_id(self):
+class TestAwarenessState:
+    def test_publishes_every_persona_with_yjs_client_id(self):
         pm = _manager(
             {
                 "p1": _mock_persona("p1", "One", 111, "/one"),
                 "p2": _mock_persona("p2", "Two", 222, "/two"),
             }
         )
-        state = pm.build_awareness_state()
+        pm.update_awareness_state()
+
+        # Read the published state back out through the public getter.
+        state = pm.get_awareness_state()
         by_id = {p.id: p for p in state.personas}
         assert by_id["p1"].name == "One"
         assert by_id["p1"].yjs_client_id == 111
@@ -54,18 +71,22 @@ class TestBuildAwarenessState:
 
     def test_empty_when_no_personas(self):
         pm = _manager({})
-        assert pm.build_awareness_state().personas == []
+        pm.update_awareness_state()
+        assert pm.get_awareness_state().personas == []
 
+    def test_get_awareness_state_empty_before_first_update(self):
+        # Nothing published yet: the getter tolerates an empty slot.
+        pm = _manager({})
+        assert pm.get_awareness_state().personas == []
 
-class TestBroadcastAwarenessState:
-    def test_writes_persona_list_to_awareness_client(self):
+    def test_update_republishes_after_personas_change(self):
         pm = _manager({"p1": _mock_persona("p1", "One", 111)})
-        pm.broadcast_awareness_state()
-        pm._awareness.set_local_state_field.assert_called_once()
-        field, payload = pm._awareness.set_local_state_field.call_args[0]
-        assert field == "personas"
-        assert payload[0]["id"] == "p1"
-        assert payload[0]["yjs_client_id"] == 111
+        pm.update_awareness_state()
+        assert [p.id for p in pm.get_awareness_state().personas] == ["p1"]
+
+        pm._personas = {"p2": _mock_persona("p2", "Two", 222)}
+        pm.update_awareness_state()
+        assert [p.id for p in pm.get_awareness_state().personas] == ["p2"]
 
     def test_fixed_client_id_constant_is_53_bit(self):
         # A 53-bit integer is representable exactly as a JS number.

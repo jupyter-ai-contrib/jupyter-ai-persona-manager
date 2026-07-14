@@ -156,8 +156,16 @@ class PersonaManager(LoggingConfigurable):
     # Local persona classes are instance attributes to support frequent reloading
     _local_persona_classes: list[dict] | None = None
     _personas: dict[str, BasePersona]
-    _awareness: PersonaAwareness
     file_id: str
+
+    _awareness: PersonaAwareness
+    """
+    The manager's awareness client, publishing the persona list under the fixed
+    `PERSONA_MANAGER_AWARENESS_CLIENT_ID`. We use `PersonaAwareness` (rather than
+    `ychat.awareness` directly) only because it lets us write local state under a
+    specific client ID; `pycrdt.Awareness` provides no native way to do that. See
+    the `PersonaAwareness` docstring for details on this workaround.
+    """
 
     def __init__(
         self,
@@ -198,7 +206,7 @@ class PersonaManager(LoggingConfigurable):
             user=None,
             client_id=PERSONA_MANAGER_AWARENESS_CLIENT_ID,
         )
-        self.broadcast_awareness_state()
+        self.update_awareness_state()
 
         if self.default_persona:
             self.log.info(
@@ -427,40 +435,34 @@ class PersonaManager(LoggingConfigurable):
         """
         return self._personas
 
-    @property
-    def awareness(self) -> PersonaAwareness:
+    def get_awareness_state(self) -> PersonaManagerAwarenessState:
         """
-        The manager's own awareness client, publishing the persona list under
-        the fixed `PERSONA_MANAGER_AWARENESS_CLIENT_ID`.
+        Return the `PersonaManagerAwarenessState` currently published under the
+        manager's client ID, read back from the awareness object.
         """
-        return self._awareness
+        state = self._awareness.get_local_state() or {}
+        return PersonaManagerAwarenessState(**state)
 
-    def build_awareness_state(self) -> PersonaManagerAwarenessState:
+    def update_awareness_state(self) -> None:
         """
-        Build the `PersonaManagerAwarenessState` broadcast to clients: one
-        `PersonaOption` per persona in this chat, each carrying the Yjs client ID
-        of that persona's awareness client so the browser can look up its state
-        in O(1).
+        Rebuild the persona list from the current personas and publish it under
+        the manager's client ID, which rebroadcasts it over the Yjs awareness
+        channel. Each `PersonaOption` carries the Yjs client ID of that persona's
+        awareness client so the browser can look up its state in O(1). Called on
+        init and whenever the set of personas changes (e.g. `/refresh-personas`).
         """
-        personas = [
-            PersonaOption(
-                id=persona.id,
-                name=persona.name,
-                avatar_url=persona.as_user().avatar_url,
-                yjs_client_id=persona.awareness.client_id,
-            )
-            for persona in self._personas.values()
-        ]
-        return PersonaManagerAwarenessState(personas=personas)
-
-    def broadcast_awareness_state(self) -> None:
-        """
-        Write the current persona list to the manager's awareness client, which
-        rebroadcasts it over the Yjs awareness channel. Called on init and
-        whenever the set of personas changes (e.g. after `/refresh-personas`).
-        """
-        state = self.build_awareness_state()
-        self._awareness.set_local_state_field("personas", state.model_dump()["personas"])
+        state = PersonaManagerAwarenessState(
+            personas=[
+                PersonaOption(
+                    id=persona.id,
+                    name=persona.name,
+                    avatar_url=persona.as_user().avatar_url,
+                    yjs_client_id=persona.awareness.client_id,
+                )
+                for persona in self._personas.values()
+            ]
+        )
+        self._awareness.set_local_state(state.model_dump())
 
     @property
     def default_persona(self) -> BasePersona | None:
@@ -511,9 +513,9 @@ class PersonaManager(LoggingConfigurable):
         self._init_local_persona_classes()
         self._personas = self._init_personas()
 
-        # Rebroadcast the persona list, since reloaded personas have new client
+        # Republish the persona list, since reloaded personas have new client
         # IDs and the set of personas may have changed.
-        self.broadcast_awareness_state()
+        self.update_awareness_state()
 
         # Rebuild avatar cache after reloading personas
         # Get all persona managers from parent (extension) settings
