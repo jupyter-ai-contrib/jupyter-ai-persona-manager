@@ -286,7 +286,6 @@ class PersonaManagerExtension(ExtensionApp):
             ".git",  # Git version control directory
             ".venv",  # Python virtual environment directory
             "venv",  # Python virtual environment directory
-            "node_modules",  # Node.js dependencies directory
             ".pytest_cache",  # PyTest cache directory
             ".mypy_cache",  # MyPy type checker cache directory
             "*.egg-info",  # Python package metadata directories

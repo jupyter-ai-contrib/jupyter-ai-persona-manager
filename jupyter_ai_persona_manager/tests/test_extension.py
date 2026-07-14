@@ -127,3 +127,31 @@ def test_initialize_settings_advertises_default_persona(extension, mock_server_a
         page_config["jupyter_ai_default_persona"]
         == PersonaManager.default_persona_id.default_value
     )
+
+
+class TestLinkJupyterServerExtension:
+    """The ContentsManager config applied when the extension is linked."""
+
+    def _apply_config(self, extension, mock_server_app):
+        """Run _link_jupyter_server_extension and return the applied Config."""
+        # The base class hook has unrelated side effects; stub it out so the
+        # test isolates this extension's own config contribution.
+        with patch(
+            "jupyter_ai_persona_manager.extension.ExtensionApp._link_jupyter_server_extension"
+        ):
+            extension._link_jupyter_server_extension(mock_server_app)
+        # The Config is passed to server_app.update_config(c).
+        (applied_config,), _ = mock_server_app.update_config.call_args
+        return applied_config
+
+    def test_hide_globs_does_not_hide_node_modules(self, extension, mock_server_app):
+        # node_modules is a real dependency directory users expect to browse; it
+        # must not be in the curated hide_globs list.
+        config = self._apply_config(extension, mock_server_app)
+        assert "node_modules" not in config.ContentsManager.hide_globs
+
+    def test_hide_globs_still_hides_noise(self, extension, mock_server_app):
+        # The rest of the curated list is unchanged.
+        config = self._apply_config(extension, mock_server_app)
+        assert "__pycache__" in config.ContentsManager.hide_globs
+        assert config.ContentsManager.allow_hidden is True
