@@ -174,8 +174,12 @@ class ScopedAwareness:
         with self.as_custom_client():
             self.awareness.set_local_state_field(field, value)
 
-    def _get_field(self, field: str, default: Any = None) -> Any:
-        """Read one field of this instance's local state."""
+    def get_local_state_field(self, field: str, default: Any = None) -> Any:
+        """
+        Returns a specific field of this instance's local state, or `default` if
+        the field (or the local state) is not set. The read counterpart to
+        `set_local_state_field`, which `pycrdt.Awareness` itself does not provide.
+        """
         return (self.get_local_state() or {}).get(field, default)
 
     async def _start_heartbeat(self):
@@ -228,12 +232,12 @@ class PersonaAwareness(ScopedAwareness):
     @property
     def id(self) -> str:
         """The persona ID (stable for the persona's lifetime)."""
-        return self._get_field("id", "")
+        return self.get_local_state_field("id", "")
 
     @property
     def model(self) -> ModelConfiguration:
         """The persona's model configuration (current model, options, model settings)."""
-        data = self._get_field("model")
+        data = self.get_local_state_field("model")
         return ModelConfiguration(**data) if data else ModelConfiguration()
 
     @model.setter
@@ -243,7 +247,7 @@ class PersonaAwareness(ScopedAwareness):
     @property
     def settings(self) -> list[SettingConfiguration]:
         """The persona's general (non-model) setting configurations."""
-        return [SettingConfiguration(**s) for s in self._get_field("settings", [])]
+        return [SettingConfiguration(**s) for s in self.get_local_state_field("settings", [])]
 
     @settings.setter
     def settings(self, settings: list[SettingConfiguration]) -> None:
@@ -252,7 +256,7 @@ class PersonaAwareness(ScopedAwareness):
     @property
     def usage(self) -> Usage:
         """The token and cost usage the persona reports for the session."""
-        data = self._get_field("usage")
+        data = self.get_local_state_field("usage")
         return Usage(**data) if data else Usage()
 
     @usage.setter
@@ -262,7 +266,7 @@ class PersonaAwareness(ScopedAwareness):
     @property
     def slash_commands(self) -> list[CommandOption]:
         """The slash commands the persona advertises."""
-        return [CommandOption(**c) for c in self._get_field("slash_commands", [])]
+        return [CommandOption(**c) for c in self.get_local_state_field("slash_commands", [])]
 
     @slash_commands.setter
     def slash_commands(self, commands: list[CommandOption]) -> None:
@@ -280,7 +284,7 @@ class PersonaAwareness(ScopedAwareness):
         Stored under the `isWriting` awareness key; assigning this property and
         calling `set_local_state_field("isWriting", ...)` are equivalent.
         """
-        return self._get_field("isWriting", False)
+        return self.get_local_state_field("isWriting", False)
 
     @is_writing.setter
     def is_writing(self, value: bool | str) -> None:
@@ -308,7 +312,7 @@ class PersonaManagerAwareness(ScopedAwareness):
     @property
     def personas(self) -> list[PersonaOption]:
         """The personas available in this chat."""
-        return [PersonaOption(**p) for p in self._get_field("personas", [])]
+        return [PersonaOption(**p) for p in self.get_local_state_field("personas", [])]
 
     @personas.setter
     def personas(self, personas: list[PersonaOption]) -> None:
