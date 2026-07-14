@@ -149,9 +149,9 @@ class PersonaManagerReadinessHandler(JupyterHandler):
 
     Resolves only once the `PersonaManager` for the requested chat has been
     registered (and, with it, its personas). Returns the fixed Yjs client ID
-    under which the manager publishes its `PersonaManagerAwarenessState`. The
-    browser caches this ID and reads the persona list from that slot of the
-    awareness map, instead of polling a REST API.
+    under which the manager publishes its persona list. The browser caches this
+    ID and reads the persona list from that slot of the awareness map, instead
+    of polling a REST API.
     """
 
     @property
@@ -162,7 +162,7 @@ class PersonaManagerReadinessHandler(JupyterHandler):
 
     @tornado.web.authenticated
     async def get(self):
-        from .persona_manager import PERSONA_MANAGER_AWARENESS_CLIENT_ID
+        from .persona_awareness import PERSONA_MANAGER_AWARENESS_CLIENT_ID
 
         chat_path = self.get_argument("chat_path", None)
         if not chat_path:

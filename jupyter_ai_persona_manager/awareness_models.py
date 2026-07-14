@@ -5,13 +5,16 @@ Session information (the persona list, and each persona's model, model
 settings, general settings, usage, and slash commands) is broadcast over the
 chat's Yjs awareness channel rather than fetched through REST polling. The
 awareness map is keyed by Yjs client IDs, with values being arbitrary dicts.
-This module defines the subset of that map written by the `PersonaManager` and
-its personas:
+The two slots this project owns are managed by the awareness helpers in
+`persona_awareness.py`:
 
-- The `PersonaManager` registers one awareness client (a fixed client ID) whose
-  state is a `PersonaManagerAwarenessState` — the list of personas in the chat.
-- Each persona's awareness client holds a `PersonaAwarenessState` — that
-  persona's model configuration, settings, usage, and slash commands.
+- `PersonaManagerAwareness` (fixed client ID) publishes the list of personas
+  (`PersonaOption`s) in the chat.
+- `PersonaAwareness` (one per persona) publishes that persona's model
+  configuration, general settings, usage, and slash commands.
+
+Those helpers own the aggregate shape via typed properties, so this module only
+defines the component models (the property types and the serialized shapes).
 
 User selections are *not* stored here. They ride on outgoing message metadata
 (see `ModelSpec`), so each user's choices are private and applied per message.
@@ -19,11 +22,7 @@ User selections are *not* stored here. They ride on outgoing message metadata
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
-
-################################################
-# PersonaManager awareness state
-################################################
+from pydantic import BaseModel, Field
 
 
 class PersonaOption(BaseModel):
@@ -34,20 +33,8 @@ class PersonaOption(BaseModel):
     avatar_url: str | None = None
     # The Yjs client ID of this persona's awareness client. Persona client IDs
     # are dynamic (they change as personas load/reload), so the manager reports
-    # each one here to let the browser look up a persona's `PersonaAwarenessState`
-    # in O(1).
+    # each one here to let the browser look up a persona's awareness slot in O(1).
     yjs_client_id: int
-
-
-class PersonaManagerAwarenessState(BaseModel):
-    """The `PersonaManager`'s awareness state: the list of available personas."""
-
-    personas: list[PersonaOption] = Field(default_factory=list)
-
-
-################################################
-# Persona awareness state
-################################################
 
 
 class ModelOption(BaseModel):
@@ -118,30 +105,6 @@ class CommandOption(BaseModel):
 
     name: str  # includes leading "/", e.g. "/compact"
     description: str | None = None
-
-
-class PersonaAwarenessState(BaseModel):
-    """
-    A single persona's awareness state. This *is* the dict published under the
-    persona's Yjs client ID (each field is a top-level entry of the awareness
-    slot), so this model documents the exact shape clients read.
-    """
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: str
-    model: ModelConfiguration = Field(default_factory=ModelConfiguration)
-    settings: list[SettingConfiguration] = Field(default_factory=list)
-    usage: Usage = Field(default_factory=Usage)
-    slash_commands: list[CommandOption] = Field(default_factory=list)
-
-    # Whether this persona is currently writing a reply. `False` when idle;
-    # while streaming, the ID of the message being written (jupyter-chat reads
-    # this to render the typing indicator and enable the stop button). Written
-    # directly to awareness on the hot path (see `BasePersona.stream_message`),
-    # not through the config broadcast — this annotation just types the slot.
-    # The awareness key is `isWriting` (camelCase) for jupyter-chat.
-    is_writing: bool | str = Field(default=False, alias="isWriting")
 
 
 ################################################

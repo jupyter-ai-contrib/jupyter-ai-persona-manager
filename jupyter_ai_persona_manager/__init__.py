@@ -10,14 +10,16 @@ except ImportError:
 
 from .base_persona import BasePersona, PersonaDefaults
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
-from .persona_awareness import PersonaAwareness
+from .persona_awareness import (
+    PersonaAwareness,
+    PersonaManagerAwareness,
+    ScopedAwareness,
+)
 from .awareness_models import (
     CommandOption,
     ModelConfiguration,
     ModelOption,
     ModelSpec,
-    PersonaAwarenessState,
-    PersonaManagerAwarenessState,
     PersonaOption,
     SettingConfiguration,
     SettingOption,

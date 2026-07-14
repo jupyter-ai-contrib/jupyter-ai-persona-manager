@@ -1,12 +1,9 @@
 """Tests for the awareness-channel Pydantic models."""
 
 from jupyter_ai_persona_manager.awareness_models import (
-    CommandOption,
     ModelConfiguration,
     ModelOption,
     ModelSpec,
-    PersonaAwarenessState,
-    PersonaManagerAwarenessState,
     PersonaOption,
     SettingConfiguration,
     SettingOption,
@@ -14,90 +11,56 @@ from jupyter_ai_persona_manager.awareness_models import (
 )
 
 
-class TestPersonaManagerAwarenessState:
-    def test_defaults_to_empty_persona_list(self):
-        state = PersonaManagerAwarenessState()
-        assert state.personas == []
-
+class TestPersonaOption:
     def test_round_trip(self):
-        state = PersonaManagerAwarenessState(
-            personas=[
-                PersonaOption(
-                    id="jupyter-ai-personas::pkg::Bot",
-                    name="Bot",
-                    avatar_url="/avatars/bot",
-                    yjs_client_id=12345,
-                )
-            ]
+        option = PersonaOption(
+            id="jupyter-ai-personas::pkg::Bot",
+            name="Bot",
+            avatar_url="/avatars/bot",
+            yjs_client_id=12345,
         )
-        restored = PersonaManagerAwarenessState(**state.model_dump())
-        assert restored == state
+        assert PersonaOption(**option.model_dump()) == option
 
     def test_serialized_shape(self):
-        state = PersonaManagerAwarenessState(
-            personas=[
-                PersonaOption(id="p1", name="One", yjs_client_id=7),
-            ]
-        )
-        dumped = state.model_dump()
+        dumped = PersonaOption(id="p1", name="One", yjs_client_id=7).model_dump()
         assert dumped == {
-            "personas": [
-                {
-                    "id": "p1",
-                    "name": "One",
-                    "avatar_url": None,
-                    "yjs_client_id": 7,
-                }
-            ]
+            "id": "p1",
+            "name": "One",
+            "avatar_url": None,
+            "yjs_client_id": 7,
         }
 
 
-class TestPersonaAwarenessState:
+class TestModelConfiguration:
     def test_defaults(self):
-        state = PersonaAwarenessState(id="p1")
-        assert state.model == ModelConfiguration()
-        assert state.settings == []
-        assert state.usage == Usage()
-        assert state.slash_commands == []
+        model = ModelConfiguration()
+        assert model.current is None
+        assert model.options == []
+        assert model.settings == []
 
     def test_round_trip_full(self):
-        state = PersonaAwarenessState(
-            id="p1",
-            model=ModelConfiguration(
-                current="opus",
-                options=[ModelOption(id="opus", name="Opus")],
-                settings=[
-                    SettingConfiguration(
-                        id="context_size",
-                        current="200k",
-                        options=[SettingOption(id="200k", name="200K")],
-                    )
-                ],
-            ),
+        model = ModelConfiguration(
+            current="opus",
+            options=[ModelOption(id="opus", name="Opus")],
             settings=[
                 SettingConfiguration(
-                    id="mode",
-                    current="ask",
-                    options=[
-                        SettingOption(id="ask"),
-                        SettingOption(id="code"),
-                    ],
+                    id="context_size",
+                    current="200k",
+                    options=[SettingOption(id="200k", name="200K")],
                 )
             ],
-            usage=Usage(input_tokens=10, output_tokens=5),
-            slash_commands=[CommandOption(name="/compact", description="Compact")],
         )
-        restored = PersonaAwarenessState(**state.model_dump())
-        assert restored == state
+        assert ModelConfiguration(**model.model_dump()) == model
 
-    def test_serialized_shape_defaults(self):
-        dumped = PersonaAwarenessState(id="p1").model_dump()
-        assert dumped["id"] == "p1"
-        assert dumped["model"] == {"current": None, "options": [], "settings": []}
-        assert dumped["settings"] == []
-        assert dumped["slash_commands"] == []
-        # Usage fields all default to None.
-        assert set(dumped["usage"].values()) == {None}
+
+class TestSettingConfiguration:
+    def test_round_trip_full(self):
+        setting = SettingConfiguration(
+            id="mode",
+            current="ask",
+            options=[SettingOption(id="ask"), SettingOption(id="code")],
+        )
+        assert SettingConfiguration(**setting.model_dump()) == setting
 
 
 class TestUsage:

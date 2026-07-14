@@ -8,29 +8,48 @@ from typing import TYPE_CHECKING, Any
 from jupyterlab_chat.models import User
 from pycrdt import Awareness
 
+from .awareness_models import (
+    CommandOption,
+    ModelConfiguration,
+    PersonaOption,
+    SettingConfiguration,
+    Usage,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from jupyterlab_chat.ychat import YChat
 
 
-class PersonaAwareness:
+PERSONA_MANAGER_AWARENESS_CLIENT_ID = 7133713371337
+"""
+The fixed, hardcoded Yjs client ID under which every `PersonaManager` publishes
+its awareness state (the persona list). A chosen 53-bit constant so it survives
+reconnects and the browser can locate the manager's state in the awareness map
+without enumerating clients. A single readiness REST endpoint hands this ID to
+the browser once the manager and its personas are registered.
+"""
+
+
+class ScopedAwareness:
     """
-    Custom helper class that accepts a `YChat` instance and returns a
-    `pycrdt.Awareness`-like interface, with a custom client ID scoped to this
-    instance. This class implements a subset of the methods provided by
-    `pycrdt.Awareness`.
+    Base class that writes awareness local state under a *custom client ID*,
+    working around the fact that `pycrdt.Awareness` provides no native way to
+    set state for more than one client ID from a single process.
 
-    - This class optionally accepts a `User` object in the constructor. When
-    passed, this class will automatically register this user in the awareness
-    dictionary on init.
+    It accepts a `YChat` and behaves like a small `pycrdt.Awareness` facade
+    scoped to one client ID: every read/write temporarily swaps
+    `ydoc.awareness.client_id` to this instance's ID (via `as_custom_client()`),
+    so multiple `ScopedAwareness` instances can each own a distinct slot in the
+    same shared awareness map.
 
-    - This class works by manually setting `ydoc.awareness.client_id` before &
-    after each method call. This class provides a `self.as_custom_client()`
-    context manager that automatically does this upon enter & exit.
+    - Pass an explicit `client_id` to reserve a fixed, well-known slot (e.g. the
+      `PersonaManager`); omit it for a random per-instance ID (e.g. a persona).
+    - Pass a `User` to register it in the slot on init.
+    - A heartbeat task keeps the slot alive past the 30s awareness timeout.
 
-    - This class is required to provide awareness states for >1 persona, because
-    `pycrdt.Awareness` doesn't provide a way to set the awareness state for >1
-    client ID (for now).
+    Subclasses add typed getter/setter properties for the specific fields they
+    own, so consumers work with models instead of raw dict fields.
     """
 
     awareness: Awareness
@@ -46,7 +65,7 @@ class PersonaAwareness:
         *,
         ychat: "YChat",
         log: Logger,
-        user: User | None,
+        user: User | None = None,
         client_id: int | None = None,
     ):
         # Bind instance attributes
@@ -59,11 +78,8 @@ class PersonaAwareness:
         else:
             self.awareness = Awareness(ydoc=ychat._ydoc)
 
-        # Initialize a custom client ID & save the original client ID. Callers
-        # may pass an explicit `client_id` to reserve a fixed, well-known slot in
-        # the awareness map (e.g. the `PersonaManager` uses a hardcoded constant
-        # so the browser can find its state across reconnects). When omitted, a
-        # random client ID is generated.
+        # Initialize a custom client ID & save the original client ID. A fixed
+        # `client_id` reserves a well-known slot; otherwise generate a random one.
         self._original_client_id = self.awareness.client_id
         self._custom_client_id = (
             client_id if client_id is not None else random.getrandbits(32)
@@ -130,7 +146,7 @@ class PersonaAwareness:
 
     def set_local_state(self, state: dict[str, Any] | None) -> None:
         """
-        Sets the local state of this persona in the awareness map, indexed by
+        Sets the local state of this instance in the awareness map, indexed by
         this instance's custom client ID.
 
         Passing `state=None` deletes the local state indexed by this instance's
@@ -145,6 +161,10 @@ class PersonaAwareness:
         """
         with self.as_custom_client():
             self.awareness.set_local_state_field(field, value)
+
+    def _get_field(self, field: str, default: Any = None) -> Any:
+        """Read one field of this instance's local state."""
+        return (self.get_local_state() or {}).get(field, default)
 
     async def _start_heartbeat(self):
         """
@@ -161,8 +181,122 @@ class PersonaAwareness:
 
     def shutdown(self) -> None:
         """
-        Stops this instance's background tasks and removes the persona's custom
-        client ID from the awareness map.
+        Stops this instance's background tasks and removes this instance's
+        custom client ID from the awareness map.
         """
         self._heartbeat_task.cancel()
         self.set_local_state(None)
+
+
+class PersonaAwareness(ScopedAwareness):
+    """
+    A persona's awareness slot: the session information a persona broadcasts to
+    every client (its model configuration, general settings, usage, slash
+    commands, and whether it is currently writing).
+
+    Each field is a typed property backed directly by the awareness slot — the
+    getter deserializes it from the slot, the setter serializes it in and
+    triggers a rebroadcast. The slot itself is the persona's awareness state, so
+    there is no separate in-memory copy to keep in sync.
+    """
+
+    def __init__(self, *, ychat: "YChat", log: Logger, user: User, id: str):
+        super().__init__(ychat=ychat, log=log, user=user)
+        # Publish the default state so the slot is a complete persona state from
+        # the start. Subclasses/callers fill in real values via the properties
+        # once they know them (e.g. an ACP persona on session create/load).
+        self.set_local_state_field("id", id)
+        self.model = ModelConfiguration()
+        self.settings = []
+        self.usage = Usage()
+        self.slash_commands = []
+        self.is_writing = False
+
+    @property
+    def id(self) -> str:
+        """The persona ID (stable for the persona's lifetime)."""
+        return self._get_field("id", "")
+
+    @property
+    def model(self) -> ModelConfiguration:
+        """The persona's model configuration (current model, options, model settings)."""
+        data = self._get_field("model")
+        return ModelConfiguration(**data) if data else ModelConfiguration()
+
+    @model.setter
+    def model(self, model: ModelConfiguration) -> None:
+        self.set_local_state_field("model", model.model_dump())
+
+    @property
+    def settings(self) -> list[SettingConfiguration]:
+        """The persona's general (non-model) setting configurations."""
+        return [SettingConfiguration(**s) for s in self._get_field("settings", [])]
+
+    @settings.setter
+    def settings(self, settings: list[SettingConfiguration]) -> None:
+        self.set_local_state_field("settings", [s.model_dump() for s in settings])
+
+    @property
+    def usage(self) -> Usage:
+        """The token and cost usage the persona reports for the session."""
+        data = self._get_field("usage")
+        return Usage(**data) if data else Usage()
+
+    @usage.setter
+    def usage(self, usage: Usage) -> None:
+        self.set_local_state_field("usage", usage.model_dump())
+
+    @property
+    def slash_commands(self) -> list[CommandOption]:
+        """The slash commands the persona advertises."""
+        return [CommandOption(**c) for c in self._get_field("slash_commands", [])]
+
+    @slash_commands.setter
+    def slash_commands(self, commands: list[CommandOption]) -> None:
+        self.set_local_state_field(
+            "slash_commands", [c.model_dump() for c in commands]
+        )
+
+    @property
+    def is_writing(self) -> bool | str:
+        """
+        Whether the persona is currently writing a reply: `False` when idle, or
+        the ID of the message being written while streaming (jupyter-chat reads
+        this to render the typing indicator and enable the stop button).
+
+        Stored under the `isWriting` awareness key; assigning this property and
+        calling `set_local_state_field("isWriting", ...)` are equivalent.
+        """
+        return self._get_field("isWriting", False)
+
+    @is_writing.setter
+    def is_writing(self, value: bool | str) -> None:
+        self.set_local_state_field("isWriting", value)
+
+
+class PersonaManagerAwareness(ScopedAwareness):
+    """
+    The `PersonaManager`'s awareness slot: the list of personas in the chat.
+
+    Registered under the fixed `PERSONA_MANAGER_AWARENESS_CLIENT_ID` so the
+    browser can find it across reconnects. The `personas` property is backed
+    directly by the awareness slot.
+    """
+
+    def __init__(self, *, ychat: "YChat", log: Logger):
+        super().__init__(
+            ychat=ychat,
+            log=log,
+            user=None,
+            client_id=PERSONA_MANAGER_AWARENESS_CLIENT_ID,
+        )
+        self.personas = []
+
+    @property
+    def personas(self) -> list[PersonaOption]:
+        """The personas available in this chat."""
+        return [PersonaOption(**p) for p in self._get_field("personas", [])]
+
+    @personas.setter
+    def personas(self, personas: list[PersonaOption]) -> None:
+        self.set_local_state_field("personas", [p.model_dump() for p in personas])

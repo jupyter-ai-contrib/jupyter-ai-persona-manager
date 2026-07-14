@@ -18,12 +18,15 @@ from jupyterlab_chat.models import Message, NewMessage, User
 from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
-from .awareness_models import PersonaManagerAwarenessState, PersonaOption
+from .awareness_models import PersonaOption
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
-from .persona_awareness import PersonaAwareness
+from .persona_awareness import (
+    PERSONA_MANAGER_AWARENESS_CLIENT_ID,
+    PersonaManagerAwareness,
+)
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
@@ -36,15 +39,6 @@ if TYPE_CHECKING:
 
 # EPG := entry point group
 EPG_NAME = "jupyter_ai.personas"
-
-PERSONA_MANAGER_AWARENESS_CLIENT_ID = 7133713371337
-"""
-The fixed, hardcoded Yjs client ID under which every `PersonaManager` publishes
-its `PersonaManagerAwarenessState` (the persona list). A chosen 53-bit constant
-so that it survives reconnects and the browser can locate the manager's state in
-the awareness map without enumerating clients. A single readiness REST endpoint
-hands this ID to the browser once the manager and its personas are registered.
-"""
 
 SYSTEM_USERNAME = "hidden::jupyter_ai_system"
 """
@@ -66,12 +60,12 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     an error message to the user via persona.handle_uncaught_exception().
 
     Before processing, applies the model & settings specification carried on the
-    message's metadata (see `BasePersona.apply_message_metadata()`), so
+    message's metadata (see `BasePersona.apply_specs_in_message()`), so
     per-message user selections take effect for every persona without each
     `process_message()` implementation having to apply them itself.
     """
     try:
-        await persona.apply_message_metadata(message)
+        await persona.apply_specs_in_message(message)
         await persona.process_message(message)
     except Exception as exc:
         persona.log.error(
@@ -158,13 +152,12 @@ class PersonaManager(LoggingConfigurable):
     _personas: dict[str, BasePersona]
     file_id: str
 
-    _awareness: PersonaAwareness
+    _awareness: PersonaManagerAwareness
     """
-    The manager's awareness client, publishing the persona list under the fixed
-    `PERSONA_MANAGER_AWARENESS_CLIENT_ID`. We use `PersonaAwareness` (rather than
-    `ychat.awareness` directly) only because it lets us write local state under a
-    specific client ID; `pycrdt.Awareness` provides no native way to do that. See
-    the `PersonaAwareness` docstring for details on this workaround.
+    The manager's awareness slot, publishing the persona list under the fixed
+    `PERSONA_MANAGER_AWARENESS_CLIENT_ID` via its `personas` property. Scoped to
+    a specific client ID because `pycrdt.Awareness` provides no native way to
+    write state under more than one client ID; see `ScopedAwareness` for details.
     """
 
     def __init__(
@@ -197,15 +190,10 @@ class PersonaManager(LoggingConfigurable):
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
 
-        # Register the manager's own awareness client under a fixed client ID and
-        # broadcast the list of personas. This is the source of truth the browser
+        # Register the manager's own awareness slot (under a fixed client ID) and
+        # publish the list of personas. This is the source of truth the browser
         # reads for the persona selector, replacing REST polling.
-        self._awareness = PersonaAwareness(
-            ychat=self.ychat,
-            log=self.log,
-            user=None,
-            client_id=PERSONA_MANAGER_AWARENESS_CLIENT_ID,
-        )
+        self._awareness = PersonaManagerAwareness(ychat=self.ychat, log=self.log)
         self.update_awareness_state()
 
         if self.default_persona:
@@ -435,34 +423,30 @@ class PersonaManager(LoggingConfigurable):
         """
         return self._personas
 
-    def get_awareness_state(self) -> PersonaManagerAwarenessState:
+    def get_awareness_state(self) -> list[PersonaOption]:
         """
-        Return the `PersonaManagerAwarenessState` currently published under the
-        manager's client ID, read back from the awareness object.
+        Return the list of personas currently published under the manager's
+        client ID, read back from the awareness slot.
         """
-        state = self._awareness.get_local_state() or {}
-        return PersonaManagerAwarenessState(**state)
+        return self._awareness.personas
 
     def update_awareness_state(self) -> None:
         """
         Rebuild the persona list from the current personas and publish it under
         the manager's client ID, which rebroadcasts it over the Yjs awareness
         channel. Each `PersonaOption` carries the Yjs client ID of that persona's
-        awareness client so the browser can look up its state in O(1). Called on
+        awareness slot so the browser can look up its state in O(1). Called on
         init and whenever the set of personas changes (e.g. `/refresh-personas`).
         """
-        state = PersonaManagerAwarenessState(
-            personas=[
-                PersonaOption(
-                    id=persona.id,
-                    name=persona.name,
-                    avatar_url=persona.as_user().avatar_url,
-                    yjs_client_id=persona.awareness.client_id,
-                )
-                for persona in self._personas.values()
-            ]
-        )
-        self._awareness.set_local_state(state.model_dump())
+        self._awareness.personas = [
+            PersonaOption(
+                id=persona.id,
+                name=persona.name,
+                avatar_url=persona.as_user().avatar_url,
+                yjs_client_id=persona.awareness.client_id,
+            )
+            for persona in self._personas.values()
+        ]
 
     @property
     def default_persona(self) -> BasePersona | None:

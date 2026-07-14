@@ -52,23 +52,20 @@ def ychat():
 
 def _make_persona(ychat) -> _Persona:
     """Instantiate a persona against a real YChat. Uses __new__ + manual wiring
-    to skip the heartbeat task and parent dependencies, but keeps a real
-    PersonaAwareness so writes hit the shared awareness map."""
-    from jupyter_ai_persona_manager.awareness_models import PersonaAwarenessState
+    to skip parent dependencies, but keeps a real PersonaAwareness so writes hit
+    the shared awareness map (the persona's own client-id slot)."""
     from jupyter_ai_persona_manager.persona_awareness import PersonaAwareness
 
     persona = _Persona.__new__(_Persona)
     persona.ychat = ychat
     persona.log = logging.getLogger("test-persona")
     persona.parent = None
-    # Real awareness, fixed client ID for deterministic assertions. Skip the
-    # heartbeat by constructing then cancelling it.
+    # Real awareness: it publishes the default persona state on construction.
+    # Cancel the heartbeat so the test doesn't leave a pending task.
     persona.awareness = PersonaAwareness(
-        ychat=ychat, log=persona.log, user=None, client_id=4242
+        ychat=ychat, log=persona.log, user=None, id="bot"
     )
     persona.awareness._heartbeat_task.cancel()
-    persona._awareness_state = PersonaAwarenessState(id="bot")
-    persona._broadcast_awareness_state()
     return persona
 
 

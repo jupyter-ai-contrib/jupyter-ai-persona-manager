@@ -18,7 +18,6 @@ from .awareness_models import (
     CommandOption,
     ModelConfiguration,
     ModelSpec,
-    PersonaAwarenessState,
     SettingConfiguration,
     Usage,
 )
@@ -90,22 +89,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
     awareness: PersonaAwareness
     """
-    A custom wrapper around `self.ychat.awareness: pycrdt.Awareness`. The
-    default `Awareness` API does not support setting local state fields on
-    multiple AI personas, so any awareness method calls should be done through
-    this attribute (`self.awareness`) instead of `self.ychat.awareness`. See the
-    documentation in `PersonaAwareness` for more information.
+    This persona's awareness slot: a `PersonaAwareness` scoped to this persona's
+    own Yjs client ID. It holds the persona's broadcast session state (model
+    configuration, settings, usage, slash commands, writing status) as typed
+    properties, so `self.awareness.model = ...` publishes over the awareness
+    channel directly. Use this instead of `self.ychat.awareness`, whose default
+    API cannot set state for more than one client ID. See `PersonaAwareness` and
+    its base `ScopedAwareness` for details.
 
     Automatically set by `BasePersona`.
-    """
-
-    _awareness_state: PersonaAwarenessState
-    """
-    This persona's awareness state (model configuration, settings, usage, and
-    slash commands). Broadcast over the awareness channel whenever it changes.
-    Always mutate this through the `update_*` methods so a rebroadcast happens;
-    read it through the `get_*` methods. Automatically initialized by
-    `BasePersona`.
     """
 
     ################################################
@@ -123,18 +115,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # Bind arguments to instance attributes
         self.ychat = ychat
 
-        # Initialize custom awareness object for this persona
+        # Initialize this persona's awareness slot. It starts with a default
+        # (empty) session state already published; the persona fills in its
+        # model/settings/usage once it knows them (e.g. an ACP persona on session
+        # create/load), and a persona that never does simply carries the defaults.
         self.awareness = PersonaAwareness(
-            ychat=self.ychat, log=self.log, user=self.as_user()
+            ychat=self.ychat, log=self.log, user=self.as_user(), id=self.id
         )
-
-        # Initialize this persona's awareness state (model configuration,
-        # settings, usage, and slash commands) and broadcast it. Subclasses fill
-        # in the model/settings configuration once they know it (e.g. an ACP
-        # persona does so on session create/load); a persona that never touches
-        # any of this simply carries the defaults.
-        self._awareness_state = PersonaAwarenessState(id=self.id)
-        self._broadcast_awareness_state()
 
         # Register this persona as a user in the chat
         self.ychat.set_user(self.as_user())
@@ -285,7 +272,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
-            self.awareness.set_local_state_field("isWriting", True)
+            self.awareness.is_writing = True
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -300,7 +287,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     stream_id = self.ychat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
-                    self.awareness.set_local_state_field("isWriting", stream_id)
+                    self.awareness.is_writing = stream_id
 
                 assert stream_id
                 self.ychat.update_message(
@@ -330,7 +317,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            self.awareness.set_local_state_field("isWriting", False)
+            self.awareness.is_writing = False
 
     def send_message(self, body: str) -> None:
         """
@@ -397,62 +384,42 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self.parent.get_mcp_settings()
 
     ################################################
-    # awareness state: reading & broadcasting session information
+    # reading session information
     ################################################
-    # `is_writing` is owned outside the config broadcast — it's set directly on
-    # the streaming hot path (see `stream_message`) — so the broadcast leaves it
-    # untouched rather than resetting it to the model's default.
-    _BROADCAST_EXCLUDE = {"is_writing"}
-
-    def _broadcast_awareness_state(self) -> None:
-        """
-        Publish this persona's awareness state to `self.awareness`, triggering a
-        rebroadcast over the Yjs awareness channel. Called after any change to
-        `self._awareness_state`.
-
-        Each field of `PersonaAwarenessState` is written as a top-level entry of
-        the persona's awareness slot (so the slot *is* the state), merged field
-        by field rather than replacing the slot — that preserves the `user`
-        entry `PersonaAwareness` registers and the directly-written `isWriting`.
-        """
-        state = self._awareness_state.model_dump(by_alias=True)
-        for field, info in PersonaAwarenessState.model_fields.items():
-            if field in self._BROADCAST_EXCLUDE:
-                continue
-            # model_dump uses the alias when set (e.g. isWriting), so map back.
-            key = info.alias or field
-            self.awareness.set_local_state_field(key, state[key])
-
+    # These `get_*` readers and the `report_*` setters below are thin views over
+    # `self.awareness`, whose typed properties are backed directly by the Yjs
+    # awareness slot — reading returns the currently-published value and setting
+    # rebroadcasts. There is no separate in-memory copy to keep in sync.
     def get_model_configuration(self) -> ModelConfiguration:
         """Return the current model, model settings, and all options for both."""
-        return self._awareness_state.model
+        return self.awareness.model
 
     def get_setting_configurations(self) -> list[SettingConfiguration]:
         """Return the current value and all options for each general setting."""
-        return self._awareness_state.settings
+        return self.awareness.settings
 
     def get_model(self) -> str | None:
         """Return the current model ID, or None if using the default."""
-        return self._awareness_state.model.current
+        return self.awareness.model.current
 
     def get_model_settings(self) -> dict[str, str | None]:
         """Return the current model settings, keyed by setting ID."""
-        return {s.id: s.current for s in self._awareness_state.model.settings}
+        return {s.id: s.current for s in self.awareness.model.settings}
 
     def get_settings(self) -> dict[str, str | None]:
         """
         Return the current general settings, keyed by setting ID. This is
         separate from the model settings returned by `get_model_settings()`.
         """
-        return {s.id: s.current for s in self._awareness_state.settings}
+        return {s.id: s.current for s in self.awareness.settings}
 
     def get_usage(self) -> Usage:
         """Return the usage currently reported by this persona."""
-        return self._awareness_state.usage
+        return self.awareness.usage
 
     def get_slash_commands(self) -> list[CommandOption]:
         """Return the slash commands currently advertised by this persona."""
-        return self._awareness_state.slash_commands
+        return self.awareness.slash_commands
 
     ################################################
     # reporting session information (called by the persona itself)
@@ -460,25 +427,21 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # A persona calls these `report_*` methods to publish its own session state
     # over awareness. They are the counterpart to the `get_*` readers, and are
     # meant to be called by the persona (and its collaborators), not by
-    # consumers of the persona. Each rebroadcasts after updating the state.
+    # consumers of the persona. Assigning an `self.awareness` property publishes
+    # it, so these just forward — except `report_usage`, which owns the merge.
     def report_model_configuration(self, model: ModelConfiguration) -> None:
         """
         Publish the persona's model configuration (current model, model options,
-        and model settings) and rebroadcast. A persona calls this once it knows
-        its models (e.g. an ACP persona on session create/load).
+        and model settings). A persona calls this once it knows its models (e.g.
+        an ACP persona on session create/load).
         """
-        self._awareness_state.model = model
-        self._broadcast_awareness_state()
+        self.awareness.model = model
 
     def report_settings_configuration(
         self, settings: list[SettingConfiguration]
     ) -> None:
-        """
-        Publish the persona's general (non-model) settings configuration and
-        rebroadcast.
-        """
-        self._awareness_state.settings = settings
-        self._broadcast_awareness_state()
+        """Publish the persona's general (non-model) settings configuration."""
+        self.awareness.settings = settings
 
     def report_usage(self, usage: Usage, *, append: bool = False) -> None:
         """
@@ -495,7 +458,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         sources that emit per-turn deltas. Snapshot fields (context_*) should
         not be sent this way — you don't sum window sizes.
         """
-        current = self._awareness_state.usage
+        current = self.awareness.usage
         # Only the fields explicitly set on `usage` are merged; unset fields
         # (still None because they were never provided) leave the stored value
         # untouched.
@@ -506,12 +469,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setattr(current, field, (existing or 0) + value)
             else:
                 setattr(current, field, value)
-        self._broadcast_awareness_state()
+        self.awareness.usage = current
 
     def report_slash_commands(self, commands: list[CommandOption]) -> None:
-        """Publish the advertised slash commands and rebroadcast."""
-        self._awareness_state.slash_commands = commands
-        self._broadcast_awareness_state()
+        """Publish the advertised slash commands."""
+        self.awareness.slash_commands = commands
 
     ################################################
     # applying model & settings (overridden by configurable personas)
@@ -542,7 +504,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     async def apply_model_spec(self, spec: ModelSpec) -> None:
         """
         Apply a user's specified model and model settings, then record the new
-        current values in the awareness state and rebroadcast.
+        current values on the awareness slot (which rebroadcasts).
 
         A None model ID or a None setting value means "use the persona's current
         value", so it is skipped. The persona's backend is only asked to switch
@@ -562,18 +524,23 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         if changed:
             await self.update_model_settings(changed)
 
+        if not (model_changed or changed):
+            return
+
+        # Record the new current values and republish (assigning the property
+        # rebroadcasts). Read a fresh copy, mutate, write it back.
+        model = self.awareness.model
         if model_changed:
-            self._awareness_state.model.current = spec.id
-        for setting in self._awareness_state.model.settings:
+            model.current = spec.id
+        for setting in model.settings:
             if setting.id in changed:
                 setting.current = changed[setting.id]
-        if model_changed or changed:
-            self._broadcast_awareness_state()
+        self.awareness.model = model
 
     async def apply_settings_spec(self, spec: dict[str, str | None]) -> None:
         """
         Apply a user's specified general settings, then record the new current
-        values in the awareness state and rebroadcast.
+        values on the awareness slot (which rebroadcasts).
 
         A None value for a setting means "use the persona's current value", so
         it is skipped. The persona's backend is only asked to switch (and the
@@ -590,12 +557,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             return
 
         await self.update_settings(changed)
-        for setting in self._awareness_state.settings:
+        settings = self.awareness.settings
+        for setting in settings:
             if setting.id in changed:
                 setting.current = changed[setting.id]
-        self._broadcast_awareness_state()
+        self.awareness.settings = settings
 
-    async def apply_message_metadata(self, message: Message) -> None:
+    async def apply_specs_in_message(self, message: Message) -> None:
         """
         Apply the model and settings specification carried on a message's
         metadata before the message is processed. Called by the `PersonaManager`
