@@ -13,6 +13,7 @@ from traitlets.config import Config
 
 from jupyter_ai_persona_manager.handlers import (
     AvatarHandler,
+    CancelHandler,
     MessageHandler,
     build_avatar_cache,
 )
@@ -37,6 +38,7 @@ class PersonaManagerExtension(ExtensionApp):
     handlers = [
         (r"/api/ai/avatars/(.*)", AvatarHandler),
         (r"/api/ai/message/(.*)", MessageHandler),
+        (r"/api/ai/personas/cancel", CancelHandler),
     ]
     
     persona_manager_class = Type(

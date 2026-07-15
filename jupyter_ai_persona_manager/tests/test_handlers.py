@@ -109,3 +109,78 @@ async def test_avatar_handler_serves_png(jp_fetch, jp_serverapp, tmp_path):
     assert 'image/png' in response.headers.get('Content-Type', '')
 
 
+
+
+# ---------------------------------------------------------------------------
+# CancelHandler
+# ---------------------------------------------------------------------------
+
+
+def _install_cancel_fixtures(jp_serverapp, chat_path, room_id, personas):
+    """Wire a mock file_id_manager (chat_path -> file id) and a persona manager
+    (room_id -> personas) into the server settings for a cancel request."""
+    from unittest.mock import Mock
+
+    # file id manager: chat_path -> file id, so room_id = text:chat:<file id>.
+    file_id = room_id.split(":")[-1]
+    mock_fim = Mock()
+    mock_fim.get_id.return_value = file_id
+    jp_serverapp.web_app.settings["file_id_manager"] = mock_fim
+
+    mock_pm = Mock()
+    mock_pm.personas = personas
+    settings = jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})
+    settings["persona-managers"] = {room_id: mock_pm}
+
+
+async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
+    """A POST cancels every persona in the chat via cancel_response()."""
+    from unittest.mock import AsyncMock, Mock
+
+    persona = Mock()
+    persona.id = "jupyter-ai-personas::test::TestPersona"
+    persona.cancel_response = AsyncMock()
+
+    _install_cancel_fixtures(
+        jp_serverapp, "notebooks/chat.chat", "text:chat:file-1", {"p": persona}
+    )
+
+    response = await jp_fetch(
+        "api", "ai", "personas", "cancel",
+        method="POST", body="",
+        params={"chat_path": "notebooks/chat.chat"},
+    )
+
+    assert response.code == 200
+    body = json.loads(response.body)
+    assert body["status"] == "cancelled"
+    assert persona.id in body["cancelled"]
+    persona.cancel_response.assert_awaited_once()
+
+
+async def test_cancel_handler_requires_chat_path(jp_fetch):
+    """Missing chat_path is a 400."""
+    from tornado.httpclient import HTTPClientError
+
+    with pytest.raises(HTTPClientError) as exc:
+        await jp_fetch("api", "ai", "personas", "cancel", method="POST", body="")
+    assert exc.value.code == 400
+
+
+async def test_cancel_handler_404_for_uninitialized_chat(jp_fetch, jp_serverapp):
+    """A chat with no persona manager is a 404."""
+    from tornado.httpclient import HTTPClientError
+    from unittest.mock import Mock
+
+    mock_fim = Mock()
+    mock_fim.get_id.return_value = "file-unknown"
+    jp_serverapp.web_app.settings["file_id_manager"] = mock_fim
+    jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})["persona-managers"] = {}
+
+    with pytest.raises(HTTPClientError) as exc:
+        await jp_fetch(
+            "api", "ai", "personas", "cancel",
+            method="POST", body="",
+            params={"chat_path": "notebooks/chat.chat"},
+        )
+    assert exc.value.code == 404
