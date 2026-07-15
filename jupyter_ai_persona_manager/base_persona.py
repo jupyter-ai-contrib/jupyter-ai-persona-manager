@@ -177,11 +177,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         that streams or runs a long-lived turn (e.g. an ACP agent) overrides this
         to actually interrupt it.
 
-        An override should first check `self.processing` and return early when
-        nothing is in flight — some backends treat a cancel with no active
+        Only invoked for a persona that's currently `processing` — the cancel
+        handler gates on that — so an override can assume a response is in
+        flight. This matters because some backends treat a cancel with no active
         response as an error (e.g. ACP defines `session/cancel` only for an
-        ongoing prompt turn). Callers should also gate on `processing` (see the
-        cancel handler), but a direct caller may not, so guard here too.
+        ongoing prompt turn).
         """
 
     @property
