@@ -44,6 +44,7 @@ def _make_persona(mock_ychat):
     persona.ychat = mock_ychat
     persona.log = MagicMock()
     persona.awareness = MagicMock()
+    persona._processing_count = 0
     return persona
 
 
@@ -158,3 +159,76 @@ class TestStreamMessageReRaise:
 
         # The `finally` clears the writing status via the awareness property.
         assert persona.awareness.is_writing is False
+
+
+# ---------------------------------------------------------------------------
+# TestCancelResponse
+# ---------------------------------------------------------------------------
+
+class TestCancelResponse:
+
+    @pytest.mark.asyncio
+    async def test_default_is_a_noop(self, mock_ychat):
+        # The base implementation is optional: awaiting it does nothing and does
+        # not touch the chat or awareness. A persona with nothing cancellable
+        # inherits this.
+        persona = _make_persona(mock_ychat)
+
+        await persona.cancel_response()
+
+        mock_ychat.add_message.assert_not_called()
+        mock_ychat.update_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_subclass_can_override(self, mock_ychat):
+        # A streaming/long-running persona overrides cancel_response to interrupt
+        # its backend; PersonaManager calls it the same way regardless.
+        cancelled = False
+
+        class _CancellablePersona(_ConcretePersona):
+            async def cancel_response(self) -> None:
+                nonlocal cancelled
+                cancelled = True
+
+        persona = _CancellablePersona.__new__(_CancellablePersona)
+        persona.ychat = mock_ychat
+        persona.log = MagicMock()
+        persona.awareness = MagicMock()
+
+        await persona.cancel_response()
+
+        assert cancelled is True
+
+
+# ---------------------------------------------------------------------------
+# TestProcessing
+# ---------------------------------------------------------------------------
+
+class TestProcessing:
+
+    def test_not_processing_by_default(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        assert persona.processing is False
+
+    def test_track_processing_toggles_flag(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        with persona.track_processing():
+            assert persona.processing is True
+        assert persona.processing is False
+
+    def test_track_processing_is_reentrant(self, mock_ychat):
+        # Concurrent messages: the count, not a bool, keeps `processing` true
+        # until the last one finishes.
+        persona = _make_persona(mock_ychat)
+        with persona.track_processing():
+            with persona.track_processing():
+                assert persona.processing is True
+            assert persona.processing is True
+        assert persona.processing is False
+
+    def test_track_processing_restores_on_exception(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        with pytest.raises(ValueError):
+            with persona.track_processing():
+                raise ValueError("boom")
+        assert persona.processing is False

@@ -143,6 +143,63 @@ class MessageHandler(JupyterHandler):
         self.finish(json.dumps({"response": response}))
 
 
+class CancelHandler(JupyterHandler):
+    """
+    Handler to cancel personas' in-progress responses in a chat.
+
+    The frontend POSTs here (with the chat's path as a query parameter) when the
+    user interrupts. Each persona in the chat is asked to stop via
+    `BasePersona.cancel_response()`, which halts whatever its reply set in motion
+    (a model stream, an agent turn, pending tool calls). Backend-agnostic: a
+    persona with nothing cancellable inherits the base no-op.
+    """
+
+    @property
+    def file_id_manager(self):
+        manager = self.serverapp.web_app.settings.get("file_id_manager")
+        if manager is None:
+            raise tornado.web.HTTPError(500, "file_id_manager is not available")
+        return manager
+
+    @tornado.web.authenticated
+    async def post(self):
+        chat_path = self.get_argument("chat_path", None)
+        if not chat_path:
+            raise tornado.web.HTTPError(
+                400, "chat_path is required as a URL query parameter"
+            )
+
+        file_id = self.file_id_manager.get_id(chat_path)
+        if not file_id:
+            raise tornado.web.HTTPError(404, f"Chat not found: {chat_path}")
+        room_id = f"text:chat:{file_id}"
+
+        persona_manager = (
+            self.serverapp.web_app.settings.get("jupyter-ai", {})
+            .get("persona-managers", {})
+            .get(room_id)
+        )
+        if not persona_manager:
+            raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
+
+        cancelled = []
+        for persona in persona_manager.personas.values():
+            # Only interrupt personas that are actually processing a response;
+            # cancelling an idle persona may be out of spec for some backends
+            # (e.g. ACP's session/cancel is defined only for an ongoing turn).
+            if not persona.processing:
+                continue
+            try:
+                await persona.cancel_response()
+                cancelled.append(persona.id)
+            except Exception:
+                self.log.warning(
+                    f"Failed to cancel response for persona '{persona.id}'",
+                    exc_info=True,
+                )
+        self.finish(json.dumps({"status": "cancelled", "cancelled": cancelled}))
+
+
 class AvatarHandler(JupyterHandler):
     """
     Handler for serving persona avatar files.

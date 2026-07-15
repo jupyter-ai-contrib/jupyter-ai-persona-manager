@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import html
 import os
 import traceback
@@ -100,6 +101,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     Automatically set by `BasePersona`.
     """
 
+    _processing_count: int
+    """
+    Number of messages this persona is currently processing. Incremented while a
+    `process_message()` call is in flight and decremented when it finishes (see
+    `track_processing`). A count because a persona can process several messages
+    concurrently. Exposed read-only via the `processing` property.
+    """
+
     ################################################
     # constructor
     ################################################
@@ -114,6 +123,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         # Bind arguments to instance attributes
         self.ychat = ychat
+        self._processing_count = 0
 
         # Initialize this persona's awareness slot. It starts with a default
         # (empty) session state already published; the persona fills in its
@@ -150,6 +160,53 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         This is an abstract method that must be implemented by subclasses.
         """
+
+    async def cancel_response(self) -> None:
+        """
+        Stops this persona's in-progress response, if any. Called when the user
+        interrupts the persona from the chat UI.
+
+        This is the counterpart to `process_message`: it should halt whatever
+        that method set in motion (a model stream, an agent turn, pending tool
+        calls) so the persona stops writing to the chat promptly. `stream_message`
+        already clears the `is_writing` awareness flag when it unwinds, so a
+        subclass typically just needs to interrupt its own backend here.
+
+        Optional: the default implementation is a no-op, for personas that have
+        nothing cancellable or complete their responses synchronously. A persona
+        that streams or runs a long-lived turn (e.g. an ACP agent) overrides this
+        to actually interrupt it.
+
+        Only invoked for a persona that's currently `processing` — the cancel
+        handler gates on that — so an override can assume a response is in
+        flight. This matters because some backends treat a cancel with no active
+        response as an error (e.g. ACP defines `session/cancel` only for an
+        ongoing prompt turn).
+        """
+
+    @property
+    def processing(self) -> bool:
+        """
+        Whether this persona is currently processing at least one message — i.e.
+        a `process_message()` call is in flight. Use this to avoid interrupting a
+        persona that has no response to cancel (see `cancel_response`).
+        """
+        return self._processing_count > 0
+
+    @contextlib.contextmanager
+    def track_processing(self):
+        """
+        Context manager that marks this persona as processing for its duration,
+        so `processing` reflects an in-flight response. `PersonaManager` wraps
+        each `process_message()` call in this; the count is restored even if the
+        call raises. A count (not a bool) because a persona may process several
+        messages concurrently.
+        """
+        self._processing_count += 1
+        try:
+            yield
+        finally:
+            self._processing_count -= 1
 
     ################################################
     # base class methods, available to subclasses.
