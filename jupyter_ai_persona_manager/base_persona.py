@@ -151,6 +151,23 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         This is an abstract method that must be implemented by subclasses.
         """
 
+    async def cancel_response(self) -> None:
+        """
+        Stops this persona's in-progress response, if any. Called when the user
+        interrupts the persona from the chat UI.
+
+        This is the counterpart to `process_message`: it should halt whatever
+        that method set in motion (a model stream, an agent turn, pending tool
+        calls) so the persona stops writing to the chat promptly. `stream_message`
+        already clears the `is_writing` awareness flag when it unwinds, so a
+        subclass typically just needs to interrupt its own backend here.
+
+        Optional: the default implementation is a no-op, for personas that have
+        nothing cancellable or complete their responses synchronously. A persona
+        that streams or runs a long-lived turn (e.g. an ACP agent) overrides this
+        to actually interrupt it.
+        """
+
     ################################################
     # base class methods, available to subclasses.
     ################################################
