@@ -66,7 +66,8 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     """
     try:
         await persona.apply_specs_in_message(message)
-        await persona.process_message(message)
+        with persona.track_processing():
+            await persona.process_message(message)
     except Exception as exc:
         persona.log.error(
             f"Persona '{persona.name}' raised an unhandled exception in process_message()."

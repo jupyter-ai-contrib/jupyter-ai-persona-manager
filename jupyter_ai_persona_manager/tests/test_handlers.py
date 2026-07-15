@@ -134,11 +134,12 @@ def _install_cancel_fixtures(jp_serverapp, chat_path, room_id, personas):
 
 
 async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
-    """A POST cancels every persona in the chat via cancel_response()."""
+    """A POST cancels each processing persona in the chat via cancel_response()."""
     from unittest.mock import AsyncMock, Mock
 
     persona = Mock()
     persona.id = "jupyter-ai-personas::test::TestPersona"
+    persona.processing = True
     persona.cancel_response = AsyncMock()
 
     _install_cancel_fixtures(
@@ -156,6 +157,40 @@ async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
     assert body["status"] == "cancelled"
     assert persona.id in body["cancelled"]
     persona.cancel_response.assert_awaited_once()
+
+
+async def test_cancel_handler_skips_idle_personas(jp_fetch, jp_serverapp):
+    """A persona that isn't processing is left alone — no cancel_response call."""
+    from unittest.mock import AsyncMock, Mock
+
+    idle = Mock()
+    idle.id = "jupyter-ai-personas::test::IdlePersona"
+    idle.processing = False
+    idle.cancel_response = AsyncMock()
+
+    busy = Mock()
+    busy.id = "jupyter-ai-personas::test::BusyPersona"
+    busy.processing = True
+    busy.cancel_response = AsyncMock()
+
+    _install_cancel_fixtures(
+        jp_serverapp,
+        "notebooks/chat.chat",
+        "text:chat:file-1",
+        {"idle": idle, "busy": busy},
+    )
+
+    response = await jp_fetch(
+        "api", "ai", "personas", "cancel",
+        method="POST", body="",
+        params={"chat_path": "notebooks/chat.chat"},
+    )
+
+    assert response.code == 200
+    body = json.loads(response.body)
+    assert body["cancelled"] == [busy.id]
+    idle.cancel_response.assert_not_awaited()
+    busy.cancel_response.assert_awaited_once()
 
 
 async def test_cancel_handler_requires_chat_path(jp_fetch):

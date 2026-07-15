@@ -184,6 +184,11 @@ class CancelHandler(JupyterHandler):
 
         cancelled = []
         for persona in persona_manager.personas.values():
+            # Only interrupt personas that are actually processing a response;
+            # cancelling an idle persona may be out of spec for some backends
+            # (e.g. ACP's session/cancel is defined only for an ongoing turn).
+            if not persona.processing:
+                continue
             try:
                 await persona.cancel_response()
                 cancelled.append(persona.id)

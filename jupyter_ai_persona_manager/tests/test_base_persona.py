@@ -44,6 +44,7 @@ def _make_persona(mock_ychat):
     persona.ychat = mock_ychat
     persona.log = MagicMock()
     persona.awareness = MagicMock()
+    persona._processing_count = 0
     return persona
 
 
@@ -197,3 +198,37 @@ class TestCancelResponse:
         await persona.cancel_response()
 
         assert cancelled is True
+
+
+# ---------------------------------------------------------------------------
+# TestProcessing
+# ---------------------------------------------------------------------------
+
+class TestProcessing:
+
+    def test_not_processing_by_default(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        assert persona.processing is False
+
+    def test_track_processing_toggles_flag(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        with persona.track_processing():
+            assert persona.processing is True
+        assert persona.processing is False
+
+    def test_track_processing_is_reentrant(self, mock_ychat):
+        # Concurrent messages: the count, not a bool, keeps `processing` true
+        # until the last one finishes.
+        persona = _make_persona(mock_ychat)
+        with persona.track_processing():
+            with persona.track_processing():
+                assert persona.processing is True
+            assert persona.processing is True
+        assert persona.processing is False
+
+    def test_track_processing_restores_on_exception(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        with pytest.raises(ValueError):
+            with persona.track_processing():
+                raise ValueError("boom")
+        assert persona.processing is False
