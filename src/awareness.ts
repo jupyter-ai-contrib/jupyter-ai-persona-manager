@@ -209,7 +209,12 @@ export class PersonaAwareness {
 
   /** The token and cost usage the persona reports for the session. */
   get usage(): Usage {
-    return (this._state?.usage as Usage) ?? EMPTY_USAGE;
+    // Backfill from EMPTY_USAGE so fields a (possibly older) server never
+    // published read as null, as the type promises, not undefined.
+    return {
+      ...EMPTY_USAGE,
+      ...((this._state?.usage as Partial<Usage>) ?? {})
+    };
   }
 
   /** The slash commands the persona advertises. */

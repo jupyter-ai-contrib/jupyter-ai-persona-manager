@@ -144,6 +144,20 @@ describe('PersonaAwareness.from', () => {
     });
     expect(PersonaAwareness.from(awareness, KIRO).isWriting).toBe('msg-1');
   });
+
+  it('backfills usage fields the server never published', () => {
+    // A server on an older release serializes Usage without newer fields;
+    // absent keys must read as null, as the type promises, not undefined.
+    const awareness = fakeAwareness({
+      42: personaSlot({
+        usage: { context_tokens: 1000, context_size: 200000 }
+      })
+    });
+    const usage = PersonaAwareness.from(awareness, KIRO).usage;
+    expect(usage.context_tokens).toBe(1000);
+    expect(usage.context_percent).toBeNull();
+    expect(usage.total_tokens).toBeNull();
+  });
 });
 
 describe('the manager list + PersonaAwareness.from together', () => {
