@@ -22,6 +22,13 @@ from .awareness_models import (
     SettingConfiguration,
     Usage,
 )
+from .doc_markers import (
+    mark_consumer_api,
+    mark_optional,
+    mark_recommended,
+    mark_required,
+    mark_subclass_api,
+)
 from .persona_awareness import PersonaAwareness
 
 # prevents a circular import
@@ -139,6 +146,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # abstract methods, required by subclasses.
     ################################################
+    @mark_required
     @property
     @abstractmethod
     def defaults(self) -> PersonaDefaults:
@@ -149,6 +157,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         This is an abstract method that must be implemented by subclasses.
         """
 
+    @mark_required
     @abstractmethod
     async def process_message(self, message: Message) -> None:
         """
@@ -161,6 +170,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         This is an abstract method that must be implemented by subclasses.
         """
 
+    @mark_recommended
     async def cancel_response(self) -> None:
         """
         Stops this persona's in-progress response, if any. Called when the user
@@ -184,6 +194,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         ongoing prompt turn).
         """
 
+    @mark_consumer_api
     @property
     def processing(self) -> bool:
         """
@@ -193,6 +204,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self._processing_count > 0
 
+    @mark_consumer_api
     @contextlib.contextmanager
     def track_processing(self):
         """
@@ -211,6 +223,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # base class methods, available to subclasses.
     ################################################
+    @mark_consumer_api
     @property
     def id(self) -> str:
         """
@@ -228,6 +241,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         class_name = self.__class__.__name__
         return f"jupyter-ai-personas::{package_name}::{class_name}"
 
+    @mark_consumer_api
     @property
     def name(self) -> str:
         """
@@ -241,6 +255,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.defaults.name
 
+    @mark_consumer_api
     @property
     def avatar_path(self) -> str:
         """
@@ -268,6 +283,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             base_url += '/'
         return f"{base_url}api/ai/avatars/{quote(self.id, safe='')}"
 
+    @mark_subclass_api
     @property
     def system_prompt(self) -> str:
         """
@@ -279,6 +295,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.defaults.system_prompt
 
+    @mark_subclass_api
     @property
     def event_loop(self) -> asyncio.AbstractEventLoop:
         """
@@ -286,6 +303,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.event_loop
 
+    @mark_consumer_api
     def as_user(self) -> User:
         """
         Returns the `jupyterlab_chat.models:User` model that represents this
@@ -303,6 +321,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             bot=True,
         )
 
+    @mark_consumer_api
     def as_user_dict(self) -> dict[str, Any]:
         """
         Returns `self.as_user()` as a Python dictionary. This method is provided
@@ -311,6 +330,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         user = self.as_user()
         return asdict(user)
 
+    @mark_subclass_api
     async def stream_message(
         self, reply_stream: "AsyncIterator"
     ) -> None:
@@ -320,12 +340,10 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         either strings or `litellm.ModelResponseStream` objects. Details:
 
         - Creates a new message upon receiving the first chunk from the reply
-        stream, then continuously updates it until the stream is closed.
-
+          stream, then continuously updates it until the stream is closed.
         - Automatically manages its awareness state to show writing status.
-
         - Triggers mention detection after streaming completes, allowing
-        personas to mention each other in their responses.
+          personas to mention each other in their responses.
         """
         stream_id: str | None = None
         try:
@@ -376,12 +394,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         finally:
             self.awareness.is_writing = False
 
+    @mark_subclass_api
     def send_message(self, body: str) -> None:
         """
         Sends a new message to the chat from this persona.
         """
         self.ychat.add_message(NewMessage(body=body, sender=self.id))
 
+    @mark_optional
     async def handle_uncaught_exception(self, exc: Exception) -> None:
         """
         Called by PersonaManager when process_message() raises an unhandled
@@ -406,6 +426,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         )
         self.send_message(body)
 
+    @mark_subclass_api
     def get_chat_path(self, relative: bool = False) -> str:
         """
         Returns the absolute path of the chat file assigned to this persona.
@@ -415,6 +436,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_chat_path(relative=relative)
 
+    @mark_subclass_api
     def get_chat_dir(self) -> str:
         """
         Returns the absolute path to the parent directory of the chat file
@@ -422,18 +444,21 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return self.parent.get_chat_dir()
 
+    @mark_subclass_api
     def get_dotjupyter_dir(self) -> str | None:
         """
         Returns the path to the .jupyter directory for the current chat.
         """
         return self.parent.get_dotjupyter_dir()
 
+    @mark_subclass_api
     def get_workspace_dir(self) -> str:
         """
         Returns the path to the workspace directory for the current chat.
         """
         return self.parent.get_workspace_dir()
 
+    @mark_subclass_api
     def get_mcp_settings(self) -> "McpSettings | None":
         """
         Returns the MCP config for the current chat.
@@ -447,22 +472,27 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # `self.awareness`, whose typed properties are backed directly by the Yjs
     # awareness slot — reading returns the currently-published value and setting
     # rebroadcasts. There is no separate in-memory copy to keep in sync.
+    @mark_subclass_api
     def get_model_configuration(self) -> ModelConfiguration:
         """Return the current model, model settings, and all options for both."""
         return self.awareness.model
 
+    @mark_subclass_api
     def get_setting_configurations(self) -> list[SettingConfiguration]:
         """Return the current value and all options for each general setting."""
         return self.awareness.settings
 
+    @mark_subclass_api
     def get_model(self) -> str | None:
         """Return the current model ID, or None if using the default."""
         return self.awareness.model.current
 
+    @mark_subclass_api
     def get_model_settings(self) -> dict[str, str | None]:
         """Return the current model settings, keyed by setting ID."""
         return {s.id: s.current for s in self.awareness.model.settings}
 
+    @mark_subclass_api
     def get_settings(self) -> dict[str, str | None]:
         """
         Return the current general settings, keyed by setting ID. This is
@@ -470,10 +500,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         return {s.id: s.current for s in self.awareness.settings}
 
+    @mark_subclass_api
     def get_usage(self) -> Usage:
         """Return the usage currently reported by this persona."""
         return self.awareness.usage
 
+    @mark_subclass_api
     def get_slash_commands(self) -> list[CommandOption]:
         """Return the slash commands currently advertised by this persona."""
         return self.awareness.slash_commands
@@ -486,6 +518,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # meant to be called by the persona (and its collaborators), not by
     # consumers of the persona. Assigning an `self.awareness` property publishes
     # it, so these just forward — except `report_usage`, which owns the merge.
+    @mark_subclass_api
     def report_model_configuration(self, model: ModelConfiguration) -> None:
         """
         Publish the persona's model configuration (current model, model options,
@@ -494,12 +527,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         self.awareness.model = model
 
+    @mark_subclass_api
     def report_settings_configuration(
         self, settings: list[SettingConfiguration]
     ) -> None:
         """Publish the persona's general (non-model) settings configuration."""
         self.awareness.settings = settings
 
+    @mark_subclass_api
     def report_usage(self, usage: Usage, *, append: bool = False) -> None:
         """
         Merge `usage` into the reported usage and rebroadcast. Only the fields
@@ -528,6 +563,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setattr(current, field, value)
         self.awareness.usage = current
 
+    @mark_subclass_api
     def report_slash_commands(self, commands: list[CommandOption]) -> None:
         """Publish the advertised slash commands."""
         self.awareness.slash_commands = commands
@@ -543,12 +579,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # `report_settings_configuration`); a persona whose model or settings aren't
     # configurable leaves the default no-op in place. There is deliberately no
     # `update_*` for usage or slash commands — a user can't set those.
+    @mark_optional
     async def update_model(self, model_id: str) -> None:
         """Switch this persona to the model identified by `model_id`."""
 
+    @mark_optional
     async def update_model_settings(self, settings: dict[str, str | None]) -> None:
         """Apply the given model settings (e.g. context size), keyed by ID."""
 
+    @mark_optional
     async def update_settings(self, settings: dict[str, str | None]) -> None:
         """
         Apply the given general settings (e.g. mode, effort level), keyed by ID.
@@ -558,6 +597,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # applying a message's model & settings specification
     ################################################
+    @mark_consumer_api
     async def apply_model_spec(self, spec: ModelSpec) -> None:
         """
         Apply a user's specified model and model settings, then record the new
@@ -594,6 +634,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setting.current = changed[setting.id]
         self.awareness.model = model
 
+    @mark_consumer_api
     async def apply_settings_spec(self, spec: dict[str, str | None]) -> None:
         """
         Apply a user's specified general settings, then record the new current
@@ -620,6 +661,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setting.current = changed[setting.id]
         self.awareness.settings = settings
 
+    @mark_consumer_api
     async def apply_specs_in_message(self, message: Message) -> None:
         """
         Apply the model and settings specification carried on a message's
@@ -644,6 +686,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         if settings_meta:
             await self.apply_settings_spec(settings_meta)
 
+    @mark_subclass_api
     def process_attachments(self, message: Message) -> str | None:
         """
         Process file attachments in the message and return their content as a string.
@@ -685,6 +728,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         result = "\n\n".join(context_parts) if context_parts else None
         return result
 
+    @mark_subclass_api
     def resolve_attachment_to_path(self, attachment_id: str) -> str | None:
         """
         Resolve an attachment ID to its file path using multiple strategies.
@@ -713,6 +757,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.error(f"Failed to resolve attachment {attachment_id}: {e}")
             return None
 
+    @mark_recommended
     async def shutdown(self) -> None:
         """
         Shuts the persona down. This method should:

@@ -21,21 +21,21 @@ one-shot / programmatic messaging and for the interrupt button.
 
 ## `POST /api/ai/message/<persona_name>`
 
-Route a single message to the persona whose [`name`](#defaults)
+Route a single message to the persona whose {py:attr}`~jupyter_ai_persona_manager.BasePersona.defaults`
 matches `<persona_name>` (URL-encoded), in a fresh temporary chat room, and return
 the concatenated reply. Implemented by [`MessageHandler`][msg-src].
 
 **Path parameter**
 
 - `persona_name` — the persona's display name (its `defaults.name`), URL-encoded.
-  Note this matches on **name**, not on the persona [`id`](#id).
+  Note this matches on **name**, not on the persona {py:attr}`~jupyter_ai_persona_manager.BasePersona.id`.
 
 **Request body** (JSON)
 
-| Field      | Type     | Required | Description                                                                                                                                                                     |
-| ---------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `message`  | `str`    | ✓        | The message text to send                                                                                                                                                        |
-| `metadata` | `object` |          | Optional message metadata, e.g. a [`ModelSpec`](#modelspec) under a `model` key and general settings under `settings` (see [`apply_specs_in_message`](#apply-specs-in-message)) |
+| Field      | Type     | Required | Description                                                                                                                                                                                                                   |
+| ---------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `message`  | `str`    | ✓        | The message text to send                                                                                                                                                                                                      |
+| `metadata` | `object` |          | Optional message metadata, e.g. a {py:class}`~jupyter_ai_persona_manager.ModelSpec` under a `model` key and general settings under `settings` (see {py:meth}`~jupyter_ai_persona_manager.BasePersona.apply_specs_in_message`) |
 
 ```bash
 curl -X POST "$BASE_URL/api/ai/message/MyPersona" \
@@ -81,8 +81,8 @@ curl -X POST "$BASE_URL/api/ai/personas/cancel?chat_path=my-chat.chat" \
 ```
 
 For each persona in that chat that is currently
-[`processing`](#processing), the handler calls
-[`cancel_response()`](#cancel-response). Idle personas are
+{py:attr}`~jupyter_ai_persona_manager.BasePersona.processing`, the handler calls
+{py:meth}`~jupyter_ai_persona_manager.BasePersona.cancel_response`. Idle personas are
 skipped (a cancel with no active reply is out of spec for some backends, e.g.
 ACP's `session/cancel`). A persona whose `cancel_response` raises is logged and
 skipped, not surfaced as an error.
@@ -107,13 +107,13 @@ skipped, not surfaced as an error.
 ## `GET /api/ai/avatars/<persona_id>`
 
 Serve a persona's avatar image. Implemented by [`AvatarHandler`][avatar-src]. This
-is the URL that [`BasePersona.avatar_path`](#instance-attributes)
+is the URL that {py:attr}`~jupyter_ai_persona_manager.BasePersona.avatar_path`
 returns and that appears as `avatar_url` on the persona's chat user — the browser
 requests it directly; you rarely call it by hand.
 
 **Path parameter**
 
-- `persona_id` — the persona [`id`](#id) (URL-encoded).
+- `persona_id` — the persona {py:attr}`~jupyter_ai_persona_manager.BasePersona.id` (URL-encoded).
 
 **Response** `200` — the raw image bytes, with `Content-Type` guessed from the
 file extension (SVG, PNG, or JPG). The file is resolved from a module-level cache
