@@ -14,11 +14,11 @@ routes matching messages to it.
 
 The interface splits into three groups by **who is responsible** for each member:
 
-| Group | Members | You… |
-|-------|---------|------|
-| **Must implement** | [`defaults`](#defaults), [`process_message`](#process-message) | **must** define these — the class is abstract without them |
-| **May override** | [`cancel_response`](#cancel-response), [`shutdown`](#shutdown), [`handle_uncaught_exception`](#handle-uncaught-exception), [`update_model`](#update-model) / [`update_model_settings`](#update-model-settings) / [`update_settings`](#update-settings) | override only if your persona needs the behavior; each has a safe default |
-| **Provided — call, don't override** | messaging, session readers/reporters, spec application, attachments, paths, identity | call these from your persona; the base class implements them |
+| Group                               | Members                                                                                                                                                                                                                                                | You…                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| **Must implement**                  | [`defaults`](#defaults), [`process_message`](#process-message)                                                                                                                                                                                         | **must** define these — the class is abstract without them                |
+| **May override**                    | [`cancel_response`](#cancel-response), [`shutdown`](#shutdown), [`handle_uncaught_exception`](#handle-uncaught-exception), [`update_model`](#update-model) / [`update_model_settings`](#update-model-settings) / [`update_settings`](#update-settings) | override only if your persona needs the behavior; each has a safe default |
+| **Provided — call, don't override** | messaging, session readers/reporters, spec application, attachments, paths, identity                                                                                                                                                                   | call these from your persona; the base class implements them              |
 
 ---
 
@@ -27,6 +27,7 @@ The interface splits into three groups by **who is responsible** for each member
 These are `@abstractmethod`; a subclass that omits either cannot be instantiated.
 
 (defaults)=
+
 ### `defaults`
 
 ```python
@@ -42,6 +43,7 @@ and optionally `slash_commands` and `model_uid`. Several base-class properties
 free. — [source][defaults-src]
 
 (process-message)=
+
 ### `process_message`
 
 ```python
@@ -69,6 +71,7 @@ Each of these has a working default. Override it when your persona needs the
 behavior; otherwise inherit it.
 
 (cancel-response)=
+
 ### `cancel_response`
 
 ```python
@@ -85,6 +88,7 @@ Only invoked when the persona is [`processing`](#processing) — the cancel hand
 gates on that — so an override may assume a reply is in flight. — [source][cancel-src]
 
 (shutdown)=
+
 ### `shutdown`
 
 ```python
@@ -97,6 +101,7 @@ chat closes. The default removes the persona from awareness; an override that
 adds custom cleanup should call `await super().shutdown()` **first**. — [source][shutdown-src]
 
 (handle-uncaught-exception)=
+
 ### `handle_uncaught_exception`
 
 ```python
@@ -109,6 +114,7 @@ traceback tucked under a collapsible `<details>`. Override to customize error
 reporting. — [source][handle-exc-src]
 
 (update-model)=
+
 ### `update_model`
 
 ```python
@@ -116,6 +122,7 @@ async def update_model(self, model_id: str) -> None: ...   # default: no-op
 ```
 
 (update-model-settings)=
+
 ### `update_model_settings`
 
 ```python
@@ -123,6 +130,7 @@ async def update_model_settings(self, settings: dict[str, str | None]) -> None: 
 ```
 
 (update-settings)=
+
 ### `update_settings`
 
 ```python
@@ -133,7 +141,7 @@ These apply a user's selection to your **backend** — switch the model, apply m
 settings (e.g. context size), or apply general settings (e.g. mode/effort). They
 are no-ops by default; override them **only if your persona is configurable**.
 
-Important division of labor: an `update_*` method should *only* tell the backend
+Important division of labor: an `update_*` method should _only_ tell the backend
 to switch — it must **not** touch awareness. The base class records the new
 current value and rebroadcasts it for you (see
 [`apply_model_spec`](#apply-model-spec) / [`apply_settings_spec`](#apply-settings-spec)).
@@ -152,6 +160,7 @@ Call these; don't override them. Grouped by purpose.
 ### Messaging
 
 (stream-message)=
+
 #### `stream_message`
 
 ```python
@@ -167,6 +176,7 @@ so personas can @-mention each other. This is the usual way to emit a model
 reply. — [source][stream-src]
 
 (send-message)=
+
 #### `send_message`
 
 ```python
@@ -178,16 +188,16 @@ non-streaming replies or status notes. — [source][send-src]
 
 ### Identity & properties
 
-| Member | Kind | Returns | Notes |
-|--------|------|---------|-------|
-| [`id`](#id) | property | `str` | Stable unique ID `jupyter-ai-personas::<package>::<class>`; sets `username` |
-| `name` | property | `str` | Display name; reads `defaults.name` |
-| `avatar_path` | property | `str` | Avatar **URL** route `…/api/ai/avatars/<id>` (not the filesystem path) |
-| `system_prompt` | property | `str` | Reads `defaults.system_prompt` |
-| `event_loop` | property | `AbstractEventLoop` | The process event loop |
-| [`processing`](#processing) | property | `bool` | Whether a `process_message` call is in flight |
-| `as_user()` | method | [`User`][chat-models] | The chat-user model for this persona |
-| `as_user_dict()` | method | `dict` | `as_user()` as a plain dict |
+| Member                      | Kind     | Returns               | Notes                                                                       |
+| --------------------------- | -------- | --------------------- | --------------------------------------------------------------------------- |
+| [`id`](#id)                 | property | `str`                 | Stable unique ID `jupyter-ai-personas::<package>::<class>`; sets `username` |
+| `name`                      | property | `str`                 | Display name; reads `defaults.name`                                         |
+| `avatar_path`               | property | `str`                 | Avatar **URL** route `…/api/ai/avatars/<id>` (not the filesystem path)      |
+| `system_prompt`             | property | `str`                 | Reads `defaults.system_prompt`                                              |
+| `event_loop`                | property | `AbstractEventLoop`   | The process event loop                                                      |
+| [`processing`](#processing) | property | `bool`                | Whether a `process_message` call is in flight                               |
+| `as_user()`                 | method   | [`User`][chat-models] | The chat-user model for this persona                                        |
+| `as_user_dict()`            | method   | `dict`                | `as_user()` as a plain dict                                                 |
 
 (id)=
 `id` is guaranteed to be `jupyter-ai-personas::<package-name>::<persona-class-name>`.
@@ -201,6 +211,7 @@ as the cancel endpoint does — to avoid interrupting a persona with nothing to
 cancel. — [source][processing-src]
 
 (track-processing)=
+
 #### `track_processing`
 
 ```python
@@ -217,15 +228,15 @@ duration (restoring the count even on error). `PersonaManager` already wraps eac
 These `get_*` readers are thin, always-current views over the persona's
 [awareness](#instance-attributes) slot (no separate in-memory copy).
 
-| Method | Returns |
-|--------|---------|
-| `get_model_configuration()` | [`ModelConfiguration`](#modelconfiguration) — current model, options, and model settings |
-| `get_setting_configurations()` | `list[`[`SettingConfiguration`](#settingconfiguration)`]` — general settings |
-| `get_model()` | `str \| None` — current model ID (None = persona default) |
-| `get_model_settings()` | `dict[str, str \| None]` — model settings by ID |
-| `get_settings()` | `dict[str, str \| None]` — general settings by ID |
-| `get_usage()` | [`Usage`](#usage) — token/cost usage for the session |
-| `get_slash_commands()` | `list[`[`CommandOption`](#commandoption)`]` — advertised slash commands |
+| Method                         | Returns                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `get_model_configuration()`    | [`ModelConfiguration`](#modelconfiguration) — current model, options, and model settings |
+| `get_setting_configurations()` | `list[`[`SettingConfiguration`](#settingconfiguration)`]` — general settings             |
+| `get_model()`                  | `str \| None` — current model ID (None = persona default)                                |
+| `get_model_settings()`         | `dict[str, str \| None]` — model settings by ID                                          |
+| `get_settings()`               | `dict[str, str \| None]` — general settings by ID                                        |
+| `get_usage()`                  | [`Usage`](#usage) — token/cost usage for the session                                     |
+| `get_slash_commands()`         | `list[`[`CommandOption`](#commandoption)`]` — advertised slash commands                  |
 
 — [source][get-src]
 
@@ -235,12 +246,12 @@ A persona calls these `report_*` setters to publish its own state over awareness
 (so the UI can render the model picker, settings, usage meter, and slash-command
 menu). Assigning an awareness property rebroadcasts it, so most just forward.
 
-| Method | Publishes |
-|--------|-----------|
-| [`report_model_configuration(model)`](#report-model-configuration) | model, options, and model settings |
-| [`report_settings_configuration(settings)`](#report-settings-configuration) | general (non-model) settings |
-| `report_usage(usage, *, append=False)` | merges [`Usage`](#usage) fields and rebroadcasts |
-| `report_slash_commands(commands)` | advertised slash commands |
+| Method                                                                      | Publishes                                        |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| [`report_model_configuration(model)`](#report-model-configuration)          | model, options, and model settings               |
+| [`report_settings_configuration(settings)`](#report-settings-configuration) | general (non-model) settings                     |
+| `report_usage(usage, *, append=False)`                                      | merges [`Usage`](#usage) fields and rebroadcasts |
+| `report_slash_commands(commands)`                                           | advertised slash commands                        |
 
 `report_usage` is the one with real logic: only the fields set on `usage` are
 merged. `append=False` (default) replaces each provided field (for sources that
@@ -256,11 +267,11 @@ per-turn deltas). Snapshot fields (`context_*`) should never be sent with
 You normally don't call these — `PersonaManager` does — but they explain how
 per-message model/settings selections reach your `update_*` overrides.
 
-| Method | Role |
-|--------|------|
-| [`apply_specs_in_message(message)`](#apply-specs-in-message) | Reads `message.metadata` and dispatches to the two below; called before `process_message` for every routed message |
-| [`apply_model_spec(spec)`](#apply-model-spec) | Applies a [`ModelSpec`](#modelspec): calls `update_model` / `update_model_settings` only for values that actually change, then records the new current values |
-| [`apply_settings_spec(spec)`](#apply-settings-spec) | Same, for general settings |
+| Method                                                       | Role                                                                                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`apply_specs_in_message(message)`](#apply-specs-in-message) | Reads `message.metadata` and dispatches to the two below; called before `process_message` for every routed message                                            |
+| [`apply_model_spec(spec)`](#apply-model-spec)                | Applies a [`ModelSpec`](#modelspec): calls `update_model` / `update_model_settings` only for values that actually change, then records the new current values |
+| [`apply_settings_spec(spec)`](#apply-settings-spec)          | Same, for general settings                                                                                                                                    |
 
 (apply-specs-in-message)=
 (apply-model-spec)=
@@ -271,10 +282,10 @@ specified value differs from the current one. — [source][apply-src]
 
 ### File attachments
 
-| Method | Returns | Purpose |
-|--------|---------|---------|
-| `process_attachments(message)` | `str \| None` | Read every attachment on the message and concatenate their contents into a single string (each wrapped with a `File: <path>` header), for feeding into a prompt |
-| `resolve_attachment_to_path(attachment_id)` | `str \| None` | Resolve one attachment ID to a filesystem path (tries the workspace dir, then an absolute path) |
+| Method                                      | Returns       | Purpose                                                                                                                                                         |
+| ------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `process_attachments(message)`              | `str \| None` | Read every attachment on the message and concatenate their contents into a single string (each wrapped with a `File: <path>` header), for feeding into a prompt |
+| `resolve_attachment_to_path(attachment_id)` | `str \| None` | Resolve one attachment ID to a filesystem path (tries the workspace dir, then an absolute path)                                                                 |
 
 — [source][attach-src]
 
@@ -283,29 +294,30 @@ specified value differs from the current one. — [source][apply-src]
 Thin delegates to the [`PersonaManager`][PersonaManager] for filesystem context
 of the current chat:
 
-| Method | Returns |
-|--------|---------|
+| Method                          | Returns                                                           |
+| ------------------------------- | ----------------------------------------------------------------- |
 | `get_chat_path(relative=False)` | Absolute path of the chat file (or relative to the Contents root) |
-| `get_chat_dir()` | Directory containing the chat file |
-| `get_dotjupyter_dir()` | The chat's `.jupyter` directory, or `None` |
-| `get_workspace_dir()` | The chat's workspace directory |
-| `get_mcp_settings()` | The chat's [`McpSettings`](#mcp-models), or `None` |
+| `get_chat_dir()`                | Directory containing the chat file                                |
+| `get_dotjupyter_dir()`          | The chat's `.jupyter` directory, or `None`                        |
+| `get_workspace_dir()`           | The chat's workspace directory                                    |
+| `get_mcp_settings()`            | The chat's [`McpSettings`](#mcp-models), or `None`                |
 
 — [source][paths-src]
 
 ---
 
 (instance-attributes)=
+
 ## Instance attributes
 
 Set for you by `BasePersona` / its parent before `process_message` is called:
 
-| Attribute | Type | Set by | Meaning |
-|-----------|------|--------|---------|
-| `ychat` | [`YChat`][ychat] | `BasePersona` | The collaborative chat this persona is scoped to; read history and write messages through it |
-| `parent` | [`PersonaManager`][PersonaManager] | `LoggingConfigurable` | The manager for this chat |
-| `log` | [`logging.Logger`][logging] | `LoggingConfigurable` | Logger for this persona |
-| `awareness` | [`PersonaAwareness`][persona-awareness] | `BasePersona` | This persona's awareness slot; typed properties (`model`, `settings`, `usage`, `slash_commands`, `is_writing`) publish over the Yjs awareness channel when assigned. The `get_*`/`report_*` methods are views over this. |
+| Attribute   | Type                                    | Set by                | Meaning                                                                                                                                                                                                                  |
+| ----------- | --------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ychat`     | [`YChat`][ychat]                        | `BasePersona`         | The collaborative chat this persona is scoped to; read history and write messages through it                                                                                                                             |
+| `parent`    | [`PersonaManager`][PersonaManager]      | `LoggingConfigurable` | The manager for this chat                                                                                                                                                                                                |
+| `log`       | [`logging.Logger`][logging]             | `LoggingConfigurable` | Logger for this persona                                                                                                                                                                                                  |
+| `awareness` | [`PersonaAwareness`][persona-awareness] | `BasePersona`         | This persona's awareness slot; typed properties (`model`, `settings`, `usage`, `slash_commands`, `is_writing`) publish over the Yjs awareness channel when assigned. The `get_*`/`report_*` methods are views over this. |
 
 ---
 
@@ -316,124 +328,134 @@ importable from the package root, e.g.
 `from jupyter_ai_persona_manager import PersonaDefaults`.
 
 (personadefaults)=
+
 ### `PersonaDefaults`
 
 A persona's default identity/behavior, returned by [`defaults`](#defaults). Fields
 may be overridden through the settings UI. — [source][personadefaults-src]
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | `str` | ✓ | Display name, e.g. `"Jupyternaut"` |
-| `description` | `str` | ✓ | Short description |
-| `avatar_path` | `str` | ✓ | **Absolute filesystem path** to an avatar image (SVG/PNG/JPG) |
-| `system_prompt` | `str` | ✓ | System prompt |
-| `slash_commands` | `set[str]` | | Enabled slash commands; defaults to `{"*"}` (all) |
-| `model_uid` | `str \| None` | | Default model to use on a fresh start, e.g. `"ollama:deepseek-coder-v2"` |
+| Field            | Type          | Required | Description                                                              |
+| ---------------- | ------------- | -------- | ------------------------------------------------------------------------ |
+| `name`           | `str`         | ✓        | Display name, e.g. `"Jupyternaut"`                                       |
+| `description`    | `str`         | ✓        | Short description                                                        |
+| `avatar_path`    | `str`         | ✓        | **Absolute filesystem path** to an avatar image (SVG/PNG/JPG)            |
+| `system_prompt`  | `str`         | ✓        | System prompt                                                            |
+| `slash_commands` | `set[str]`    |          | Enabled slash commands; defaults to `{"*"}` (all)                        |
+| `model_uid`      | `str \| None` |          | Default model to use on a fresh start, e.g. `"ollama:deepseek-coder-v2"` |
 
 (modelconfiguration)=
+
 ### `ModelConfiguration`
 
 The persona's current model plus its selectable options and model settings.
 Returned by `get_model_configuration()`; published via
 `report_model_configuration()`. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `current` | `str \| None` | Current model ID (None = persona default) |
-| `options` | `list[`[`ModelOption`](#modeloption)`]` | Selectable models |
-| `settings` | `list[`[`SettingConfiguration`](#settingconfiguration)`]` | Settings rendered near the model picker |
+| Field      | Type                                                      | Description                               |
+| ---------- | --------------------------------------------------------- | ----------------------------------------- |
+| `current`  | `str \| None`                                             | Current model ID (None = persona default) |
+| `options`  | `list[`[`ModelOption`](#modeloption)`]`                   | Selectable models                         |
+| `settings` | `list[`[`SettingConfiguration`](#settingconfiguration)`]` | Settings rendered near the model picker   |
 
 (modeloption)=
+
 ### `ModelOption`
 
 One selectable model. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Model ID |
-| `name` | `str \| None` | Display name |
-| `description` | `str \| None` | Description |
+| Field         | Type          | Description  |
+| ------------- | ------------- | ------------ |
+| `id`          | `str`         | Model ID     |
+| `name`        | `str \| None` | Display name |
+| `description` | `str \| None` | Description  |
 
 (settingoption)=
+
 ### `SettingOption`
 
 One selectable value for a setting. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Option ID |
-| `name` | `str \| None` | Display name |
-| `description` | `str \| None` | Description |
+| Field         | Type          | Description  |
+| ------------- | ------------- | ------------ |
+| `id`          | `str`         | Option ID    |
+| `name`        | `str \| None` | Display name |
+| `description` | `str \| None` | Description  |
 
 (settingconfiguration)=
+
 ### `SettingConfiguration`
 
 A single setting: its current value plus all options. Used for both model
 settings and general settings; list order controls UI order. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Setting ID, e.g. `"agent_mode"` |
-| `current` | `str \| None` | Current value (None = persona default) |
-| `name` | `str \| None` | Display name |
-| `description` | `str \| None` | Description |
-| `options` | `list[`[`SettingOption`](#settingoption)`]` | Available values |
+| Field         | Type                                        | Description                            |
+| ------------- | ------------------------------------------- | -------------------------------------- |
+| `id`          | `str`                                       | Setting ID, e.g. `"agent_mode"`        |
+| `current`     | `str \| None`                               | Current value (None = persona default) |
+| `name`        | `str \| None`                               | Display name                           |
+| `description` | `str \| None`                               | Description                            |
+| `options`     | `list[`[`SettingOption`](#settingoption)`]` | Available values                       |
 
 (usage)=
+
 ### `Usage`
 
 Token and cost usage for the current session, reported via `report_usage()`.
 Every field is optional. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `context_tokens` | `int \| None` | Tokens currently in the context window (snapshot — can decrease) |
-| `context_size` | `int \| None` | Total context-window size (snapshot) |
-| `input_tokens` | `int \| None` | Cumulative input tokens |
-| `output_tokens` | `int \| None` | Cumulative output tokens |
-| `cached_read_tokens` | `int \| None` | Cumulative cached-read tokens |
-| `cached_write_tokens` | `int \| None` | Cumulative cached-write tokens |
-| `thought_tokens` | `int \| None` | Cumulative reasoning/thought tokens |
-| `total_tokens` | `int \| None` | Cumulative total tokens |
-| `cost_amount` | `float \| None` | Cumulative session cost |
-| `cost_currency` | `str \| None` | ISO 4217 currency, e.g. `"USD"` |
+| Field                 | Type            | Description                                                      |
+| --------------------- | --------------- | ---------------------------------------------------------------- |
+| `context_tokens`      | `int \| None`   | Tokens currently in the context window (snapshot — can decrease) |
+| `context_size`        | `int \| None`   | Total context-window size (snapshot)                             |
+| `input_tokens`        | `int \| None`   | Cumulative input tokens                                          |
+| `output_tokens`       | `int \| None`   | Cumulative output tokens                                         |
+| `cached_read_tokens`  | `int \| None`   | Cumulative cached-read tokens                                    |
+| `cached_write_tokens` | `int \| None`   | Cumulative cached-write tokens                                   |
+| `thought_tokens`      | `int \| None`   | Cumulative reasoning/thought tokens                              |
+| `total_tokens`        | `int \| None`   | Cumulative total tokens                                          |
+| `cost_amount`         | `float \| None` | Cumulative session cost                                          |
+| `cost_currency`       | `str \| None`   | ISO 4217 currency, e.g. `"USD"`                                  |
 
 (commandoption)=
+
 ### `CommandOption`
 
 One slash command advertised by a persona. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | `str` | Command including leading `/`, e.g. `"/compact"` |
-| `description` | `str \| None` | Description |
+| Field         | Type          | Description                                      |
+| ------------- | ------------- | ------------------------------------------------ |
+| `name`        | `str`         | Command including leading `/`, e.g. `"/compact"` |
+| `description` | `str \| None` | Description                                      |
 
 (modelspec)=
+
 ### `ModelSpec`
 
 A user's model selection, carried on **outgoing message metadata** (not stored in
 awareness — each user's choices are private and applied per message). Consumed by
 [`apply_model_spec`](#apply-model-spec). — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str \| None` | Selected model ID (None = keep current) |
+| Field      | Type                     | Description                                                 |
+| ---------- | ------------------------ | ----------------------------------------------------------- |
+| `id`       | `str \| None`            | Selected model ID (None = keep current)                     |
 | `settings` | `dict[str, str \| None]` | Model-setting ID → selected option ID (None = keep current) |
 
 (persona-option)=
+
 ### `PersonaOption`
 
 One persona as advertised in the chat's persona selector; published by the
 manager's awareness slot, not by an individual persona. — [source][awareness-src]
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Persona ID |
-| `name` | `str` | Display name |
-| `avatar_url` | `str \| None` | Avatar URL |
-| `yjs_client_id` | `int` | Yjs client ID of this persona's awareness slot (for O(1) lookup) |
+| Field           | Type          | Description                                                      |
+| --------------- | ------------- | ---------------------------------------------------------------- |
+| `id`            | `str`         | Persona ID                                                       |
+| `name`          | `str`         | Display name                                                     |
+| `avatar_url`    | `str \| None` | Avatar URL                                                       |
+| `yjs_client_id` | `int`         | Yjs client ID of this persona's awareness slot (for O(1) lookup) |
 
 (mcp-models)=
+
 ### MCP settings models
 
 `McpSettings`, `McpServerHttp`, and `McpServerStdio` describe the MCP server

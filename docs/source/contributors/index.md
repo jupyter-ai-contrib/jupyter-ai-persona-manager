@@ -1,7 +1,7 @@
 # jupyter-ai-persona-manager
 
 The **persona manager** is the core registry and lifecycle manager for AI
-personas in Jupyter AI. A *persona* is an AI participant in a chat — analogous to
+personas in Jupyter AI. A _persona_ is an AI participant in a chat — analogous to
 a "bot" in other chat apps — with its own name, avatar, model, and behavior.
 Multiple personas can coexist in the same chat and even mention one another.
 
