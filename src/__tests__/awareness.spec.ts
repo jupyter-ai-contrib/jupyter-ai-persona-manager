@@ -104,6 +104,7 @@ describe('PersonaAwareness.from', () => {
         usage: {
           context_tokens: 1000,
           context_size: 200000,
+          context_percent: 0.5,
           total_tokens: 4200
         },
         slash_commands: [{ name: '/compact', description: 'Compact context' }]
@@ -115,6 +116,7 @@ describe('PersonaAwareness.from', () => {
     expect(persona.model.settings[0].id).toBe('context_size');
     expect(persona.settings[0].id).toBe('__mode__');
     expect(persona.usage.context_tokens).toBe(1000);
+    expect(persona.usage.context_percent).toBe(0.5);
     expect(persona.slash_commands).toEqual([
       { name: '/compact', description: 'Compact context' }
     ]);

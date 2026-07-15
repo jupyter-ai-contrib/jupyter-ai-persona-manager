@@ -68,6 +68,12 @@ export type ModelConfiguration = {
 export type Usage = {
   context_tokens: number | null;
   context_size: number | null;
+  /**
+   * Context fill as a bare percentage (0-100), for agents that report only a
+   * percentage with no token counts. Derive the percentage from
+   * `context_tokens`/`context_size` when those are present.
+   */
+  context_percent: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
   cached_read_tokens: number | null;
@@ -96,6 +102,7 @@ export type PersonaOption = {
 export const EMPTY_USAGE: Usage = {
   context_tokens: null,
   context_size: null,
+  context_percent: null,
   input_tokens: null,
   output_tokens: null,
   cached_read_tokens: null,
