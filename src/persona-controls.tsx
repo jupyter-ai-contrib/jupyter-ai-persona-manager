@@ -1004,8 +1004,16 @@ export function PersonaControls(
 
       <UsageChip usage={usage} />
 
+      {controls.length ? (
+        <>
+          <span className={`${SELECTOR_CLASS}-divider`} />
+          <ControlsRow controls={controls} onChange={handleControl} />
+        </>
+      ) : null}
+
       {/* Controls contributed by other extensions for the selected persona
-          (e.g. a persona's settings button). */}
+          (e.g. a persona's settings button), rendered after the model selector
+          and its settings so they sit to the right of them. */}
       {selectedId &&
         controlRegistry?.getControls(selectedId).map(control => {
           const Control = control.component;
@@ -1018,13 +1026,6 @@ export function PersonaControls(
             />
           );
         })}
-
-      {controls.length ? (
-        <>
-          <span className={`${SELECTOR_CLASS}-divider`} />
-          <ControlsRow controls={controls} onChange={handleControl} />
-        </>
-      ) : null}
     </div>
   );
 }
