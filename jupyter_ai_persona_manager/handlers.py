@@ -113,7 +113,6 @@ class MessageHandler(JupyterHandler):
             sender=User(username=DEFAULT_SENDER,
                         name=DEFAULT_SENDER_NAME,
                         display_name=DEFAULT_SENDER_NAME).username,
-            mentions=[target_persona.id],
             raw_time=False,
             metadata=metadata
         )

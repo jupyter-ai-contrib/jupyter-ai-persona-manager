@@ -192,6 +192,19 @@ class TestReportUsage:
         assert usage.input_tokens == 5
         assert usage.output_tokens == 7
 
+    def test_percent_only_context_reported_and_updated(self):
+        # Agents that report context fill only as a percentage (no token
+        # counts, e.g. kiro-cli) publish and update it like any other field.
+        persona = _make_persona()
+        persona.report_usage(Usage(context_percent=1.48))
+        usage = persona.get_usage()
+        assert usage.context_percent == 1.48
+        assert usage.context_tokens is None
+        assert usage.context_size is None
+
+        persona.report_usage(Usage(context_percent=42.0))
+        assert persona.get_usage().context_percent == 42.0
+
     def test_append_adds_to_existing(self):
         persona = _make_persona(usage=Usage(input_tokens=10))
         persona.report_usage(Usage(input_tokens=5, output_tokens=3), append=True)

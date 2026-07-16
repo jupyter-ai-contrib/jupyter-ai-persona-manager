@@ -104,6 +104,7 @@ describe('PersonaAwareness.from', () => {
         usage: {
           context_tokens: 1000,
           context_size: 200000,
+          context_percent: 0.5,
           total_tokens: 4200
         },
         slash_commands: [{ name: '/compact', description: 'Compact context' }]
@@ -115,6 +116,7 @@ describe('PersonaAwareness.from', () => {
     expect(persona.model.settings[0].id).toBe('context_size');
     expect(persona.settings[0].id).toBe('__mode__');
     expect(persona.usage.context_tokens).toBe(1000);
+    expect(persona.usage.context_percent).toBe(0.5);
     expect(persona.slash_commands).toEqual([
       { name: '/compact', description: 'Compact context' }
     ]);
@@ -141,6 +143,20 @@ describe('PersonaAwareness.from', () => {
       42: personaSlot({ isWriting: 'msg-1' })
     });
     expect(PersonaAwareness.from(awareness, KIRO).isWriting).toBe('msg-1');
+  });
+
+  it('backfills usage fields the server never published', () => {
+    // A server on an older release serializes Usage without newer fields;
+    // absent keys must read as null, as the type promises, not undefined.
+    const awareness = fakeAwareness({
+      42: personaSlot({
+        usage: { context_tokens: 1000, context_size: 200000 }
+      })
+    });
+    const usage = PersonaAwareness.from(awareness, KIRO).usage;
+    expect(usage.context_tokens).toBe(1000);
+    expect(usage.context_percent).toBeNull();
+    expect(usage.total_tokens).toBeNull();
   });
 });
 

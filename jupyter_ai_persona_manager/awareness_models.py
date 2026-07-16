@@ -86,6 +86,10 @@ class Usage(BaseModel):
     # decrease during a session (e.g. after the agent compacts context).
     context_tokens: int | None = None  # tokens currently in the window
     context_size: int | None = None  # total window size
+    # Context fill as a bare percentage (0-100), for agents that report only a
+    # percentage with no token counts (e.g. kiro-cli). Consumers derive the
+    # percentage from `context_tokens`/`context_size` when those are present.
+    context_percent: float | None = None
 
     # Cumulative token counts for the session.
     input_tokens: int | None = None
