@@ -849,9 +849,10 @@ export function PersonaControls(
           setManager(pm);
         }
       })
-      .catch(() => {
-        // Manager never registered (e.g. extension disabled); the toolbar stays
-        // hidden. `.from()` already logged the timeout reason.
+      .catch(reason => {
+        // Manager never registered (e.g. extension disabled); the toolbar
+        // stays hidden. Surface why, or the empty toolbar is undiagnosable.
+        console.warn('Persona toolbar hidden:', reason);
       });
     return () => {
       cancelled = true;
