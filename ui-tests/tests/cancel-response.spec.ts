@@ -53,6 +53,11 @@ test.describe('cancel-response', () => {
     // The persona stops writing: the stop button disables itself.
     await helpers.waitForNotWriting();
 
+    // A chunk already dispatched when the stop landed can still render just
+    // after the writing flag clears, so let the stream fully settle before
+    // capturing the frozen baseline — otherwise `frozen` races a late chunk.
+    await page.waitForTimeout(1000);
+
     // The message stops growing: capture it, wait, and confirm it's unchanged.
     const frozen = await helpers.lastMessageText();
     await page.waitForTimeout(3000);
