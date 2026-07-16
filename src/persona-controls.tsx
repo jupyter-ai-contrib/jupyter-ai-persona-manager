@@ -645,17 +645,22 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
 
   const hasContext =
     usage.context_tokens !== null && usage.context_size !== null;
+  // Agents like kiro-cli report context fill only as a bare percentage.
+  const hasPercentOnly = !hasContext && usage.context_percent !== null;
+  const showContext = hasContext || hasPercentOnly;
   const hasTokens = usage.total_tokens !== null;
   const hasCost = usage.cost_amount !== null && usage.cost_currency !== null;
 
-  if (!hasContext && !hasTokens && !hasCost) {
+  if (!showContext && !hasTokens && !hasCost) {
     return null;
   }
 
   const fraction =
     hasContext && (usage.context_size as number) > 0
       ? (usage.context_tokens as number) / (usage.context_size as number)
-      : 0;
+      : hasPercentOnly
+        ? (usage.context_percent as number) / 100
+        : 0;
   const percent = Math.round(fraction * 100);
   const level =
     fraction >= USAGE_ERROR_AT
@@ -667,6 +672,7 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
   const summary = [
     hasContext &&
       `Context: ${formatTokens(usage.context_tokens as number)} of ${formatTokens(usage.context_size as number)} tokens (${percent}%)`,
+    hasPercentOnly && `Context: ${percent}% used`,
     hasTokens &&
       `Session tokens: ${formatTokens(usage.total_tokens as number)}`,
     hasCost &&
@@ -682,15 +688,15 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
         className={`${USAGE_CLASS}-chip ${USAGE_CLASS}-${level}`}
         onClick={event => setAnchor(event.currentTarget)}
         title={summary}
-        aria-label={hasContext ? `Context ${percent}% used` : 'Usage'}
+        aria-label={showContext ? `Context ${percent}% used` : 'Usage'}
       >
-        {hasContext ? (
+        {showContext ? (
           <>
             <UsageRing fraction={fraction} />
             <span className={`${USAGE_CLASS}-pct`}>{percent}%</span>
           </>
         ) : null}
-        {!hasContext && hasTokens ? (
+        {!showContext && hasTokens ? (
           <span className={`${USAGE_CLASS}-pct`}>
             {formatTokens(usage.total_tokens as number)}
           </span>
@@ -709,6 +715,9 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
               value={`${formatTokens(usage.context_tokens as number)} of ${formatTokens(usage.context_size as number)} (${percent}%)`}
               title={`${exactNumber.format(usage.context_tokens as number)} of ${exactNumber.format(usage.context_size as number)} tokens`}
             />
+          ) : null}
+          {hasPercentOnly ? (
+            <UsageSection label="Context" value={`${percent}%`} />
           ) : null}
           {hasTokens ? (
             <>
