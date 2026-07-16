@@ -31,6 +31,7 @@ import {
   buildMessageMetadata,
   emptyPersonaSettings
 } from './metadata';
+import { IPersonaControlRegistry } from './persona-control-registry';
 
 const SELECTOR_CLASS = 'jp-jai-personaControls';
 const MENU_CLASS = 'jp-jai-controlMenu';
@@ -791,9 +792,16 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
  * polling). It's seeded from the default persona advertised over PageConfig.
  */
 export function PersonaControls(
-  props: InputToolbarRegistry.IToolbarItemProps
+  props: InputToolbarRegistry.IToolbarItemProps & {
+    /**
+     * Registry of controls contributed by other extensions (e.g. a persona's
+     * settings button). Rendered for the selected persona after the usage chip.
+     * Optional so the component still works without a registry.
+     */
+    controlRegistry?: IPersonaControlRegistry;
+  }
 ): JSX.Element | null {
-  const { chatModel, model } = props;
+  const { chatModel, model, controlRegistry } = props;
   const awareness = chatModel?.awareness ?? null;
 
   // The manager's awareness view, resolved once its slot appears. Null until
@@ -995,6 +1003,21 @@ export function PersonaControls(
       </Menu>
 
       <UsageChip usage={usage} />
+
+      {/* Controls contributed by other extensions for the selected persona
+          (e.g. a persona's settings button). */}
+      {selectedId &&
+        controlRegistry?.getControls(selectedId).map(control => {
+          const Control = control.component;
+          return (
+            <Control
+              key={control.id}
+              personaId={selectedId}
+              chatModel={chatModel}
+              model={model}
+            />
+          );
+        })}
 
       {controls.length ? (
         <>
