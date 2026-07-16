@@ -46,15 +46,6 @@ export class SlashCommandProvider implements IChatCommandProvider {
   public id: string = SLASH_COMMAND_PROVIDER_ID;
 
   /**
-   * Regex that matches a potential slash command. The first capturing group
-   * captures the ID of the slash command. Slash command IDs may be any
-   * combination of: `\`, `-`.
-   */
-  _regex: RegExp = /\/([\w-]*)/g;
-
-  constructor() {}
-
-  /**
    * Returns slash command completions for the current input.
    *
    * Slash commands are read from the selected persona's awareness slot — the
