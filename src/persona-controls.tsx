@@ -18,7 +18,6 @@ import CheckIcon from '@mui/icons-material/Check';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { InputToolbarRegistry } from '@jupyter/chat';
-import { IAwareness } from '@jupyter/ydoc';
 import {
   EMPTY_USAGE,
   PersonaAwareness,
@@ -780,17 +779,6 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
 }
 
 /**
- * The concrete chat model exposes the Yjs shared model, whose `awareness` is
- * the channel personas broadcast their session state over. The generic
- * `IChatModel` type does not yet surface this, so we read it structurally.
- */
-function getAwareness(chatModel: unknown): IAwareness | null {
-  const shared = (chatModel as { sharedModel?: { awareness?: IAwareness } })
-    ?.sharedModel;
-  return shared?.awareness ?? null;
-}
-
-/**
  * The persona control for the chat input toolbar. Shows which persona a message
  * will be directed to (with its avatar), lets the user switch it, and, when the
  * selected persona advertises model/settings, renders those controls next to it.
@@ -806,7 +794,7 @@ export function PersonaControls(
   props: InputToolbarRegistry.IToolbarItemProps
 ): JSX.Element | null {
   const { chatModel, model } = props;
-  const awareness = getAwareness(chatModel);
+  const awareness = chatModel?.awareness ?? null;
 
   // The manager's awareness view, resolved once its slot appears. Null until
   // then. `PersonaManagerAwareness.from()` polls internally, so nothing here

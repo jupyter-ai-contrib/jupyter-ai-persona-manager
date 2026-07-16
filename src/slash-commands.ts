@@ -1,28 +1,6 @@
-import {
-  ChatCommand,
-  IChatCommandProvider,
-  IChatContext,
-  IInputModel
-} from '@jupyter/chat';
-
-import { IAwareness } from '@jupyter/ydoc';
+import { ChatCommand, IChatCommandProvider, IInputModel } from '@jupyter/chat';
 
 import { PersonaAwareness, PersonaManagerAwareness } from './awareness';
-
-/**
- * Reach the Yjs awareness channel through the input's chat context. The
- * concrete `LabChatContext` wraps the `LabChatModel`, whose `sharedModel`
- * carries the `awareness` object; the generic `IChatContext` type does not
- * surface either, so we read them structurally.
- */
-export function getAwarenessFromContext(
-  chatContext: IChatContext | undefined
-): IAwareness | null {
-  const model = (chatContext as { _model?: unknown })?._model;
-  const shared = (model as { sharedModel?: { awareness?: IAwareness } })
-    ?.sharedModel;
-  return shared?.awareness ?? null;
-}
 
 export const SLASH_COMMAND_PROVIDER_ID =
   '@jupyter-ai/persona-manager:slash-command-provider';
@@ -62,7 +40,7 @@ export class SlashCommandProvider implements IChatCommandProvider {
       return [];
     }
 
-    const awareness = getAwarenessFromContext(inputModel.chatContext);
+    const awareness = inputModel.chatContext?.awareness ?? null;
     if (!awareness) {
       return [];
     }
