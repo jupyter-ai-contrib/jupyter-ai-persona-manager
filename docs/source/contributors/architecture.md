@@ -63,15 +63,30 @@ awareness slot _is_ the state.
 
 ## Where the UI comes from
 
-The chat surface — the message list, the input box, and the **persona selector,
-model picker, and settings controls** — is contributed by the **Jupyter Chat**
-plugin (`jupyterlab-chat`), which this package integrates with. The persona
-manager's job is the backend half: advertise the personas and their options over
-awareness (so the controls have something to show), read the user's selection off
-message metadata (so the controls do something), and route the message to the
-right persona. The interrupt button POSTs to the [cancel endpoint](./rest-api.md),
-which asks each processing persona to
-{py:meth}`~jupyter_ai_persona_manager.BasePersona.cancel_response`.
+This package is not backend-only: its frontend extension ships the chat input
+**toolbar** — the persona selector, model picker, settings, usage chip, and stop
+button — as well as the slash-command completions. It registers these as
+JupyterLab plugins (see `src/index.ts`):
+
+- an **input-toolbar factory** (`persona-controls.tsx`, `stop-button.tsx`) that
+  extends Jupyter Chat's default toolbar (Send, Attach, Cancel) with the persona
+  controls;
+- a **slash-command provider** (`slash-commands.ts`) that offers each selected
+  persona's advertised commands; and
+- the core plugin.
+
+The chat surface itself — the message list and input box — still comes from the
+**Jupyter Chat** extension (`jupyterlab-chat`); this package plugs its toolbar
+into Jupyter Chat's input-toolbar registry. (These controls previously lived in
+`jupyter-ai-acp-client` and were moved here so persona UI and persona logic ship
+together.)
+
+The two halves meet at awareness and message metadata: the controls render from
+what personas broadcast over awareness (the persona list, each persona's models,
+settings, and usage), and writing to the chat stamps the user's selection onto
+the message metadata (`metadata.ts`) that the backend reads. The stop button
+POSTs to the [cancel endpoint](./rest-api.md), which asks each processing persona
+to {py:meth}`~jupyter_ai_persona_manager.BasePersona.cancel_response`.
 
 ## Putting it together: one message, end to end
 

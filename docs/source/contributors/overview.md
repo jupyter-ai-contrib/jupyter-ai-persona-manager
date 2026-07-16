@@ -25,11 +25,11 @@ new interaction model:
 
 - **`@`-mentioning was dropped.** In earlier versions you selected which persona
   responded by `@`-mentioning it in the message text. That mechanism is gone.
-- **A new UI selects the persona and its options instead.** Jupyter AI now
-  provides dedicated chat UI controls — a persona selector, model picker, and
-  settings — contributed by the Jupyter Chat plugin. The user's selection rides
-  on **message metadata** rather than being parsed out of the message body, and a
-  persona picks it up automatically before it processes the message.
+- **A new UI selects the persona and its options instead.** This package now
+  ships a chat input toolbar — a persona selector, model picker, settings, and a
+  stop button — that plugs into the Jupyter Chat input. The user's selection
+  rides on **message metadata** rather than being parsed out of the message body,
+  and a persona picks it up automatically before it processes the message.
 
 The practical upshot for persona authors: you no longer parse mentions or
 commands out of the text to decide whether to respond. The manager routes a
