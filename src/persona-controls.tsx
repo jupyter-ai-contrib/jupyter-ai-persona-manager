@@ -551,7 +551,7 @@ export function formatTokensExact(n: number): string {
 }
 
 /**
- * Format a cost amount with its ISO 4217 currency code.
+ * Format a cost amount with its currency code or unit name (e.g. "credits").
  */
 export function formatCost(amount: number, currency: string): string {
   const value = costNumber.format(amount);
@@ -645,7 +645,8 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
 
   const hasContext =
     usage.context_tokens !== null && usage.context_size !== null;
-  // Agents like kiro-cli report context fill only as a bare percentage.
+  // Precedence: a token-derived percentage always wins; `context_percent` is
+  // read only when the agent reported no token counts (e.g. kiro-cli).
   const hasPercentOnly = !hasContext && usage.context_percent !== null;
   const showContext = hasContext || hasPercentOnly;
   const hasTokens = usage.total_tokens !== null;
@@ -765,12 +766,23 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
           ) : null}
           {hasCost ? (
             <UsageSection
-              label="Session cost (est.)"
+              // API list prices are quoted in USD; for any other unit (e.g.
+              // metered credits) the amount is the agent's own accounting, so
+              // neither the estimate suffix nor the list-price note applies.
+              label={
+                usage.cost_currency === 'USD'
+                  ? 'Session cost (est.)'
+                  : 'Session cost'
+              }
               value={formatCost(
                 usage.cost_amount as number,
                 usage.cost_currency as string
               )}
-              title="Estimated at API list prices"
+              title={
+                usage.cost_currency === 'USD'
+                  ? 'Estimated at API list prices'
+                  : undefined
+              }
             />
           ) : null}
         </div>
