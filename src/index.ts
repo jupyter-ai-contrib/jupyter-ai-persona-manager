@@ -69,10 +69,12 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           element: PersonaControls,
           position: 5
         });
-        // Stop button, right after the persona controls.
+        // Stop button, between the persona controls (5) and the default
+        // toolbar's cancel button (10); a tie would leave the order to
+        // insertion rather than position.
         registry.addItem('stop', {
           element: StopButton,
-          position: 10
+          position: 7
         });
         return registry;
       }
