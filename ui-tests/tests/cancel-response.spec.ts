@@ -1,0 +1,66 @@
+/*
+ * Copyright (c) Jupyter Development Team.
+ * Distributed under the terms of the Modified BSD License.
+ */
+
+import { expect, test } from '@jupyterlab/galata';
+import { FixturePersona, installPersonas, TestHelpers } from './test-helpers';
+
+// This suite's working directory and the fixture persona installed into it.
+const TEST_DIR = 'cancel-response';
+const PERSONAS = [FixturePersona.SlowStream];
+
+/**
+ * Verifies the stop button interrupts an in-progress reply.
+ *
+ * The stop button calls the persona-manager cancel endpoint
+ * (`/api/ai/personas/cancel`), which invokes `BasePersona.cancel_response()` on
+ * each processing persona. The Slow Stream fixture overrides it to stop its
+ * streaming loop; the loop emits a chunk every ~200ms for ~60s, so there's a
+ * wide window to stop it mid-stream.
+ *
+ * After stopping we assert two things: the persona is no longer writing (the
+ * stop button disables itself, driven by the chat's writers list, which the
+ * persona leaves when `stream_message` unwinds and clears its is_writing flag),
+ * and the reply text stops growing — no further chunks land once cancelled.
+ */
+test.describe('cancel-response', () => {
+  test.beforeAll(async ({ request }) => {
+    await installPersonas(request, TEST_DIR, PERSONAS);
+  });
+
+  test('stopping a streaming reply halts writing and freezes the message', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.SlowStream);
+
+    // Kick off the long stream and wait until the persona is actively writing.
+    await helpers.send('count for me');
+    await helpers.waitForWriting();
+
+    // Let a few chunks accumulate so the message is non-empty and mid-stream.
+    await expect
+      .poll(async () => (await helpers.lastMessageText()).trim().length, {
+        timeout: 30000
+      })
+      .toBeGreaterThan(0);
+
+    // Interrupt.
+    await helpers.clickStop();
+
+    // The persona stops writing: the stop button disables itself.
+    await helpers.waitForNotWriting();
+
+    // A chunk already dispatched when the stop landed can still render just
+    // after the writing flag clears, so let the stream fully settle before
+    // capturing the frozen baseline — otherwise `frozen` races a late chunk.
+    await page.waitForTimeout(1000);
+
+    // The message stops growing: capture it, wait, and confirm it's unchanged.
+    const frozen = await helpers.lastMessageText();
+    await page.waitForTimeout(3000);
+    expect(await helpers.lastMessageText()).toBe(frozen);
+  });
+});
