@@ -86,9 +86,11 @@ class Usage(BaseModel):
     # decrease during a session (e.g. after the agent compacts context).
     context_tokens: int | None = None  # tokens currently in the window
     context_size: int | None = None  # total window size
-    # Context fill as a bare percentage (0-100), for agents that report only a
-    # percentage with no token counts (e.g. kiro-cli). Consumers derive the
-    # percentage from `context_tokens`/`context_size` when those are present.
+    # Context fill as a bare percentage (0-100), the fallback for agents that
+    # report only a percentage with no token counts (e.g. kiro-cli). Precedence
+    # contract for consumers: when `context_tokens`/`context_size` are present,
+    # derive the percentage from them and ignore this field; read this field
+    # only when they are absent.
     context_percent: float | None = None
 
     # Cumulative token counts for the session.
@@ -99,9 +101,11 @@ class Usage(BaseModel):
     thought_tokens: int | None = None
     total_tokens: int | None = None
 
-    # Cumulative session cost.
+    # Cumulative session cost. The currency is an ISO 4217 code (e.g. "USD")
+    # or, for agents that meter in their own unit, that unit's plural name
+    # (e.g. "credits").
     cost_amount: float | None = None
-    cost_currency: str | None = None  # ISO 4217, e.g. "USD"
+    cost_currency: str | None = None
 
 
 class CommandOption(BaseModel):

@@ -69,9 +69,10 @@ export type Usage = {
   context_tokens: number | null;
   context_size: number | null;
   /**
-   * Context fill as a bare percentage (0-100), for agents that report only a
-   * percentage with no token counts. Derive the percentage from
-   * `context_tokens`/`context_size` when those are present.
+   * Context fill as a bare percentage (0-100), the fallback for agents that
+   * report only a percentage with no token counts. Precedence contract: when
+   * `context_tokens`/`context_size` are present, derive the percentage from
+   * them and ignore this field; read this field only when they are absent.
    */
   context_percent: number | null;
   input_tokens: number | null;
@@ -81,6 +82,10 @@ export type Usage = {
   thought_tokens: number | null;
   total_tokens: number | null;
   cost_amount: number | null;
+  /**
+   * An ISO 4217 code (e.g. "USD") or, for agents that meter in their own
+   * unit, that unit's plural name (e.g. "credits").
+   */
   cost_currency: string | null;
 };
 
