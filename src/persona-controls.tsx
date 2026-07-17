@@ -82,6 +82,22 @@ const menuAnchorProps = {
 };
 
 /**
+ * Anchor props for a control dropdown: the shared menu anchoring, with the
+ * virtualized paper class added when the menu will hold enough options for CSS
+ * containment to pay off (see `shouldVirtualizeOptions`).
+ */
+function menuAnchorPropsFor(optionCount: number) {
+  return shouldVirtualizeOptions(optionCount)
+    ? {
+        ...menuAnchorProps,
+        PaperProps: {
+          className: `${MENU_CLASS}-paper ${MENU_CLASS}-paper-virtualized`
+        }
+      }
+    : menuAnchorProps;
+}
+
+/**
  * A UI control for one control (the model, a model setting, or a general
  * setting). It carries the persona's current value (from awareness) and the
  * user's per-message selection (null = use the persona's default).
@@ -310,15 +326,7 @@ function ControlItem(props: {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   // Large option lists opt into CSS containment on each row (see the
   // `-virtualized` style) so off-screen items are skipped during layout/paint.
-  const virtualize = shouldVirtualizeOptions(control.options.length);
-  const menuAnchorPropsForControl = virtualize
-    ? {
-        ...menuAnchorProps,
-        PaperProps: {
-          className: `${MENU_CLASS}-paper ${MENU_CLASS}-paper-virtualized`
-        }
-      }
-    : menuAnchorProps;
+  const menuAnchorPropsForControl = menuAnchorPropsFor(control.options.length);
   return (
     <>
       <Button
@@ -380,13 +388,13 @@ function OverflowMenu(props: {
   onChange: (control: Control, value: string | null) => void;
 }): JSX.Element {
   const { controls, anchor, onClose, onChange } = props;
+  // The overflow menu renders every overflowed control's options in one list,
+  // so containment is decided by their combined option count.
+  const anchorProps = menuAnchorPropsFor(
+    controls.reduce((n, c) => n + c.options.length, 0)
+  );
   return (
-    <Menu
-      anchorEl={anchor}
-      open={!!anchor}
-      onClose={onClose}
-      {...menuAnchorProps}
-    >
+    <Menu anchorEl={anchor} open={!!anchor} onClose={onClose} {...anchorProps}>
       {controls.flatMap(control => [
         <ListSubheader
           key={`${control.id}-label`}
