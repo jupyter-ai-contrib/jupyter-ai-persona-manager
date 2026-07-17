@@ -6,7 +6,11 @@
 
 import { PersonaOption } from '../awareness';
 
-import { buildControls, reconcileSelection } from '../persona-controls';
+import {
+  buildControls,
+  reconcileSelection,
+  showLoadingPlaceholder
+} from '../persona-controls';
 import { emptyPersonaSettings, PersonaSettings } from '../metadata';
 import { personaAwareness } from './awareness-fixture';
 
@@ -149,5 +153,27 @@ describe('reconcileSelection', () => {
 
   it('makes no decision before personas load', () => {
     expect(reconcileSelection([], 'a', false)).toBeUndefined();
+  });
+});
+
+describe('showLoadingPlaceholder', () => {
+  it('shows while the manager is still resolving', () => {
+    expect(showLoadingPlaceholder(true, false, false, false)).toBe(true);
+  });
+
+  it('shows until the first persona-list read lands', () => {
+    expect(showLoadingPlaceholder(true, true, false, false)).toBe(true);
+  });
+
+  it('hides once the list has been read (an empty chat is empty, not loading)', () => {
+    expect(showLoadingPlaceholder(true, true, false, true)).toBe(false);
+  });
+
+  it('hides when resolution failed', () => {
+    expect(showLoadingPlaceholder(true, false, true, false)).toBe(false);
+  });
+
+  it('hides without an awareness channel to wait on', () => {
+    expect(showLoadingPlaceholder(false, false, false, false)).toBe(false);
   });
 });

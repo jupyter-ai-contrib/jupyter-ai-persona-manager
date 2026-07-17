@@ -182,6 +182,25 @@ export function reconcileSelection(
 }
 
 /**
+ * Whether the toolbar, knowing no personas yet, should show the loading
+ * placeholder rather than nothing: only while the manager's slot can still
+ * resolve (awareness exists, resolution hasn't failed) and the manager or its
+ * first persona-list read is still pending. Without an awareness channel there
+ * is nothing to wait on, so nothing renders.
+ */
+export function showLoadingPlaceholder(
+  hasAwareness: boolean,
+  managerResolved: boolean,
+  managerFailed: boolean,
+  listRead: boolean
+): boolean {
+  if (!hasAwareness || managerFailed) {
+    return false;
+  }
+  return !managerResolved || !listRead;
+}
+
+/**
  * Fold a changed control value into the user's `PersonaSettings`, keyed by the
  * control's kind. A null value resets that control to the persona's default.
  */
@@ -951,7 +970,14 @@ export function PersonaControls(
   // pending, show a loading placeholder (on slow networks this takes seconds);
   // once resolution failed or the chat genuinely has no personas, show nothing.
   if (!personas.length) {
-    if (!managerFailed && (!manager || !listRead)) {
+    if (
+      showLoadingPlaceholder(
+        awareness !== null,
+        manager !== null,
+        managerFailed,
+        listRead
+      )
+    ) {
       return <LoadingPlaceholder />;
     }
     return null;
