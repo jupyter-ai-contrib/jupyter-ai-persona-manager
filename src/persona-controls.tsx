@@ -41,6 +41,23 @@ const NO_ONE_LABEL = 'No one';
 // Stable control ID for the model selector (setting IDs are used verbatim).
 const MODEL_CONTROL_ID = '__model__';
 
+// Above this many options, a control's dropdown opts into CSS containment
+// (`content-visibility: auto`) so the browser skips layout/paint for off-screen
+// rows. Some personas advertise very large option lists (e.g. the full LiteLLM
+// model catalog, ~2000 entries), which is otherwise slow to scroll through.
+// Small lists render normally — containment adds no benefit and its intrinsic
+// sizing can cause faint scrollbar jitter, so it's gated behind this threshold.
+export const VIRTUALIZE_OPTION_THRESHOLD = 128;
+
+/**
+ * Whether a control's dropdown should opt into CSS containment for its rows,
+ * based on how many options it has. Only large lists benefit; see
+ * `VIRTUALIZE_OPTION_THRESHOLD`.
+ */
+export function shouldVirtualizeOptions(optionCount: number): boolean {
+  return optionCount > VIRTUALIZE_OPTION_THRESHOLD;
+}
+
 // Context-fill fractions at which the chip starts demanding attention: the
 // ring and percent turn warn, then error, colored.
 const USAGE_WARN_AT = 0.7;
@@ -63,6 +80,22 @@ const menuAnchorProps = {
   transformOrigin: { vertical: 'bottom', horizontal: 'left' } as const,
   PaperProps: { className: `${MENU_CLASS}-paper` }
 };
+
+/**
+ * Anchor props for a control dropdown: the shared menu anchoring, with the
+ * virtualized paper class added when the menu will hold enough options for CSS
+ * containment to pay off (see `shouldVirtualizeOptions`).
+ */
+function menuAnchorPropsFor(optionCount: number) {
+  return shouldVirtualizeOptions(optionCount)
+    ? {
+        ...menuAnchorProps,
+        PaperProps: {
+          className: `${MENU_CLASS}-paper ${MENU_CLASS}-paper-virtualized`
+        }
+      }
+    : menuAnchorProps;
+}
 
 /**
  * A UI control for one control (the model, a model setting, or a general
@@ -291,6 +324,9 @@ function ControlItem(props: {
 }): JSX.Element {
   const { control, onSelect } = props;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // Large option lists opt into CSS containment on each row (see the
+  // `-virtualized` style) so off-screen items are skipped during layout/paint.
+  const menuAnchorPropsForControl = menuAnchorPropsFor(control.options.length);
   return (
     <>
       <Button
@@ -310,7 +346,7 @@ function ControlItem(props: {
         anchorEl={anchor}
         open={!!anchor}
         onClose={() => setAnchor(null)}
-        {...menuAnchorProps}
+        {...menuAnchorPropsForControl}
       >
         <ChoiceMenuItem
           primary={defaultChoiceLabel(control)}
@@ -352,13 +388,13 @@ function OverflowMenu(props: {
   onChange: (control: Control, value: string | null) => void;
 }): JSX.Element {
   const { controls, anchor, onClose, onChange } = props;
+  // The overflow menu renders every overflowed control's options in one list,
+  // so containment is decided by their combined option count.
+  const anchorProps = menuAnchorPropsFor(
+    controls.reduce((n, c) => n + c.options.length, 0)
+  );
   return (
-    <Menu
-      anchorEl={anchor}
-      open={!!anchor}
-      onClose={onClose}
-      {...menuAnchorProps}
-    >
+    <Menu anchorEl={anchor} open={!!anchor} onClose={onClose} {...anchorProps}>
       {controls.flatMap(control => [
         <ListSubheader
           key={`${control.id}-label`}
