@@ -2,6 +2,30 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.1.0rc2
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.0rc1...b96dc57e4859f4714767c76509954ae751d26e31))
+
+### Enhancements made
+
+- Document usage fallback semantics and scope the cost estimate label to USD [#75](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/75) ([@andrii-i](https://github.com/andrii-i), [@dlqqq](https://github.com/dlqqq))
+- Show a loading placeholder while the persona list resolves [#74](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/74) ([@andrii-i](https://github.com/andrii-i), [@dlqqq](https://github.com/dlqqq))
+
+### Maintenance and upkeep improvements
+
+- Add E2E test suite for the generic persona control surface [#71](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/71) ([@dlqqq](https://github.com/dlqqq), [@andrii-i](https://github.com/andrii-i))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-07-16&to=2026-07-17&type=c))
+
+@andrii-i ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aandrii-i+updated%3A2026-07-16..2026-07-17&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-07-16..2026-07-17&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.1.0rc1
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.0rc0...bc3535b01d85cbf9f5bd401da6c704d60a82c987))
@@ -22,8 +46,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-07-16&to=2026-07-16&type=c))
 
 @andrii-i ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aandrii-i+updated%3A2026-07-16..2026-07-16&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-07-16..2026-07-16&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.1.0rc0
 
