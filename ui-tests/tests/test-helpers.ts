@@ -37,9 +37,11 @@ export enum FixturePersona {
   EchoConfig = 'echo-config',
   Usage = 'usage',
   PercentUsage = 'percent-usage',
+  CreditsUsage = 'credits-usage',
   SlashCommands = 'slash-commands',
   Models = 'models',
-  SlowStream = 'slow-stream'
+  SlowStream = 'slow-stream',
+  Refresher = 'refresher'
 }
 
 interface FixturePersonaInfo {
@@ -54,9 +56,11 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.EchoConfig]: { name: 'Echo Config Persona' },
   [FixturePersona.Usage]: { name: 'Usage Persona' },
   [FixturePersona.PercentUsage]: { name: 'Percent Usage Persona' },
+  [FixturePersona.CreditsUsage]: { name: 'Credits Usage Persona' },
   [FixturePersona.SlashCommands]: { name: 'Slash Commands Persona' },
   [FixturePersona.Models]: { name: 'Models Persona' },
-  [FixturePersona.SlowStream]: { name: 'Slow Stream Persona' }
+  [FixturePersona.SlowStream]: { name: 'Slow Stream Persona' },
+  [FixturePersona.Refresher]: { name: 'Refresher Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -98,11 +102,16 @@ export async function installPersonas(
   for (const persona of personas) {
     const file = `${persona}_persona.py`;
     const source = fs.readFileSync(path.join(PERSONAS_SRC, file), 'utf-8');
-    await contents.uploadContent(
+    const uploaded = await contents.uploadContent(
       source,
       'text',
       `${dir}/.jupyter/personas/${file}`
     );
+    // uploadContent resolves false on failure rather than throwing; fail the
+    // suite here instead of timing out later on a picker with no personas.
+    if (!uploaded) {
+      throw new Error(`Failed to install fixture persona ${file} into ${dir}`);
+    }
   }
 }
 
