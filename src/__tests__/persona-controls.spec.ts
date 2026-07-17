@@ -6,7 +6,12 @@
 
 import { PersonaOption } from '../awareness';
 
-import { buildControls, reconcileSelection } from '../persona-controls';
+import {
+  buildControls,
+  reconcileSelection,
+  shouldVirtualizeOptions,
+  VIRTUALIZE_OPTION_THRESHOLD
+} from '../persona-controls';
 import { emptyPersonaSettings, PersonaSettings } from '../metadata';
 import { personaAwareness } from './awareness-fixture';
 
@@ -149,5 +154,18 @@ describe('reconcileSelection', () => {
 
   it('makes no decision before personas load', () => {
     expect(reconcileSelection([], 'a', false)).toBeUndefined();
+  });
+});
+
+describe('shouldVirtualizeOptions', () => {
+  it('does not virtualize small option lists', () => {
+    expect(shouldVirtualizeOptions(0)).toBe(false);
+    expect(shouldVirtualizeOptions(10)).toBe(false);
+    expect(shouldVirtualizeOptions(VIRTUALIZE_OPTION_THRESHOLD)).toBe(false);
+  });
+
+  it('virtualizes lists above the threshold', () => {
+    expect(shouldVirtualizeOptions(VIRTUALIZE_OPTION_THRESHOLD + 1)).toBe(true);
+    expect(shouldVirtualizeOptions(2000)).toBe(true);
   });
 });

@@ -239,6 +239,20 @@
   font-size: var(--jp-ui-font-size1);
 }
 
+/* Large option lists (see VIRTUALIZE_OPTION_THRESHOLD in persona-controls.tsx)
+   opt into CSS containment: the browser skips layout and paint for rows
+   scrolled out of view, so a list of ~2000 models scrolls smoothly. Every row
+   stays in the DOM, so MUI keyboard navigation, typeahead, and selection are
+   unaffected. `contain-intrinsic-size` supplies an estimated row height for the
+   skipped rows, keeping the scrollbar length stable. The height (~33px) matches
+   a single-line item: 6px+6px padding plus the ~21px line box at the JAI base
+   font size; a two-line description row is a touch taller, which only makes the
+   estimate slightly conservative. */
+.jp-jai-controlMenu-paper-virtualized .MuiMenuItem-root {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 33px;
+}
+
 .jp-jai-controlMenu-paper .MuiMenuItem-root:hover,
 .jp-jai-controlMenu-paper .MuiMenuItem-root.Mui-selected,
 .jp-jai-controlMenu-paper .MuiMenuItem-root.Mui-selected:hover {
