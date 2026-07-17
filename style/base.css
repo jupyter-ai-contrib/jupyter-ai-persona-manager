@@ -420,3 +420,17 @@
 .jp-jai-usage-row-value {
   white-space: nowrap;
 }
+
+/* Loading placeholder shown while the persona list resolves over awareness:
+   sits where the persona button will, matching its footprint (18px avatar,
+   6px gap to the label, the button's padding). */
+.jp-jai-personaControls-skeleton {
+  gap: 6px;
+  padding: 1px 6px;
+}
+
+/* stylelint-disable selector-class-pattern -- theming MUI's skeleton */
+.jp-ThemedContainer .jp-jai-personaControls-skeleton .MuiSkeleton-root {
+  background-color: var(--jp-border-color2);
+}
+/* stylelint-enable selector-class-pattern */

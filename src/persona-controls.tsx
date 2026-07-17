@@ -11,7 +11,8 @@ import {
   ListSubheader,
   Menu,
   MenuItem,
-  Popover
+  Popover,
+  Skeleton
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CheckIcon from '@mui/icons-material/Check';
@@ -220,6 +221,23 @@ function Avatar(props: { url: string | null | undefined }): JSX.Element {
     return <span className={`${SELECTOR_CLASS}-avatar-spacer`} />;
   }
   return <img className={`${SELECTOR_CLASS}-avatar`} src={props.url} alt="" />;
+}
+
+/**
+ * Placeholder for the toolbar while the persona list is being resolved over
+ * awareness: a circle where the picker's avatar sits and a bar where its label
+ * sits, so a slow network reads as loading rather than a missing toolbar.
+ */
+function LoadingPlaceholder(): JSX.Element {
+  return (
+    <div
+      className={`${SELECTOR_CLASS}-group ${SELECTOR_CLASS}-skeleton`}
+      title="Loading personas"
+    >
+      <Skeleton variant="circular" width={18} height={18} />
+      <Skeleton variant="rounded" width={90} height={12} />
+    </div>
+  );
 }
 
 /**
@@ -808,6 +826,13 @@ export function PersonaControls(
   // then. `PersonaManagerAwareness.from()` polls internally, so nothing here
   // polls; once resolved, awareness `change` events drive all updates.
   const [manager, setManager] = useState<PersonaManagerAwareness | null>(null);
+  // Whether resolving the manager's slot failed (timed out, extension absent).
+  // Hides the loading placeholder along with the toolbar.
+  const [managerFailed, setManagerFailed] = useState(false);
+  // Whether the first persona-list read has completed after the manager
+  // resolved. Before that, an empty list means "still loading", not "this chat
+  // has no personas".
+  const [listRead, setListRead] = useState(false);
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(
     DEFAULT_PERSONA_ID
@@ -849,6 +874,9 @@ export function PersonaControls(
         // Manager never registered (e.g. extension disabled); the toolbar
         // stays hidden. Surface why, or the empty toolbar is undiagnosable.
         console.warn('Persona toolbar hidden:', reason);
+        if (!cancelled) {
+          setManagerFailed(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -876,6 +904,7 @@ export function PersonaControls(
       return;
     }
     readManager();
+    setListRead(true);
     const onChange = () => readManager();
     awareness.on('change', onChange);
     return () => {
@@ -918,8 +947,13 @@ export function PersonaControls(
     model.updateMetadata(buildMessageMetadata(selectedId, settings));
   }, [model, metadataSignature]);
 
-  // No personas in the chat: nothing to show.
+  // No personas yet. While the manager's slot or its first list read is still
+  // pending, show a loading placeholder (on slow networks this takes seconds);
+  // once resolution failed or the chat genuinely has no personas, show nothing.
   if (!personas.length) {
+    if (!managerFailed && (!manager || !listRead)) {
+      return <LoadingPlaceholder />;
+    }
     return null;
   }
 
