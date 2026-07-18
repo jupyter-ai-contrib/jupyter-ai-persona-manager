@@ -1,5 +1,6 @@
 """Tests for BasePersona.handle_uncaught_exception() and stream_message() re-raise."""
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -46,6 +47,44 @@ def _make_persona(mock_ychat):
     persona.awareness = MagicMock()
     persona._processing_count = 0
     return persona
+
+
+def test_process_attachments_limits_notebook_to_selected_cells(mock_ychat, tmp_path):
+    notebook = tmp_path / "example.ipynb"
+    notebook.write_text(
+        json.dumps(
+            {
+                "cells": [
+                    {
+                        "cell_type": "code",
+                        "id": "wanted",
+                        "source": ["print('wanted')\n"],
+                    },
+                    {
+                        "cell_type": "markdown",
+                        "id": "omitted",
+                        "source": ["SECRET OMITTED CELL\n"],
+                    },
+                ]
+            }
+        )
+    )
+    mock_ychat.get_attachments.return_value = {
+        "attachment-1": {
+            "type": "notebook",
+            "value": "example.ipynb",
+            "cells": [{"id": "wanted", "input_type": "code"}],
+        }
+    }
+    persona = _make_persona(mock_ychat)
+    persona.get_workspace_dir = lambda: str(tmp_path)
+    message = MagicMock(attachments=["attachment-1"])
+
+    result = persona.process_attachments(message)
+
+    assert result is not None
+    assert "print('wanted')" in result
+    assert "SECRET OMITTED CELL" not in result
 
 
 # ---------------------------------------------------------------------------
