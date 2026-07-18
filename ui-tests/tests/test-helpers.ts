@@ -41,7 +41,8 @@ export enum FixturePersona {
   SlashCommands = 'slash-commands',
   Models = 'models',
   SlowStream = 'slow-stream',
-  Refresher = 'refresher'
+  Refresher = 'refresher',
+  Lifecycle = 'lifecycle'
 }
 
 interface FixturePersonaInfo {
@@ -60,7 +61,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SlashCommands]: { name: 'Slash Commands Persona' },
   [FixturePersona.Models]: { name: 'Models Persona' },
   [FixturePersona.SlowStream]: { name: 'Slow Stream Persona' },
-  [FixturePersona.Refresher]: { name: 'Refresher Persona' }
+  [FixturePersona.Refresher]: { name: 'Refresher Persona' },
+  [FixturePersona.Lifecycle]: { name: 'Lifecycle Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -380,5 +382,16 @@ export class TestHelpers {
   /** The text of the latest rendered message (the persona's streaming reply). */
   async lastMessageText(): Promise<string> {
     return (await this.chat.locator(MESSAGE).last().textContent()) ?? '';
+  }
+
+  /** The text of every rendered message, in order. */
+  async allMessageTexts(): Promise<string[]> {
+    return this.chat.locator(MESSAGE).allTextContents();
+  }
+
+  /** How many rendered messages contain `text` as a substring. */
+  async countMessagesContaining(text: string): Promise<number> {
+    const texts = await this.allMessageTexts();
+    return texts.filter(t => t.includes(text)).length;
   }
 }

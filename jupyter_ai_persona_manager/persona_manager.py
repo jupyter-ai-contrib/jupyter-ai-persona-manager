@@ -509,6 +509,88 @@ class PersonaManager(LoggingConfigurable):
         self.send_system_message("Refreshed all AI personas in this chat.")
         self.log.info(f"Refreshed all AI personas in chat '{self.room_id}'.")
 
+    async def restart_persona(self, persona_id: str) -> bool:
+        """
+        Restart a single persona: shut its current instance down and reconstruct
+        it under the same ID, leaving every other persona in the chat untouched.
+
+        This is the single-persona counterpart to `refresh_personas()`. It is
+        public because it is called by `jupyter_ai_chat_commands` when the
+        `/restart` slash command is routed to a persona (via
+        `BasePersona.restart()`). It reconstructs the *same* class that is
+        currently installed — it does not reload persona code from disk the way
+        `refresh_personas()` does — so it brings a persona back up in a clean
+        state without disturbing its siblings.
+
+        Returns `True` if a persona with `persona_id` was found and restarted,
+        `False` otherwise. Note that on restart the persona's Yjs client ID
+        changes (a fresh awareness slot), so the persona list is republished for
+        the browser to reconcile.
+        """
+        persona = self._personas.get(persona_id)
+        if persona is None:
+            self.log.warning(
+                f"Cannot restart persona '{persona_id}' in chat '{self.room_id}': "
+                "no such persona is installed."
+            )
+            return False
+
+        # Reconstruct the same class that is currently running.
+        PersonaClass = type(persona)
+
+        # Free all transaction locks on the YDoc by awaiting the YChat
+        # background tasks first, mirroring `shutdown_personas()`. Without this,
+        # shutting the persona down while a transaction is in flight can raise a
+        # runtime error.
+        while self.ychat._background_tasks:
+            task = next(iter(self.ychat._background_tasks))
+            await task
+            self.ychat._background_tasks.discard(task)
+
+        # Shut the current instance down (frees its awareness slot & tasks).
+        await persona.shutdown()
+
+        # Reconstruct the persona under the same ID. The new instance registers a
+        # fresh awareness slot and re-adds itself as a chat user in its __init__.
+        try:
+            new_persona = PersonaClass(parent=self, ychat=self.ychat)
+        except Exception:
+            tb_str = traceback.format_exc()
+            self.log.exception(
+                f"Persona '{persona_id}' raised an exception while restarting, "
+                f"printed below.\n{tb_str}"
+            )
+            # The persona is now gone from the chat; drop it and republish so the
+            # UI reflects reality rather than a persona that failed to come back.
+            self._personas.pop(persona_id, None)
+            self._publish_persona_list()
+            self._display_persona_error_message(
+                {
+                    "module": PersonaClass.__module__,
+                    "persona_class": PersonaClass,
+                    "traceback": tb_str,
+                }
+            )
+            return False
+
+        self._personas[persona_id] = new_persona
+
+        # Republish the persona list, since the reloaded persona has a new client
+        # ID, and rebuild the avatar cache across all rooms.
+        self._publish_persona_list()
+        try:
+            persona_managers = self.parent.serverapp.web_app.settings.get(
+                "jupyter-ai", {}
+            ).get("persona-managers", {})
+            build_avatar_cache(persona_managers)
+        except Exception as e:
+            self.log.error(f"Error rebuilding avatar cache: {e}")
+
+        self.log.info(
+            f"Restarted persona '{persona_id}' in chat '{self.room_id}'."
+        )
+        return True
+
     def get_chat_path(self, relative: bool = False) -> str:
         """
         Returns the absolute path of the chat file assigned to this
