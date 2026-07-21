@@ -8,7 +8,6 @@ import { PersonaOption } from '../awareness';
 
 import {
   buildControls,
-  navigateIndex,
   reconcileSelection,
   showLoadingPlaceholder
 } from '../persona-controls';
@@ -176,44 +175,5 @@ describe('showLoadingPlaceholder', () => {
 
   it('hides without an awareness channel to wait on', () => {
     expect(showLoadingPlaceholder(false, false, false, false)).toBe(false);
-  });
-});
-
-describe('navigateIndex', () => {
-  it('steps forward on ArrowDown / ArrowRight', () => {
-    expect(navigateIndex(3, 0, 'ArrowDown')).toBe(1);
-    expect(navigateIndex(3, 0, 'ArrowRight')).toBe(1);
-  });
-
-  it('steps backward on ArrowUp / ArrowLeft', () => {
-    expect(navigateIndex(3, 2, 'ArrowUp')).toBe(1);
-    expect(navigateIndex(3, 2, 'ArrowLeft')).toBe(1);
-  });
-
-  it('clamps at the ends rather than wrapping', () => {
-    expect(navigateIndex(3, 2, 'ArrowDown')).toBe(2);
-    expect(navigateIndex(3, 0, 'ArrowUp')).toBe(0);
-  });
-
-  it('jumps to the ends on Home / End', () => {
-    expect(navigateIndex(3, 1, 'Home')).toBe(0);
-    expect(navigateIndex(3, 1, 'End')).toBe(2);
-  });
-
-  it('enters the list from an unknown current value (index -1)', () => {
-    // ArrowDown lands on the first value; ArrowUp on the last.
-    expect(navigateIndex(3, -1, 'ArrowDown')).toBe(0);
-    expect(navigateIndex(3, -1, 'ArrowUp')).toBe(2);
-  });
-
-  it('ignores non-navigation keys, so they act normally', () => {
-    expect(navigateIndex(3, 0, 'Tab')).toBeNull();
-    expect(navigateIndex(3, 0, 'Enter')).toBeNull();
-    expect(navigateIndex(3, 0, ' ')).toBeNull();
-    expect(navigateIndex(3, 0, 'a')).toBeNull();
-  });
-
-  it('makes no decision for an empty list', () => {
-    expect(navigateIndex(0, -1, 'ArrowDown')).toBeNull();
   });
 });

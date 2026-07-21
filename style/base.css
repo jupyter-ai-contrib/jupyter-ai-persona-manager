@@ -278,6 +278,79 @@
   flex-shrink: 0;
 }
 
+/* Searchable menu (persona picker + control dropdowns): a search field above a
+   scrollable option list, rendered in a Popper portal. Shares the controlMenu
+   paper look; the pieces below lay out the search box and the option rows. */
+.jp-jai-searchMenu-popper {
+  z-index: 1400;
+}
+
+.jp-jai-searchMenu-paper.jp-jai-searchMenu-paper {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* The search field sits at the top with a hairline separating it from the
+   list. */
+.jp-jai-searchMenu-search {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--jp-border-color2);
+}
+
+/* stylelint-disable-next-line selector-class-pattern -- theming MUI's input */
+.jp-jai-searchMenu-search .MuiInputBase-input {
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size1);
+  color: var(--jp-ui-font-color1);
+}
+
+/* The scrollable option list. Its max-height, combined with the paper's, caps
+   the menu; long lists scroll. */
+.jp-jai-searchMenu-list {
+  overflow-y: auto;
+  max-height: 40vh;
+  padding: 4px 0;
+}
+
+/* One option row: icon (optional), text column, and a trailing check on the
+   committed value. The highlighted row (keyboard or hover) gets a subtle fill. */
+.jp-jai-searchMenu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.jp-jai-searchMenu-option.jp-mod-highlighted {
+  background-color: var(--jp-layout-color2);
+}
+
+.jp-jai-searchMenu-option-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* The text column stacks the name over an optional description and takes the
+   remaining width, pushing the check to the right edge. */
+.jp-jai-searchMenu-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Shown when the search filters everything out. */
+.jp-jai-searchMenu-empty {
+  padding: 8px 12px;
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size1);
+  color: var(--jp-ui-font-color2);
+}
+
 /* overflow popover: an uppercase group label above each overflowed control's
    choices, with a hairline divider and top spacing separating the sections.
    Scoped under the paper to win over MUI's ListSubheader defaults. */

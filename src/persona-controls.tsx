@@ -33,6 +33,12 @@ import {
   emptyPersonaSettings
 } from './metadata';
 import { IPersonaControlRegistry } from './persona-control-registry';
+import {
+  CommitMode,
+  SearchableMenu,
+  SearchableOption,
+  useSearchableTrigger
+} from './searchable-menu';
 
 const SELECTOR_CLASS = 'jp-jai-personaControls';
 const MENU_CLASS = 'jp-jai-controlMenu';
@@ -233,40 +239,6 @@ function effectiveValue(control: Control): string | null {
 }
 
 /**
- * The index to move to within a list of `length` selectable values, given the
- * currently selected index (`-1` when the current value isn't in the list) and
- * a navigation key. This drives keyboard selection on a focused control: arrow
- * keys step one value, Home/End jump to the ends. Movement clamps at both ends
- * like a native `<select>` — it does not wrap — so holding an arrow settles on
- * an end rather than cycling. Returns `null` for any non-navigation key (e.g.
- * `Tab`, `Enter`), so the caller leaves the event alone and lets it act
- * normally (move focus, open the menu).
- */
-export function navigateIndex(
-  length: number,
-  currentIndex: number,
-  key: string
-): number | null {
-  if (length === 0) {
-    return null;
-  }
-  switch (key) {
-    case 'ArrowDown':
-    case 'ArrowRight':
-      return currentIndex < 0 ? 0 : Math.min(currentIndex + 1, length - 1);
-    case 'ArrowUp':
-    case 'ArrowLeft':
-      return currentIndex < 0 ? length - 1 : Math.max(currentIndex - 1, 0);
-    case 'Home':
-      return 0;
-    case 'End':
-      return length - 1;
-    default:
-      return null;
-  }
-}
-
-/**
  * A small round avatar image, or a same-sized spacer to keep labels aligned.
  */
 function Avatar(props: { url: string | null | undefined }): JSX.Element {
@@ -353,87 +325,69 @@ function defaultChoiceLabel(control: Control): string {
 }
 
 /**
- * A dropdown for a control. The first row is "Default" (selection = null); the
- * rest are the persona's advertised options (selection = that option's id).
+ * The searchable options for a control: a leading "Default" row (value null,
+ * naming the persona's current value) followed by each advertised option. A
+ * description is shown only when it adds information beyond the name. This is
+ * what the searchable dropdown lists and fuzzy-filters.
+ */
+function controlOptions(control: Control): SearchableOption[] {
+  const usefulDescription = (name: string, description: string | null) =>
+    description &&
+    description.trim().toLowerCase() !== name.trim().toLowerCase()
+      ? description
+      : null;
+  return [
+    { value: null, label: defaultChoiceLabel(control) },
+    ...control.options.map(option => ({
+      value: option.id,
+      label: option.name,
+      secondary: usefulDescription(option.name, option.description)
+    }))
+  ];
+}
+
+/**
+ * A control button that opens a searchable dropdown of its choices. The first
+ * choice is "Default" (selection = null); the rest are the persona's advertised
+ * options. Tabbing into the button opens the menu; arrows/typing pick a choice;
+ * Tab confirms and moves to the next control (see `useSearchableTrigger`).
  */
 function ControlItem(props: {
   control: Control;
   onSelect: (value: string | null) => void;
 }): JSX.Element {
   const { control, onSelect } = props;
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  // The control's selectable values in menu order: the "Default" row (null)
-  // followed by each advertised option. Arrow keys on the focused button step
-  // through these, committing the value live (like a native <select>) without
-  // opening the menu; the menu stays available for mouse/Enter browsing.
-  const values: (string | null)[] = [null, ...control.options.map(o => o.id)];
-  // The selection to step from on the next arrow key. It mirrors the committed
-  // selection on every render, but a keydown burst that arrives before the
-  // parent re-renders (held key, rapid presses) steps from here so the presses
-  // accumulate instead of all reading the same pre-render value.
-  const pendingSelection = useRef(control.selection);
-  pendingSelection.current = control.selection;
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    const nextIndex = navigateIndex(
-      values.length,
-      values.indexOf(pendingSelection.current),
-      event.key
-    );
-    if (nextIndex === null) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    pendingSelection.current = values[nextIndex];
-    onSelect(values[nextIndex]);
+  const menu = useSearchableTrigger();
+  const choose = (value: string | null, mode: CommitMode) => {
+    onSelect(value);
+    menu.choose(mode);
   };
   return (
     <>
       <Button
+        {...menu.triggerProps}
         className={`${SELECTOR_CLASS} ${SELECTOR_CLASS}-control-btn`}
         size="small"
         variant="text"
         disableRipple
         endIcon={<ArrowDropDownIcon className={`${SELECTOR_CLASS}-arrow`} />}
-        onClick={event => setAnchor(event.currentTarget)}
-        onKeyDown={onKeyDown}
         title={control.label}
         aria-label={`${control.label}: ${currentControlLabel(control)}`}
-        aria-haspopup="menu"
-        aria-expanded={!!anchor}
       >
         <span className={`${SELECTOR_CLASS}-control-value`}>
           {currentControlLabel(control)}
         </span>
       </Button>
-      <Menu
-        anchorEl={anchor}
-        open={!!anchor}
-        onClose={() => setAnchor(null)}
-        {...menuAnchorProps}
-      >
-        <ChoiceMenuItem
-          primary={defaultChoiceLabel(control)}
-          description={null}
-          selected={control.selection === null}
-          onSelect={() => {
-            setAnchor(null);
-            onSelect(null);
-          }}
-        />
-        {control.options.map(option => (
-          <ChoiceMenuItem
-            key={option.id}
-            primary={option.name}
-            description={option.description}
-            selected={control.selection === option.id}
-            onSelect={() => {
-              setAnchor(null);
-              onSelect(option.id);
-            }}
-          />
-        ))}
-      </Menu>
+      <SearchableMenu
+        anchorEl={menu.triggerRef.current}
+        open={menu.open}
+        options={controlOptions(control)}
+        selectedValue={control.selection}
+        searchLabel={`Search ${control.label} options`}
+        onChoose={choose}
+        onCancel={menu.cancel}
+        onClickAway={menu.clickAway}
+      />
     </>
   );
 }
@@ -941,7 +895,8 @@ export function PersonaControls(
   const [settingsCache, setSettingsCache] = useState<
     Record<string, PersonaSettings>
   >({});
-  const [personaAnchor, setPersonaAnchor] = useState<HTMLElement | null>(null);
+  // The searchable persona picker's open/focus state and trigger handlers.
+  const personaMenu = useSearchableTrigger();
   // Whether the user has explicitly picked a persona (or "No one") in this
   // chat. Guards the sole-persona convenience in reconcileSelection.
   const userPicked = useRef(false);
@@ -1064,45 +1019,23 @@ export function PersonaControls(
   const usage = personaState?.usage ?? EMPTY_USAGE;
   const controls = buildControls(personaState, settings);
 
-  const handlePersona = (personaId: string | null) => {
-    setPersonaAnchor(null);
+  const choosePersona = (personaId: string | null, mode: CommitMode) => {
     userPicked.current = true;
     setSelectedId(personaId);
+    personaMenu.choose(mode);
   };
 
-  // The picker's selectable values in menu order: each persona followed by the
-  // trailing "No one" row (null). Arrow keys on the focused picker step through
-  // these, switching the persona live (like a native <select>) without opening
-  // the menu; the menu stays available for mouse/Enter browsing.
-  const personaValues: (string | null)[] = [...personas.map(p => p.id), null];
-  const handlePersonaKeyDown = (event: React.KeyboardEvent) => {
-    // Ignore non-navigation keys, letting them act normally (Tab moves focus,
-    // Enter/Space opens the menu). Whether a key navigates doesn't depend on
-    // the current index, so the rendered selection is fine for this check.
-    if (
-      navigateIndex(
-        personaValues.length,
-        personaValues.indexOf(selectedId),
-        event.key
-      ) === null
-    ) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    userPicked.current = true;
-    setPersonaAnchor(null);
-    // Step from the *latest* selection, so held/rapid keypresses accumulate
-    // instead of all reading the same pre-render value.
-    setSelectedId(current => {
-      const next = navigateIndex(
-        personaValues.length,
-        personaValues.indexOf(current),
-        event.key
-      );
-      return next === null ? current : personaValues[next];
-    });
-  };
+  // The picker's searchable options: each persona (with its avatar) followed by
+  // the trailing "No one" row (value null). The searchable menu fuzzy-filters
+  // these by name.
+  const personaOptions: SearchableOption[] = [
+    ...personas.map(p => ({
+      value: p.id,
+      label: p.name,
+      icon: <Avatar url={p.avatar_url} />
+    })),
+    { value: null, label: NO_ONE_LABEL, icon: <Avatar url={null} /> }
+  ];
 
   const handleControl = (control: Control, value: string | null) => {
     if (!selectedId) {
@@ -1123,57 +1056,28 @@ export function PersonaControls(
   return (
     <div className={`${SELECTOR_CLASS}-group`}>
       <Button
+        {...personaMenu.triggerProps}
         className={`${SELECTOR_CLASS} ${SELECTOR_CLASS}-persona-btn`}
         size="small"
         variant="text"
         disableRipple
         startIcon={<Avatar url={activeAvatar} />}
         endIcon={<ArrowDropDownIcon className={`${SELECTOR_CLASS}-arrow`} />}
-        onClick={event => setPersonaAnchor(event.currentTarget)}
-        onKeyDown={handlePersonaKeyDown}
         title="Choose which persona to message"
         aria-label={`Persona: ${personaLabel}`}
-        aria-haspopup="menu"
-        aria-expanded={!!personaAnchor}
       >
         <span className={`${SELECTOR_CLASS}-persona`}>{personaLabel}</span>
       </Button>
-      <Menu
-        anchorEl={personaAnchor}
-        open={!!personaAnchor}
-        onClose={() => setPersonaAnchor(null)}
-        {...menuAnchorProps}
-      >
-        {personas.map(p => (
-          <MenuItem
-            key={p.id}
-            selected={p.id === selectedId}
-            onClick={() => handlePersona(p.id)}
-          >
-            <Avatar url={p.avatar_url} />
-            <ListItemText
-              primary={p.name}
-              classes={{ primary: `${MENU_CLASS}-name` }}
-            />
-            {p.id === selectedId ? (
-              <CheckIcon className={`${MENU_CLASS}-check`} fontSize="small" />
-            ) : null}
-          </MenuItem>
-        ))}
-        <MenuItem
-          selected={selectedId === null}
-          onClick={() => handlePersona(null)}
-        >
-          <Avatar url={null} />
-          <ListItemText
-            primary={NO_ONE_LABEL}
-            classes={{ primary: `${MENU_CLASS}-name` }}
-          />
-          {selectedId === null ? (
-            <CheckIcon className={`${MENU_CLASS}-check`} fontSize="small" />
-          ) : null}
-        </MenuItem>
-      </Menu>
+      <SearchableMenu
+        anchorEl={personaMenu.triggerRef.current}
+        open={personaMenu.open}
+        options={personaOptions}
+        selectedValue={selectedId}
+        searchLabel="Search personas"
+        onChoose={choosePersona}
+        onCancel={personaMenu.cancel}
+        onClickAway={personaMenu.clickAway}
+      />
 
       <UsageChip usage={usage} />
 

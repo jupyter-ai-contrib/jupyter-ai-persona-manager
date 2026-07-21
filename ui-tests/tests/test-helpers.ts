@@ -87,6 +87,11 @@ const INPUT = '.jp-chat-input-container';
 // input's tab order; pressing Enter on it sends the message.
 const SEND_BUTTON = '.jp-chat-send-button';
 const MESSAGE = '.jp-chat-rendered-message';
+// The searchable dropdown shared by the persona picker and every control: a
+// search field over a listbox of options, rendered in a page-scoped Popper
+// portal. Options carry role="option"; the search field role="combobox".
+const MENU_OPTION = '.jp-jai-searchMenu-option';
+const MENU_SEARCH = '.jp-jai-searchMenu-search input';
 // Each slash-command completion in the input's autocomplete popup renders its
 // name in a `.jp-chat-command-name` span (MUI list options, page-scoped portal).
 const COMMAND_NAME = '.jp-chat-command-name';
@@ -213,15 +218,21 @@ export class TestHelpers {
   }
 
   /**
-   * Whether the persona picker button currently holds keyboard focus. Reads the
-   * `aria-label` of the active element (the picker's label is "Persona: <name>")
-   * so the assertion doesn't depend on framework-generated ids.
+   * Whether a searchable menu is open with its search field focused. Opening a
+   * control (by Tab or click) moves focus into the menu's search field, so this
+   * doubles as "the control I just reached is open and ready for keyboard use".
+   * Reads the active element's `aria-label` so it doesn't depend on ids.
    */
-  async pickerHasFocus(): Promise<boolean> {
-    const label = await this.page.evaluate(
+  async menuSearchFocused(label: string): Promise<boolean> {
+    const active = await this.page.evaluate(
       () => document.activeElement?.getAttribute('aria-label') ?? ''
     );
-    return label.startsWith('Persona:');
+    return active === label;
+  }
+
+  /** Whether the persona picker's searchable menu is open and focused. */
+  async personaMenuFocused(): Promise<boolean> {
+    return this.menuSearchFocused('Search personas');
   }
 
   /** Whether the toolbar's send button currently holds keyboard focus. */
@@ -230,6 +241,25 @@ export class TestHelpers {
       sel => !!document.activeElement?.closest(sel),
       SEND_BUTTON
     );
+  }
+
+  /**
+   * Press Tab until the send button holds focus. Each persona control opens its
+   * searchable menu when focus reaches it, so a Tab there confirms that control
+   * and advances to the next one; this keeps tabbing until focus leaves the
+   * controls and lands on the (plain) send button. Bounded so a broken tab chain
+   * fails loudly rather than looping forever.
+   */
+  async tabToSendButton(): Promise<void> {
+    for (let i = 0; i < 12; i++) {
+      if (await this.sendButtonHasFocus()) {
+        return;
+      }
+      await this.page.keyboard.press('Tab');
+      // Let focus/menu transitions settle before checking again.
+      await this.page.waitForTimeout(50);
+    }
+    expect(await this.sendButtonHasFocus()).toBe(true);
   }
 
   /**
@@ -253,24 +283,22 @@ export class TestHelpers {
   }
 
   /**
-   * With the persona picker focused, press ArrowUp until it lands on the given
-   * fixture persona, asserting the label settles after each press before the
-   * next — a real user doesn't out-type the UI, and stepping one at a time keeps
-   * the test independent of the (non-deterministic) persona-list order. Bounded
-   * so a wrong direction / missing persona fails loudly instead of looping.
+   * With a searchable menu open, press ArrowDown until the option with the given
+   * `name` is the highlighted one (`aria-selected`), asserting after each press
+   * so the highlight settles before the next — a real user doesn't out-type the
+   * UI. Stepping one at a time keeps the test independent of the list order.
+   * Bounded so a wrong direction / missing option fails loudly, not forever.
    */
-  async arrowToPersona(persona: FixturePersona): Promise<void> {
-    const { name } = FIXTURE_PERSONAS[persona];
-    const picker = this.chat.locator(PICKER);
+  async arrowToOption(name: string): Promise<void> {
+    const highlighted = this.page.locator(`${MENU_OPTION}.jp-mod-highlighted`);
     for (let i = 0; i < 12; i++) {
-      if (((await picker.textContent()) ?? '').includes(name)) {
+      if (((await highlighted.textContent()) ?? '').includes(name)) {
         return;
       }
-      await this.page.keyboard.press('ArrowUp');
-      // Let this step's selection settle (label updates) before the next press.
-      await this.page.waitForTimeout(50);
+      await this.page.keyboard.press('ArrowDown');
+      await expect(highlighted).toHaveCount(1, { timeout: TIMEOUT });
     }
-    await expect(picker).toContainText(name);
+    await expect(highlighted).toContainText(name);
   }
 
   /** Select a fixture persona from the picker and wait for it to take. */
@@ -279,7 +307,7 @@ export class TestHelpers {
     const picker = this.chat.locator(PICKER);
     await expect(picker).toBeVisible({ timeout: TIMEOUT });
     await picker.click();
-    await this.page.getByRole('menuitem', { name }).click();
+    await this.page.getByRole('option', { name }).click();
     await expect(picker).toContainText(name);
   }
 
@@ -287,7 +315,7 @@ export class TestHelpers {
   async selectNoOne(): Promise<void> {
     await expect(this.personaPicker).toBeVisible({ timeout: TIMEOUT });
     await this.personaPicker.click();
-    await this.page.getByRole('menuitem', { name: 'No one' }).click();
+    await this.page.getByRole('option', { name: 'No one' }).click();
     await expect(this.personaPicker).toContainText('No one');
   }
 
@@ -302,7 +330,7 @@ export class TestHelpers {
   async setControl(title: string, optionValue: string): Promise<void> {
     await this.chat.locator(`${VISIBLE_CONTROL_BTN}[title="${title}"]`).click();
     await this.page
-      .getByRole('menuitem', { name: optionValue, exact: true })
+      .getByRole('option', { name: optionValue, exact: true })
       .click();
   }
 
@@ -321,16 +349,30 @@ export class TestHelpers {
   /**
    * Open the dropdown of the control with the given `title` and return the
    * option labels it offers (including the leading "Default (…)" row). The menu
-   * is a page-scoped MUI portal, so read its items from the page, not the chat.
+   * is a page-scoped Popper portal, so read its options from the page, not the
+   * chat.
    */
   async controlOptions(title: string): Promise<string[]> {
     await this.control(title).click();
-    const items = this.page.getByRole('menuitem');
+    const items = this.page.getByRole('option');
     await expect(items.first()).toBeVisible({ timeout: TIMEOUT });
     const labels = await items.allTextContents();
     // Close the menu so it doesn't overlap the next interaction.
     await this.page.keyboard.press('Escape');
     return labels.map(l => l.trim());
+  }
+
+  /**
+   * The open searchable menu's search input (page-scoped, since the menu is a
+   * portal at the page root). Present only while a menu is open.
+   */
+  get menuSearch(): Locator {
+    return this.page.locator(MENU_SEARCH);
+  }
+
+  /** The options currently listed in the open searchable menu, page-scoped. */
+  get menuOptions(): Locator {
+    return this.page.locator(MENU_OPTION);
   }
 
   /** The usage chip in the toolbar (present only once the persona reports usage). */

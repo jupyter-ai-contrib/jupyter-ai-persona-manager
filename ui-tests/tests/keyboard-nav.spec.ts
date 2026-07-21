@@ -23,9 +23,11 @@ const REPLY: Record<string, string> = {
 
 /**
  * Verifies keyboard navigation of the persona controls (issue #88): from the
- * focused chat input, Tab reaches the persona picker; arrow keys change the
- * selection live (like a native <select>) without opening a menu; Tab moves
- * through the controls to the send button; and Enter on the send button sends.
+ * focused chat input, Tab opens the persona picker's searchable menu (focus in
+ * its search field); arrow keys move the highlight; Tab confirms the highlighted
+ * option and advances to the next control; and continuing to Tab eventually
+ * lands on the send button, where Enter sends. The menu can also be narrowed by
+ * typing (fuzzy search) before confirming.
  *
  * The whole flow runs with no mouse click on any control — only keyboard.
  */
@@ -34,18 +36,7 @@ test.describe('keyboard-nav', () => {
     await installPersonas(request, TEST_DIR, PERSONAS);
   });
 
-  test('Tab from the input focuses the persona picker', async ({ page }) => {
-    const helpers = new TestHelpers({ dir: TEST_DIR, page });
-    await helpers.openChat();
-    await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
-
-    await helpers.focusInput();
-    // Tab lands on the persona picker (the leftmost, first-in-DOM toolbar item).
-    await helpers.tabUntil(() => helpers.pickerHasFocus());
-    expect(await helpers.pickerHasFocus()).toBe(true);
-  });
-
-  test('arrow keys change the persona selection live, without opening a menu', async ({
+  test('Tab from the input opens the persona picker menu, focused for search', async ({
     page
   }) => {
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
@@ -53,23 +44,48 @@ test.describe('keyboard-nav', () => {
     await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
 
     await helpers.focusInput();
-    await helpers.tabUntil(() => helpers.pickerHasFocus());
-
-    // With several personas none is auto-selected; the picker starts on "No one".
-    await expect(helpers.personaPicker).toContainText('No one');
-
-    // ArrowDown from "No one" (the last value) is a no-op at the end; ArrowUp
-    // walks back up the list. Step up to the previous persona and confirm the
-    // button label changed with the popup still closed (aria-expanded false).
-    await page.keyboard.press('ArrowUp');
-    await expect(helpers.personaPicker).not.toContainText('No one');
-    await expect(helpers.personaPicker).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
+    // Tab reaches the persona picker and opens its menu, focus in the search box.
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+    expect(await helpers.personaMenuFocused()).toBe(true);
+    await expect(helpers.menuOptions.first()).toBeVisible();
   });
 
-  test('keyboard-only: Tab to picker, arrow-select a persona, Tab to Send, Enter sends', async ({
+  test('arrow keys move the highlight; Tab confirms and closes the menu', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
+
+    await helpers.focusInput();
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+
+    // Move the highlight onto the Bonjour persona, then Tab to confirm it.
+    await helpers.arrowToOption('Bonjour Persona');
+    await page.keyboard.press('Tab');
+
+    // The picker now shows the confirmed persona and the menu has closed.
+    await expect(helpers.personaPicker).toContainText('Bonjour Persona');
+    await expect(helpers.menuOptions).toHaveCount(0);
+  });
+
+  test('typing filters the list (fuzzy search)', async ({ page }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
+
+    await helpers.focusInput();
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+
+    // "bon" narrows to the Bonjour persona. Enter confirms the top match.
+    await helpers.menuSearch.pressSequentially('bon');
+    await expect(helpers.menuOptions).toHaveCount(1);
+    await expect(helpers.menuOptions.first()).toContainText('Bonjour Persona');
+    await page.keyboard.press('Enter');
+    await expect(helpers.personaPicker).toContainText('Bonjour Persona');
+  });
+
+  test('keyboard-only: Tab opens picker, search + confirm, Tab to Send, Enter sends', async ({
     page
   }) => {
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
@@ -80,21 +96,23 @@ test.describe('keyboard-nav', () => {
     await helpers.focusInput();
     await helpers.typeInput('who are you?');
 
-    // Tab to the persona picker, then arrow-select the Bonjour persona (the
-    // helper steps one at a time regardless of the persona-list order).
-    await helpers.tabUntil(() => helpers.pickerHasFocus());
-    await helpers.arrowToPersona(FixturePersona.Hello2);
+    // Tab opens the picker; narrow to Bonjour and Tab to confirm + advance.
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+    await helpers.menuSearch.pressSequentially('bonjour');
+    await expect(helpers.menuOptions.first()).toContainText('Bonjour Persona');
+    await page.keyboard.press('Tab');
     await expect(helpers.personaPicker).toContainText('Bonjour Persona');
 
-    // Tab onward until the send button holds focus, then send with Enter.
-    await helpers.tabUntil(() => helpers.sendButtonHasFocus());
+    // Continue tabbing to the send button, closing any control menus that open
+    // along the way (each control opens on focus), then send with Enter.
+    await helpers.tabToSendButton();
     const before = await helpers.chat
       .locator('.jp-chat-rendered-message')
       .count();
     await page.keyboard.press('Enter');
 
     // The human echo + the persona reply both render; the reply is Bonjour's
-    // word, proving the arrow-selected persona is the one that was messaged.
+    // word, proving the searched-and-confirmed persona is the one messaged.
     await expect
       .poll(
         async () => helpers.chat.locator('.jp-chat-rendered-message').count(),
@@ -109,37 +127,21 @@ test.describe('keyboard-nav', () => {
     expect(reply).toContain(REPLY[FixturePersona.Hello2]);
   });
 
-  test('arrow keys cycle a model control live and the choice sticks', async ({
+  test('a model control confirms via the menu and the choice sticks', async ({
     page
   }) => {
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
     await helpers.openChat();
 
-    // Select the Models persona (which advertises a Model control) up front; the
-    // model-control keyboard nav is what this test exercises.
+    // Select the Models persona (which advertises a Model control) up front.
     await helpers.selectPersona(FixturePersona.Models);
     await helpers.waitForControls();
 
-    // From the focused input, Tab past the picker to the Model control. It
-    // starts on the persona's current model (Beta) — its selection is null
-    // ("Default"), so ArrowDown steps Default -> Alpha (menu order is
-    // Default(Beta), Alpha, Beta, Gamma).
-    await helpers.focusInput();
-    await helpers.tabUntil(() =>
-      page.evaluate(
-        () =>
-          document.activeElement
-            ?.getAttribute('aria-label')
-            ?.startsWith('Model:') ?? false
-      )
-    );
-    await page.keyboard.press('ArrowDown'); // Default -> Alpha
+    // Open the Model control's menu, highlight Alpha, and Tab to confirm it.
+    await helpers.control('Model').click();
+    await helpers.arrowToOption('Model Alpha');
+    await page.keyboard.press('Tab');
     await expect(helpers.control('Model')).toContainText('Model Alpha');
-    // No popup opened while cycling (the control's menu stays closed).
-    await expect(helpers.control('Model')).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
 
     // The applied model rides out with the message: the Models persona echoes it.
     const reply = await helpers.sendMessage('which model?');
