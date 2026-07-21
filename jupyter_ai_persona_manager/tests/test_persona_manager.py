@@ -15,7 +15,9 @@ from jupyter_ai_persona_manager.persona_manager import (
     PersonaManager,
     _safe_process,
     find_persona_files,
+    format_persona_load_errors,
     load_from_dir,
+    persona_load_error_label,
 )
 
 
@@ -129,65 +131,117 @@ class TestPersona(BasePersona):
 
 
 # ---------------------------------------------------------------------------
-# TestPersonaErrorMessage
+# TestPersonaLoadErrorLabel
 # ---------------------------------------------------------------------------
 
 
-class TestPersonaErrorMessage:
-    """The system message shown when a persona fails to load."""
+class TestPersonaLoadErrorLabel:
+    """The per-persona label shown in the load-error system message."""
 
-    def test_label_prefers_class_name(self):
+    def test_prefers_class_name(self):
         """When the class loaded but its constructor raised, name the class."""
 
         class BrokenPersona:
             pass
 
-        label = PersonaManager._persona_item_label(
+        label = persona_load_error_label(
             {"persona_class": BrokenPersona, "module": "some.module"}
         )
-        assert label == "`BrokenPersona`"
+        assert label == "BrokenPersona"
 
-    def test_label_falls_back_to_file_name(self):
+    def test_falls_back_to_file_name(self):
         """When the module itself failed to import, name its file."""
-        label = PersonaManager._persona_item_label(
+        label = persona_load_error_label(
             {"persona_class": None, "module": "/tmp/foo/bad_persona.py"}
         )
-        assert label == "`bad_persona.py`"
+        assert label == "bad_persona.py"
 
-    def test_label_handles_missing_source(self):
-        label = PersonaManager._persona_item_label(
-            {"persona_class": None, "module": None}
+    def test_handles_missing_source(self):
+        label = persona_load_error_label({"persona_class": None, "module": None})
+        assert label == "Unknown persona"
+
+    def test_escapes_html_in_label(self):
+        """A hostile file name can't inject markup into the <summary>."""
+        label = persona_load_error_label(
+            {"persona_class": None, "module": "/tmp/<img src=x onerror=alert(1)>.py"}
         )
-        assert "unknown source" in label
+        assert "<img" not in label
+        assert "&lt;img" in label
 
-    def test_no_message_without_traceback(self):
-        """No traceback means nothing failed — send no message."""
-        mgr = MagicMock(spec=PersonaManager)
-        PersonaManager._display_persona_error_message(
-            mgr, {"traceback": None, "persona_class": None, "module": "x"}
-        )
-        mgr.send_system_message.assert_not_called()
 
-    def test_message_names_persona_and_includes_traceback(self):
-        """The message names the failed persona and carries the traceback."""
+# ---------------------------------------------------------------------------
+# TestFormatPersonaLoadErrors
+# ---------------------------------------------------------------------------
 
+
+class TestFormatPersonaLoadErrors:
+    """The aggregated system message shown when personas fail to load."""
+
+    def test_single_failure_uses_singular(self):
         class BrokenPersona:
             pass
 
-        mgr = MagicMock(spec=PersonaManager)
-        mgr._persona_item_label = PersonaManager._persona_item_label
-        PersonaManager._display_persona_error_message(
-            mgr,
-            {
-                "traceback": "Traceback ... RuntimeError: boom",
-                "persona_class": BrokenPersona,
-                "module": "some.module",
-            },
+        body = format_persona_load_errors(
+            [
+                {
+                    "persona_class": BrokenPersona,
+                    "module": "some.module",
+                    "traceback": "RuntimeError: boom",
+                }
+            ]
         )
-        (body,), _ = mgr.send_system_message.call_args
-        assert "`BrokenPersona`" in body
-        assert "failed to initialize" in body
+        assert "The following 1 AI persona failed to load" in body
+        assert "is unavailable" in body
+        assert "BrokenPersona" in body
         assert "RuntimeError: boom" in body
+        # One collapsible entry inside a list.
+        assert body.count("<details>") == 1
+        assert "<ul>" in body
+
+    def test_multiple_failures_are_aggregated(self):
+        """All failures land in one message, one <details> entry each."""
+
+        class PersonaOne:
+            pass
+
+        class PersonaTwo:
+            pass
+
+        body = format_persona_load_errors(
+            [
+                {"persona_class": PersonaOne, "module": "m1", "traceback": "tb-one"},
+                {"persona_class": None, "module": "/x/two_persona.py", "traceback": "tb-two"},
+            ]
+        )
+        assert "The following 2 AI personas failed to load" in body
+        assert "are unavailable" in body
+        assert body.count("<details>") == 2
+        assert "PersonaOne" in body
+        assert "two_persona.py" in body
+        assert "tb-one" in body
+        assert "tb-two" in body
+
+    def test_escapes_html_in_traceback(self):
+        """A traceback carrying markup is escaped, not rendered (XSS guard)."""
+        body = format_persona_load_errors(
+            [
+                {
+                    "persona_class": None,
+                    "module": "bad_persona.py",
+                    "traceback": "boom </pre></details><script>alert(1)</script>",
+                }
+            ]
+        )
+        assert "<script>" not in body
+        assert "&lt;script&gt;" in body
+        # The escaped traceback can't close its own <pre>/<details> wrappers.
+        assert "</pre></details><script>" not in body
+
+    def test_missing_traceback_is_handled(self):
+        body = format_persona_load_errors(
+            [{"persona_class": None, "module": "bad_persona.py", "traceback": None}]
+        )
+        assert "No traceback available." in body
 
 
 # ---------------------------------------------------------------------------

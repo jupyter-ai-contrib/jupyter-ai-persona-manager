@@ -50,9 +50,15 @@ test.describe('broken-init', () => {
     // Opening the chat initializes the personas; the broken one triggers a
     // system message that names the failed persona's class and explains that
     // other personas are unaffected.
-    const message = await helpers.waitForMessageContaining(
-      'failed to initialize'
-    );
+    const message = await helpers.waitForMessageContaining('failed to load');
     expect(message).toContain('BrokenInitPersona');
+    expect(message).toContain('unavailable');
+
+    // The traceback is tucked into a collapsible <details>, which survives the
+    // renderer's HTML sanitizer — confirming the inline markup renders rather
+    // than showing as escaped text.
+    await expect(
+      helpers.chat.locator('.jp-chat-rendered-message details summary').first()
+    ).toContainText('BrokenInitPersona');
   });
 });
