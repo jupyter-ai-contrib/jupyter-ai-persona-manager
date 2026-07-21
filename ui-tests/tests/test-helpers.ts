@@ -83,6 +83,9 @@ const LOADING_PLACEHOLDER = '.jp-jai-personaControls-skeleton';
 const VISIBLE_CONTROL_BTN =
   '.jp-jai-personaControls-controls > .jp-jai-personaControls-control-btn';
 const INPUT = '.jp-chat-input-container';
+// The toolbar's send button, rendered by jupyter-chat. Focused last in the
+// input's tab order; pressing Enter on it sends the message.
+const SEND_BUTTON = '.jp-chat-send-button';
 const MESSAGE = '.jp-chat-rendered-message';
 // Each slash-command completion in the input's autocomplete popup renders its
 // name in a `.jp-chat-command-name` span (MUI list options, page-scoped portal).
@@ -190,6 +193,59 @@ export class TestHelpers {
    */
   get loadingPlaceholder(): Locator {
     return this.chat.locator(LOADING_PLACEHOLDER);
+  }
+
+  /** Focus the chat input's text field (the message combobox). */
+  async focusInput(): Promise<void> {
+    await this.chat.locator(INPUT).getByRole('combobox').focus();
+  }
+
+  /** Type text into the chat input without sending it. */
+  async typeInput(text: string): Promise<void> {
+    await this.chat
+      .locator(INPUT)
+      .getByRole('combobox')
+      .pressSequentially(text);
+  }
+
+  /**
+   * Whether the persona picker button currently holds keyboard focus. Reads the
+   * `aria-label` of the active element (the picker's label is "Persona: <name>")
+   * so the assertion doesn't depend on framework-generated ids.
+   */
+  async pickerHasFocus(): Promise<boolean> {
+    const label = await this.page.evaluate(
+      () => document.activeElement?.getAttribute('aria-label') ?? ''
+    );
+    return label.startsWith('Persona:');
+  }
+
+  /** Whether the toolbar's send button currently holds keyboard focus. */
+  async sendButtonHasFocus(): Promise<boolean> {
+    return this.page.evaluate(
+      sel => !!document.activeElement?.closest(sel),
+      SEND_BUTTON
+    );
+  }
+
+  /**
+   * Press Tab (or Shift+Tab) until the given predicate holds, up to `max`
+   * presses. Returns the number of presses it took, or throws if the predicate
+   * never held — surfacing a broken tab order as a clear failure rather than a
+   * silent miss.
+   */
+  async tabUntil(
+    predicate: () => Promise<boolean>,
+    options: { shift?: boolean; max?: number } = {}
+  ): Promise<number> {
+    const { shift = false, max = 10 } = options;
+    for (let i = 1; i <= max; i++) {
+      await this.page.keyboard.press(shift ? 'Shift+Tab' : 'Tab');
+      if (await predicate()) {
+        return i;
+      }
+    }
+    throw new Error(`Focus target not reached within ${max} Tab presses`);
   }
 
   /** Select a fixture persona from the picker and wait for it to take. */

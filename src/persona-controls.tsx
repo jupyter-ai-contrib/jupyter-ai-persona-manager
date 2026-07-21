@@ -233,6 +233,40 @@ function effectiveValue(control: Control): string | null {
 }
 
 /**
+ * The index to move to within a list of `length` selectable values, given the
+ * currently selected index (`-1` when the current value isn't in the list) and
+ * a navigation key. This drives keyboard selection on a focused control: arrow
+ * keys step one value, Home/End jump to the ends. Movement clamps at both ends
+ * like a native `<select>` — it does not wrap — so holding an arrow settles on
+ * an end rather than cycling. Returns `null` for any non-navigation key (e.g.
+ * `Tab`, `Enter`), so the caller leaves the event alone and lets it act
+ * normally (move focus, open the menu).
+ */
+export function navigateIndex(
+  length: number,
+  currentIndex: number,
+  key: string
+): number | null {
+  if (length === 0) {
+    return null;
+  }
+  switch (key) {
+    case 'ArrowDown':
+    case 'ArrowRight':
+      return currentIndex < 0 ? 0 : Math.min(currentIndex + 1, length - 1);
+    case 'ArrowUp':
+    case 'ArrowLeft':
+      return currentIndex < 0 ? length - 1 : Math.max(currentIndex - 1, 0);
+    case 'Home':
+      return 0;
+    case 'End':
+      return length - 1;
+    default:
+      return null;
+  }
+}
+
+/**
  * A small round avatar image, or a same-sized spacer to keep labels aligned.
  */
 function Avatar(props: { url: string | null | undefined }): JSX.Element {
@@ -328,6 +362,24 @@ function ControlItem(props: {
 }): JSX.Element {
   const { control, onSelect } = props;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // The control's selectable values in menu order: the "Default" row (null)
+  // followed by each advertised option. Arrow keys on the focused button step
+  // through these, committing the value live (like a native <select>) without
+  // opening the menu; the menu stays available for mouse/Enter browsing.
+  const values: (string | null)[] = [null, ...control.options.map(o => o.id)];
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const nextIndex = navigateIndex(
+      values.length,
+      values.indexOf(control.selection),
+      event.key
+    );
+    if (nextIndex === null) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    onSelect(values[nextIndex]);
+  };
   return (
     <>
       <Button
@@ -337,7 +389,11 @@ function ControlItem(props: {
         disableRipple
         endIcon={<ArrowDropDownIcon className={`${SELECTOR_CLASS}-arrow`} />}
         onClick={event => setAnchor(event.currentTarget)}
+        onKeyDown={onKeyDown}
         title={control.label}
+        aria-label={`${control.label}: ${currentControlLabel(control)}`}
+        aria-haspopup="menu"
+        aria-expanded={!!anchor}
       >
         <span className={`${SELECTOR_CLASS}-control-value`}>
           {currentControlLabel(control)}
@@ -1007,6 +1063,25 @@ export function PersonaControls(
     setSelectedId(personaId);
   };
 
+  // The picker's selectable values in menu order: each persona followed by the
+  // trailing "No one" row (null). Arrow keys on the focused picker step through
+  // these, switching the persona live (like a native <select>) without opening
+  // the menu; the menu stays available for mouse/Enter browsing.
+  const personaValues: (string | null)[] = [...personas.map(p => p.id), null];
+  const handlePersonaKeyDown = (event: React.KeyboardEvent) => {
+    const nextIndex = navigateIndex(
+      personaValues.length,
+      personaValues.indexOf(selectedId),
+      event.key
+    );
+    if (nextIndex === null) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    handlePersona(personaValues[nextIndex]);
+  };
+
   const handleControl = (control: Control, value: string | null) => {
     if (!selectedId) {
       return;
@@ -1033,7 +1108,11 @@ export function PersonaControls(
         startIcon={<Avatar url={activeAvatar} />}
         endIcon={<ArrowDropDownIcon className={`${SELECTOR_CLASS}-arrow`} />}
         onClick={event => setPersonaAnchor(event.currentTarget)}
+        onKeyDown={handlePersonaKeyDown}
         title="Choose which persona to message"
+        aria-label={`Persona: ${personaLabel}`}
+        aria-haspopup="menu"
+        aria-expanded={!!personaAnchor}
       >
         <span className={`${SELECTOR_CLASS}-persona`}>{personaLabel}</span>
       </Button>
