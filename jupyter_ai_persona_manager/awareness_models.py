@@ -29,8 +29,11 @@ class PersonaOption(BaseModel):
     """One persona in the chat, as advertised in the persona selector."""
 
     id: str
+    """Stable unique identifier for the persona (e.g. its class-derived ID)."""
     name: str
+    """Human-readable display name shown in the selector (e.g. "Jupyternaut")."""
     avatar_url: str | None = None
+    """URL that serves the persona's avatar image, or None if it has no avatar."""
     yjs_client_id: int
     """
     The Yjs client ID of this persona's awareness client. Persona client IDs
@@ -43,16 +46,22 @@ class ModelOption(BaseModel):
     """One selectable model."""
 
     id: str
+    """The model's unique identifier, used when selecting it (e.g. via :class:`ModelSpec`)."""
     name: str | None = None
+    """Human-readable label for the model; falls back to :attr:`id` when None."""
     description: str | None = None
+    """Optional longer description shown alongside the model in the picker."""
 
 
 class SettingOption(BaseModel):
     """One selectable value for a setting."""
 
     id: str
+    """The option's unique identifier, used as the selected value for its setting."""
     name: str | None = None
+    """Human-readable label for the option; falls back to :attr:`id` when None."""
     description: str | None = None
+    """Optional longer description shown alongside the option in the picker."""
 
 
 class SettingConfiguration(BaseModel):
@@ -67,8 +76,11 @@ class SettingConfiguration(BaseModel):
     current: str | None = None
     """The current value, or None to indicate the persona's default."""
     name: str | None = None
+    """Human-readable label for the setting; falls back to :attr:`id` when None."""
     description: str | None = None
+    """Optional longer description explaining what the setting controls."""
     options: list[SettingOption] = Field(default_factory=list)
+    """The selectable values for this setting, in display order."""
 
 
 class ModelConfiguration(BaseModel):
@@ -77,6 +89,7 @@ class ModelConfiguration(BaseModel):
     current: str | None = None
     """The current model ID, or None to indicate the persona's default."""
     options: list[ModelOption] = Field(default_factory=list)
+    """The models the persona offers, in display order."""
     settings: list[SettingConfiguration] = Field(default_factory=list)
     """Settings that should render near the model picker (ACP ``model_config``)."""
 
@@ -131,6 +144,7 @@ class CommandOption(BaseModel):
     name: str
     """The command name, including the leading "/", e.g. "/compact"."""
     description: str | None = None
+    """Optional short description of what the command does, shown in the UI."""
 
 
 ################################################
@@ -147,4 +161,9 @@ class ModelSpec(BaseModel):
     """
 
     id: str | None = None
+    """The selected model ID, or None to keep the persona's current model."""
     settings: dict[str, str | None] = Field(default_factory=dict)
+    """
+    Maps each model-setting ID to its selected option ID, or to None to keep
+    that setting's current value.
+    """
