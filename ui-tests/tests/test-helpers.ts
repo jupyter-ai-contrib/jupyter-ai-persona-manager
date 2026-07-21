@@ -41,7 +41,10 @@ export enum FixturePersona {
   SlashCommands = 'slash-commands',
   Models = 'models',
   SlowStream = 'slow-stream',
-  Refresher = 'refresher'
+  Refresher = 'refresher',
+  SwitchA = 'switch-a',
+  SwitchB = 'switch-b',
+  Loading = 'loading'
 }
 
 interface FixturePersonaInfo {
@@ -60,10 +63,17 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SlashCommands]: { name: 'Slash Commands Persona' },
   [FixturePersona.Models]: { name: 'Models Persona' },
   [FixturePersona.SlowStream]: { name: 'Slow Stream Persona' },
-  [FixturePersona.Refresher]: { name: 'Refresher Persona' }
+  [FixturePersona.Refresher]: { name: 'Refresher Persona' },
+  [FixturePersona.SwitchA]: { name: 'Switch A Persona' },
+  [FixturePersona.SwitchB]: { name: 'Switch B Persona' },
+  [FixturePersona.Loading]: { name: 'Loading Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
+// The toolbar's loading placeholder, shown while the manager's persona list is
+// still resolving over awareness: a skeleton avatar + label bar. Rendered by
+// `LoadingPlaceholder` in persona-controls.tsx, carrying "Loading personas".
+const LOADING_PLACEHOLDER = '.jp-jai-personaControls-skeleton';
 // The controls row renders each control twice: a real visible copy and an
 // aria-hidden, `inert` measurement copy (used only to size the row). The
 // direct-child combinator targets the visible buttons — the duplicates in the
@@ -169,6 +179,15 @@ export class TestHelpers {
   /** The persona picker button in the toolbar. */
   get personaPicker(): Locator {
     return this.chat.locator(PICKER);
+  }
+
+  /**
+   * The toolbar's loading placeholder, shown while the manager's persona list is
+   * still resolving over awareness (see `LoadingPlaceholder` in
+   * persona-controls.tsx). Present only during that window.
+   */
+  get loadingPlaceholder(): Locator {
+    return this.chat.locator(LOADING_PLACEHOLDER);
   }
 
   /** Select a fixture persona from the picker and wait for it to take. */
