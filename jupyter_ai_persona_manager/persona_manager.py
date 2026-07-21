@@ -385,8 +385,30 @@ class PersonaManager(LoggingConfigurable):
         tb = persona_item.get("traceback")
         if tb is None:
             return
-        body = f"Loading an AI persona raised an exception:\n\n```python\n{tb}```"
+        body = (
+            f"The AI persona {self._persona_item_label(persona_item)} failed to "
+            f"initialize and is unavailable in this chat. Other personas are "
+            f"unaffected. The exception is printed below:"
+            f"\n\n```python\n{tb}```"
+        )
         self.send_system_message(body)
+
+    @staticmethod
+    def _persona_item_label(persona_item: dict) -> str:
+        """
+        A human-readable identifier for a persona that failed to load, for the
+        system message shown in chat. Prefers the persona's class name (available
+        when the class loaded but its constructor raised), and falls back to the
+        source module/file (when the module itself failed to import).
+        """
+        Persona = persona_item.get("persona_class")
+        if Persona is not None:
+            return f"`{Persona.__name__}`"
+        module = persona_item.get("module")
+        if module:
+            # For local personas `module` is a file path; show just its name.
+            return f"`{Path(str(module)).name}`"
+        return "provided by an unknown source"
 
     def send_system_message(self, body: str) -> None:
         """

@@ -44,7 +44,8 @@ export enum FixturePersona {
   Refresher = 'refresher',
   SwitchA = 'switch-a',
   SwitchB = 'switch-b',
-  Loading = 'loading'
+  BrokenInit = 'broken-init',
+  SlowLoad = 'slow-load'
 }
 
 interface FixturePersonaInfo {
@@ -66,7 +67,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.Refresher]: { name: 'Refresher Persona' },
   [FixturePersona.SwitchA]: { name: 'Switch A Persona' },
   [FixturePersona.SwitchB]: { name: 'Switch B Persona' },
-  [FixturePersona.Loading]: { name: 'Loading Persona' }
+  [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
+  [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -399,5 +401,17 @@ export class TestHelpers {
   /** The text of the latest rendered message (the persona's streaming reply). */
   async lastMessageText(): Promise<string> {
     return (await this.chat.locator(MESSAGE).last().textContent()) ?? '';
+  }
+
+  /**
+   * Wait for any rendered message to contain `text`, then return it. Unlike
+   * `lastMessageText`, this scans every rendered message and polls — for
+   * messages that arrive on their own schedule (e.g. a system message posted
+   * when the persona list finishes loading), not in reply to a send.
+   */
+  async waitForMessageContaining(text: string): Promise<string> {
+    const message = this.chat.locator(MESSAGE, { hasText: text });
+    await expect(message.first()).toBeVisible({ timeout: TIMEOUT });
+    return (await message.first().textContent()) ?? '';
   }
 }

@@ -129,6 +129,68 @@ class TestPersona(BasePersona):
 
 
 # ---------------------------------------------------------------------------
+# TestPersonaErrorMessage
+# ---------------------------------------------------------------------------
+
+
+class TestPersonaErrorMessage:
+    """The system message shown when a persona fails to load."""
+
+    def test_label_prefers_class_name(self):
+        """When the class loaded but its constructor raised, name the class."""
+
+        class BrokenPersona:
+            pass
+
+        label = PersonaManager._persona_item_label(
+            {"persona_class": BrokenPersona, "module": "some.module"}
+        )
+        assert label == "`BrokenPersona`"
+
+    def test_label_falls_back_to_file_name(self):
+        """When the module itself failed to import, name its file."""
+        label = PersonaManager._persona_item_label(
+            {"persona_class": None, "module": "/tmp/foo/bad_persona.py"}
+        )
+        assert label == "`bad_persona.py`"
+
+    def test_label_handles_missing_source(self):
+        label = PersonaManager._persona_item_label(
+            {"persona_class": None, "module": None}
+        )
+        assert "unknown source" in label
+
+    def test_no_message_without_traceback(self):
+        """No traceback means nothing failed — send no message."""
+        mgr = MagicMock(spec=PersonaManager)
+        PersonaManager._display_persona_error_message(
+            mgr, {"traceback": None, "persona_class": None, "module": "x"}
+        )
+        mgr.send_system_message.assert_not_called()
+
+    def test_message_names_persona_and_includes_traceback(self):
+        """The message names the failed persona and carries the traceback."""
+
+        class BrokenPersona:
+            pass
+
+        mgr = MagicMock(spec=PersonaManager)
+        mgr._persona_item_label = PersonaManager._persona_item_label
+        PersonaManager._display_persona_error_message(
+            mgr,
+            {
+                "traceback": "Traceback ... RuntimeError: boom",
+                "persona_class": BrokenPersona,
+                "module": "some.module",
+            },
+        )
+        (body,), _ = mgr.send_system_message.call_args
+        assert "`BrokenPersona`" in body
+        assert "failed to initialize" in body
+        assert "RuntimeError: boom" in body
+
+
+# ---------------------------------------------------------------------------
 # TestSafeProcess
 # ---------------------------------------------------------------------------
 
