@@ -80,14 +80,10 @@ test.describe('keyboard-nav', () => {
     await helpers.focusInput();
     await helpers.typeInput('who are you?');
 
-    // Tab to the persona picker.
+    // Tab to the persona picker, then arrow-select the Bonjour persona (the
+    // helper steps one at a time regardless of the persona-list order).
     await helpers.tabUntil(() => helpers.pickerHasFocus());
-
-    // Arrow up from "No one" to the last persona in the list (Models), then up
-    // again to the second (Bonjour). The picker order is the persona list order
-    // (Hello, Bonjour, Models) followed by "No one".
-    await page.keyboard.press('ArrowUp'); // -> Models
-    await page.keyboard.press('ArrowUp'); // -> Bonjour
+    await helpers.arrowToPersona(FixturePersona.Hello2);
     await expect(helpers.personaPicker).toContainText('Bonjour Persona');
 
     // Tab onward until the send button holds focus, then send with Enter.

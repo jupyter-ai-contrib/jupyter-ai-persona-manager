@@ -116,12 +116,16 @@ export async function installPersonas(
   const contents = galata.newContentsHelper(request);
   for (const persona of personas) {
     const file = `${persona}_persona.py`;
+    const dest = `${dir}/.jupyter/personas/${file}`;
+    // Idempotent: a suite's `beforeAll` can run more than once against the same
+    // shared server (e.g. Playwright retrying a failed test on a fresh worker),
+    // and re-uploading an existing file resolves false. Skip files already
+    // installed rather than treating that as a failure.
+    if (await contents.fileExists(dest)) {
+      continue;
+    }
     const source = fs.readFileSync(path.join(PERSONAS_SRC, file), 'utf-8');
-    const uploaded = await contents.uploadContent(
-      source,
-      'text',
-      `${dir}/.jupyter/personas/${file}`
-    );
+    const uploaded = await contents.uploadContent(source, 'text', dest);
     // uploadContent resolves false on failure rather than throwing; fail the
     // suite here instead of timing out later on a picker with no personas.
     if (!uploaded) {
@@ -246,6 +250,27 @@ export class TestHelpers {
       }
     }
     throw new Error(`Focus target not reached within ${max} Tab presses`);
+  }
+
+  /**
+   * With the persona picker focused, press ArrowUp until it lands on the given
+   * fixture persona, asserting the label settles after each press before the
+   * next — a real user doesn't out-type the UI, and stepping one at a time keeps
+   * the test independent of the (non-deterministic) persona-list order. Bounded
+   * so a wrong direction / missing persona fails loudly instead of looping.
+   */
+  async arrowToPersona(persona: FixturePersona): Promise<void> {
+    const { name } = FIXTURE_PERSONAS[persona];
+    const picker = this.chat.locator(PICKER);
+    for (let i = 0; i < 12; i++) {
+      if (((await picker.textContent()) ?? '').includes(name)) {
+        return;
+      }
+      await this.page.keyboard.press('ArrowUp');
+      // Let this step's selection settle (label updates) before the next press.
+      await this.page.waitForTimeout(50);
+    }
+    await expect(picker).toContainText(name);
   }
 
   /** Select a fixture persona from the picker and wait for it to take. */
