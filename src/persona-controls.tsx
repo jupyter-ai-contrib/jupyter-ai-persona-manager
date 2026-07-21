@@ -367,10 +367,16 @@ function ControlItem(props: {
   // through these, committing the value live (like a native <select>) without
   // opening the menu; the menu stays available for mouse/Enter browsing.
   const values: (string | null)[] = [null, ...control.options.map(o => o.id)];
+  // The selection to step from on the next arrow key. It mirrors the committed
+  // selection on every render, but a keydown burst that arrives before the
+  // parent re-renders (held key, rapid presses) steps from here so the presses
+  // accumulate instead of all reading the same pre-render value.
+  const pendingSelection = useRef(control.selection);
+  pendingSelection.current = control.selection;
   const onKeyDown = (event: React.KeyboardEvent) => {
     const nextIndex = navigateIndex(
       values.length,
-      values.indexOf(control.selection),
+      values.indexOf(pendingSelection.current),
       event.key
     );
     if (nextIndex === null) {
@@ -378,6 +384,7 @@ function ControlItem(props: {
     }
     event.preventDefault();
     event.stopPropagation();
+    pendingSelection.current = values[nextIndex];
     onSelect(values[nextIndex]);
   };
   return (
@@ -1069,17 +1076,32 @@ export function PersonaControls(
   // the menu; the menu stays available for mouse/Enter browsing.
   const personaValues: (string | null)[] = [...personas.map(p => p.id), null];
   const handlePersonaKeyDown = (event: React.KeyboardEvent) => {
-    const nextIndex = navigateIndex(
-      personaValues.length,
-      personaValues.indexOf(selectedId),
-      event.key
-    );
-    if (nextIndex === null) {
+    // Ignore non-navigation keys, letting them act normally (Tab moves focus,
+    // Enter/Space opens the menu). Whether a key navigates doesn't depend on
+    // the current index, so the rendered selection is fine for this check.
+    if (
+      navigateIndex(
+        personaValues.length,
+        personaValues.indexOf(selectedId),
+        event.key
+      ) === null
+    ) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    handlePersona(personaValues[nextIndex]);
+    userPicked.current = true;
+    setPersonaAnchor(null);
+    // Step from the *latest* selection, so held/rapid keypresses accumulate
+    // instead of all reading the same pre-render value.
+    setSelectedId(current => {
+      const next = navigateIndex(
+        personaValues.length,
+        personaValues.indexOf(current),
+        event.key
+      );
+      return next === null ? current : personaValues[next];
+    });
   };
 
   const handleControl = (control: Control, value: string | null) => {
