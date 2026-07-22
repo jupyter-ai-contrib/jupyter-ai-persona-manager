@@ -94,6 +94,17 @@ describe('SearchableMenu open/close/commit', () => {
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
   });
 
+  it('Escape returns focus to the chat input, not the trigger', async () => {
+    const user = userEvent.setup();
+    let inputFocused = 0;
+    render(<OneControl focusInput={() => inputFocused++} />);
+    await user.tab();
+    await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeNull());
+    await user.keyboard('{Escape}');
+    // Bails all the way back to the input ("nevermind, let me keep writing").
+    await waitFor(() => expect(inputFocused).toBeGreaterThan(0));
+  });
+
   it('filters options as you type (fuzzy search)', async () => {
     const user = userEvent.setup();
     render(<OneControl />);

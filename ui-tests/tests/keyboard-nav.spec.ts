@@ -86,6 +86,24 @@ test.describe('keyboard-nav', () => {
     await expect(helpers.personaPicker).toContainText('Bonjour Persona');
   });
 
+  test('Escape closes the menu and returns focus to the chat input', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
+
+    await helpers.focusInput();
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+
+    // Escape bails back to typing: the menu closes and the input regains focus.
+    await page.keyboard.press('Escape');
+    await expect(helpers.menuOptions).toHaveCount(0);
+    await expect
+      .poll(() => helpers.inputHasFocus(), { timeout: 30000 })
+      .toBe(true);
+  });
+
   test('Tab past the last control returns focus to the input, not the send button', async ({
     page
   }) => {

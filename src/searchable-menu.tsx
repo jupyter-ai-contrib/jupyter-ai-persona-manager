@@ -88,9 +88,9 @@ export function focusAdjacentControl(
  * when the trigger gains focus (Tab into it) or is clicked, and closes on commit
  * or cancel. Committing with `Tab` advances focus to the neighbouring control in
  * the ring (or back to the input past the ends, via `focusInput`); committing
- * with `Enter`/click, or cancelling with `Escape`, returns focus to the trigger
- * without reopening (a plain `focus()` would retrigger open-on-focus, so a
- * one-shot suppression flag guards it).
+ * with `Enter` or a click returns focus to the trigger without reopening (a
+ * plain `focus()` would retrigger open-on-focus, so a one-shot suppression flag
+ * guards it). Cancelling with `Escape` bails all the way back to the chat input.
  */
 export function useSearchableTrigger(opts?: {
   /** Return focus to the chat input when Tab leaves the control ring. */
@@ -148,10 +148,17 @@ export function useSearchableTrigger(opts?: {
 
   const close = useCallback(() => setOpen(false), []);
 
+  // Escape means "nevermind, let me keep writing": bail all the way back to the
+  // chat input rather than the trigger. Falls back to the trigger if no input
+  // focuser was provided.
   const cancel = useCallback(() => {
     setOpen(false);
-    returnFocusNoReopen();
-  }, [returnFocusNoReopen]);
+    if (focusInput) {
+      focusInput();
+    } else {
+      returnFocusNoReopen();
+    }
+  }, [focusInput, returnFocusNoReopen]);
 
   // Ignore the pointer event that opens the menu: it lands on the trigger, which
   // sits outside the menu's Paper, so ClickAwayListener would otherwise treat
