@@ -41,7 +41,11 @@ export enum FixturePersona {
   SlashCommands = 'slash-commands',
   Models = 'models',
   SlowStream = 'slow-stream',
-  Refresher = 'refresher'
+  Refresher = 'refresher',
+  SwitchA = 'switch-a',
+  SwitchB = 'switch-b',
+  BrokenInit = 'broken-init',
+  SlowLoad = 'slow-load'
 }
 
 interface FixturePersonaInfo {
@@ -60,10 +64,18 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SlashCommands]: { name: 'Slash Commands Persona' },
   [FixturePersona.Models]: { name: 'Models Persona' },
   [FixturePersona.SlowStream]: { name: 'Slow Stream Persona' },
-  [FixturePersona.Refresher]: { name: 'Refresher Persona' }
+  [FixturePersona.Refresher]: { name: 'Refresher Persona' },
+  [FixturePersona.SwitchA]: { name: 'Switch A Persona' },
+  [FixturePersona.SwitchB]: { name: 'Switch B Persona' },
+  [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
+  [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
+// The toolbar's loading placeholder, shown while the manager's persona list is
+// still resolving over awareness: a skeleton avatar + label bar. Rendered by
+// `LoadingPlaceholder` in persona-controls.tsx, carrying "Loading personas".
+const LOADING_PLACEHOLDER = '.jp-jai-personaControls-skeleton';
 // The controls row renders each control twice: a real visible copy and an
 // aria-hidden, `inert` measurement copy (used only to size the row). The
 // direct-child combinator targets the visible buttons — the duplicates in the
@@ -169,6 +181,15 @@ export class TestHelpers {
   /** The persona picker button in the toolbar. */
   get personaPicker(): Locator {
     return this.chat.locator(PICKER);
+  }
+
+  /**
+   * The toolbar's loading placeholder, shown while the manager's persona list is
+   * still resolving over awareness (see `LoadingPlaceholder` in
+   * persona-controls.tsx). Present only during that window.
+   */
+  get loadingPlaceholder(): Locator {
+    return this.chat.locator(LOADING_PLACEHOLDER);
   }
 
   /** Select a fixture persona from the picker and wait for it to take. */
@@ -380,5 +401,17 @@ export class TestHelpers {
   /** The text of the latest rendered message (the persona's streaming reply). */
   async lastMessageText(): Promise<string> {
     return (await this.chat.locator(MESSAGE).last().textContent()) ?? '';
+  }
+
+  /**
+   * Wait for any rendered message to contain `text`, then return it. Unlike
+   * `lastMessageText`, this scans every rendered message and polls — for
+   * messages that arrive on their own schedule (e.g. a system message posted
+   * when the persona list finishes loading), not in reply to a send.
+   */
+  async waitForMessageContaining(text: string): Promise<string> {
+    const message = this.chat.locator(MESSAGE, { hasText: text });
+    await expect(message.first()).toBeVisible({ timeout: TIMEOUT });
+    return (await message.first().textContent()) ?? '';
   }
 }

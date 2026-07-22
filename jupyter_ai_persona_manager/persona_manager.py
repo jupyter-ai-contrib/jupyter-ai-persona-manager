@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import importlib.util
 import inspect
 import json
@@ -333,12 +334,14 @@ class PersonaManager(LoggingConfigurable):
         start_time_ns = time_ns()
 
         personas: dict[str, BasePersona] = {}
+        # Personas that failed to load, collected so the user sees a single
+        # summary system message rather than one per failure.
+        failed_items: list[dict] = []
         for item in persona_classes:
-            item.get("module")
             Persona = item.get("persona_class")
             tb = item.get("traceback")
             if Persona is None or tb is not None:
-                self._display_persona_error_message(item)
+                failed_items.append(item)
                 continue
             try:
                 persona = Persona(
@@ -352,7 +355,7 @@ class PersonaManager(LoggingConfigurable):
                     f"raised an exception while instantiating, "
                     f"printed below.\n {tb_str}"
                 )
-                self._display_persona_error_message(
+                failed_items.append(
                     {
                         "module": Persona.__module__,
                         "persona_class": Persona,
@@ -374,19 +377,16 @@ class PersonaManager(LoggingConfigurable):
             )
             personas[persona.id] = persona
 
+        # Report any personas that failed to load as a single summary message.
+        if failed_items:
+            self.send_system_message(format_persona_load_errors(failed_items))
+
         elapsed_time_ms = (time_ns() - start_time_ns) // 1_000_000
         self.log.info(
             f"SUCCESS: Initialized {len(personas)} AI personas for chat room '{self.ychat.get_id()}'. Time elapsed: {elapsed_time_ms}ms."
         )
 
         return personas
-
-    def _display_persona_error_message(self, persona_item: dict) -> None:
-        tb = persona_item.get("traceback")
-        if tb is None:
-            return
-        body = f"Loading an AI persona raised an exception:\n\n```python\n{tb}```"
-        self.send_system_message(body)
 
     def send_system_message(self, body: str) -> None:
         """
@@ -631,6 +631,54 @@ class PersonaManager(LoggingConfigurable):
         # Then, shut down each persona
         for persona in self.personas.values():
             await persona.shutdown()
+
+
+def persona_load_error_label(persona_item: dict) -> str:
+    """
+    A human-readable identifier for a persona that failed to load, shown as the
+    summary of its entry in the system message. Prefers the persona's class name
+    (available when the class loaded but its constructor raised) and falls back
+    to the source module/file (when the module itself failed to import).
+
+    The result is used inside an HTML `<summary>`, so it is HTML-escaped to keep
+    a hostile class name or file path from injecting markup.
+    """
+    Persona = persona_item.get("persona_class")
+    if Persona is not None:
+        label = Persona.__name__
+    else:
+        module = persona_item.get("module")
+        # For local personas `module` is a file path; show just its name.
+        label = Path(str(module)).name if module else "Unknown persona"
+    return html.escape(label)
+
+
+def format_persona_load_errors(failed_items: list[dict]) -> str:
+    """
+    Build the system message shown when one or more personas fail to load.
+
+    Each failure becomes a collapsible `<details>` entry naming the persona, with
+    its traceback tucked inside so a chat full of failures stays readable. The
+    message is rendered as Markdown-with-inline-HTML in the chat, so every
+    interpolated value (persona label and traceback) is HTML-escaped and the
+    traceback is wrapped in `<pre>` — untrusted text can never break out of its
+    entry or inject markup (guards against XSS).
+    """
+    entries = []
+    for item in failed_items:
+        label = persona_load_error_label(item)
+        tb = html.escape(str(item.get("traceback") or "No traceback available."))
+        entries.append(
+            f"<li><details><summary>{label} (click to show details)</summary>"
+            f"\n\n<pre>{tb}</pre>\n\n</details></li>"
+        )
+    noun = "persona" if len(failed_items) == 1 else "personas"
+    intro = (
+        f"The following {len(failed_items)} AI {noun} failed to load and "
+        f"{'is' if len(failed_items) == 1 else 'are'} unavailable in this chat. "
+        f"Other personas are unaffected."
+    )
+    return f"{intro}\n\n<ul>\n{chr(10).join(entries)}\n</ul>"
 
 
 def is_persona(username: str):
