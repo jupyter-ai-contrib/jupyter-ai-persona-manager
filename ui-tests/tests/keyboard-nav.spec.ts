@@ -25,9 +25,10 @@ const REPLY: Record<string, string> = {
  * Verifies keyboard navigation of the persona controls (issue #88): from the
  * focused chat input, Tab opens the persona picker's searchable menu (focus in
  * its search field); arrow keys move the highlight; Tab confirms the highlighted
- * option and advances to the next control; and continuing to Tab eventually
- * lands on the send button, where Enter sends. The menu can also be narrowed by
- * typing (fuzzy search) before confirming.
+ * option and advances to the next control; and Tabbing past the last control
+ * returns focus to the chat input (the send/attach/stop buttons are not part of
+ * this Tab ring). The menu can also be narrowed by typing (fuzzy search) before
+ * confirming.
  *
  * The whole flow runs with no mouse click on any control — only keyboard.
  */
@@ -85,27 +86,54 @@ test.describe('keyboard-nav', () => {
     await expect(helpers.personaPicker).toContainText('Bonjour Persona');
   });
 
-  test('keyboard-only: Tab opens picker, search + confirm, Tab to Send, Enter sends', async ({
+  test('Tab past the last control returns focus to the input, not the send button', async ({
     page
   }) => {
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
     await helpers.openChat();
     await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
 
+    // Pick the Bonjour persona (no model/settings controls), so the picker is
+    // the only control in the Tab ring.
+    await helpers.selectPersona(FixturePersona.Hello2);
+
+    await helpers.focusInput();
+    await helpers.tabUntil(() => helpers.personaMenuFocused());
+
+    // Tab confirms the picker; with no further control, focus returns to the
+    // chat input — it does not walk on to the send button.
+    await page.keyboard.press('Tab');
+    await expect
+      .poll(() => helpers.inputHasFocus(), { timeout: 30000 })
+      .toBe(true);
+    expect(await helpers.sendButtonHasFocus()).toBe(false);
+  });
+
+  test('keyboard-only: type, Tab to pick a persona, Tab back to input, Enter sends', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
+    // A persona with no extra controls, so the picker is the whole Tab ring.
+    await helpers.selectPersona(FixturePersona.Hello2);
+
     // Type the message first, then drive the rest with the keyboard alone.
     await helpers.focusInput();
     await helpers.typeInput('who are you?');
 
-    // Tab opens the picker; narrow to Bonjour and Tab to confirm + advance.
+    // Tab opens the picker; narrow to Bonjour and Tab to confirm + return to
+    // the input.
     await helpers.tabUntil(() => helpers.personaMenuFocused());
     await helpers.menuSearch.pressSequentially('bonjour');
     await expect(helpers.menuOptions.first()).toContainText('Bonjour Persona');
     await page.keyboard.press('Tab');
     await expect(helpers.personaPicker).toContainText('Bonjour Persona');
+    await expect
+      .poll(() => helpers.inputHasFocus(), { timeout: 30000 })
+      .toBe(true);
 
-    // Continue tabbing to the send button, closing any control menus that open
-    // along the way (each control opens on focus), then send with Enter.
-    await helpers.tabToSendButton();
+    // Enter in the focused input sends the message.
     const before = await helpers.chat
       .locator('.jp-chat-rendered-message')
       .count();

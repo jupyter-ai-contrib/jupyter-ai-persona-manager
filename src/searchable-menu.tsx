@@ -30,74 +30,72 @@ export type SearchableOption = {
 /** How a commit should move focus afterwards. */
 export type CommitMode = 'stay' | 'next' | 'prev';
 
+// The persona control triggers form a focus ring: Tab steps between them and,
+// past either end, returns to the chat input. Only these two button kinds are
+// part of the ring — the send/attach/stop buttons are deliberately left out, so
+// Tab acts as a shortcut for configuring the message, not a walk of every
+// toolbar button.
+const TRIGGER_SELECTOR =
+  '.jp-jai-personaControls-persona-btn, .jp-jai-personaControls-control-btn';
+
 /**
- * The focusable controls in the chat input, in tab order, that a menu can
- * advance to. Restricting to the input container keeps `Tab` moving through the
- * toolbar (persona picker → model → … → send) and out to the send button, not
- * to unrelated page chrome.
+ * The persona control triggers in the same group as `from`, in DOM order. Skips
+ * the aria-hidden, `inert` measurement copy of the controls row (it renders each
+ * control a second time only to size the row). Reading straight from the DOM
+ * naturally tracks controls that appear or disappear (selecting a persona
+ * reveals its model control) and the overflow slicing in `ControlsRow`.
  */
-function tabbableControls(from: HTMLElement): HTMLElement[] {
-  const container = from.closest('.jp-chat-input-container');
-  if (!container) {
+function ringTriggers(from: HTMLElement): HTMLElement[] {
+  const group = from.closest('.jp-jai-personaControls-group');
+  if (!group) {
     return [];
   }
-  const candidates = Array.from(
-    container.querySelectorAll<HTMLElement>(
-      'button, input, textarea, select, a[href], [tabindex]'
-    )
-  );
-  return candidates.filter(el => {
-    if (el.getAttribute('tabindex') === '-1') {
-      return false;
-    }
-    if (
-      el.hasAttribute('disabled') ||
-      el.getAttribute('aria-disabled') === 'true'
-    ) {
-      return false;
-    }
-    // Skip the aria-hidden, `inert` measurement copy of the controls row.
-    if (el.closest('[inert]') || el.closest('[aria-hidden="true"]')) {
-      return false;
-    }
-    // Skip elements not laid out (display:none, detached).
-    return el.offsetParent !== null || el === document.activeElement;
-  });
+  return Array.from(
+    group.querySelectorAll<HTMLElement>(TRIGGER_SELECTOR)
+  ).filter(el => !el.closest('[inert]') && !el.closest('[aria-hidden="true"]'));
 }
 
 /**
  * Move focus to the control adjacent to `from` (the just-closed menu's trigger)
- * in the input's tab order. `dir` is +1 for the next control, -1 for the
- * previous. Deferred to the next frame so any controls that appear or disappear
- * as a result of the commit (e.g. selecting a persona reveals its model control)
- * are in the DOM before we compute adjacency.
+ * within the persona-control focus ring. `dir` is +1 for the next control, -1
+ * for the previous. When there is no neighbour in that direction — Tab past the
+ * last control, or Shift+Tab before the first — call `onExit`, which returns
+ * focus to the chat input. Deferred a frame so controls revealed by the commit
+ * are in the DOM before adjacency is computed.
  */
 export function focusAdjacentControl(
   from: HTMLElement | null,
-  dir: 1 | -1
+  dir: 1 | -1,
+  onExit: () => void
 ): void {
   if (!from) {
     return;
   }
   requestAnimationFrame(() => {
-    const controls = tabbableControls(from);
-    const index = controls.indexOf(from);
-    if (index === -1) {
-      return;
+    const triggers = ringTriggers(from);
+    const index = triggers.indexOf(from);
+    const target = index === -1 ? undefined : triggers[index + dir];
+    if (target) {
+      target.focus();
+    } else {
+      onExit();
     }
-    controls[index + dir]?.focus();
   });
 }
 
 /**
  * State + handlers for a control that opens a `SearchableMenu`. The menu opens
- * when the trigger gains focus (Tab into it) or is clicked, and closes on
- * commit or cancel. Committing with `Tab` advances focus to the neighbouring
- * control; committing with `Enter`/click, or cancelling with `Escape`, returns
- * focus to the trigger without reopening (a plain `focus()` would retrigger
- * open-on-focus, so a one-shot suppression flag guards it).
+ * when the trigger gains focus (Tab into it) or is clicked, and closes on commit
+ * or cancel. Committing with `Tab` advances focus to the neighbouring control in
+ * the ring (or back to the input past the ends, via `focusInput`); committing
+ * with `Enter`/click, or cancelling with `Escape`, returns focus to the trigger
+ * without reopening (a plain `focus()` would retrigger open-on-focus, so a
+ * one-shot suppression flag guards it).
  */
-export function useSearchableTrigger(): {
+export function useSearchableTrigger(opts?: {
+  /** Return focus to the chat input when Tab leaves the control ring. */
+  focusInput?: () => void;
+}): {
   open: boolean;
   triggerRef: React.RefObject<HTMLButtonElement>;
   triggerProps: {
@@ -111,11 +109,12 @@ export function useSearchableTrigger(): {
   choose: (mode: CommitMode) => void;
   close: () => void;
   cancel: () => void;
-  clickAway: () => void;
+  clickAway: (event: MouseEvent | TouchEvent) => void;
 } {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const suppressOpen = useRef(false);
+  const focusInput = opts?.focusInput;
 
   const returnFocusNoReopen = useCallback(() => {
     suppressOpen.current = true;
@@ -154,7 +153,16 @@ export function useSearchableTrigger(): {
     returnFocusNoReopen();
   }, [returnFocusNoReopen]);
 
-  const clickAway = useCallback(() => setOpen(false), []);
+  // Ignore the pointer event that opens the menu: it lands on the trigger, which
+  // sits outside the menu's Paper, so ClickAwayListener would otherwise treat
+  // the opening click as an "outside" click and close the menu immediately.
+  const clickAway = useCallback((event: MouseEvent | TouchEvent) => {
+    const target = event.target as Node | null;
+    if (target && triggerRef.current?.contains(target)) {
+      return;
+    }
+    setOpen(false);
+  }, []);
 
   const choose = useCallback(
     (mode: CommitMode) => {
@@ -162,10 +170,12 @@ export function useSearchableTrigger(): {
       if (mode === 'stay') {
         returnFocusNoReopen();
       } else {
-        focusAdjacentControl(triggerRef.current, mode === 'next' ? 1 : -1);
+        focusAdjacentControl(triggerRef.current, mode === 'next' ? 1 : -1, () =>
+          focusInput?.()
+        );
       }
     },
-    [returnFocusNoReopen]
+    [returnFocusNoReopen, focusInput]
   );
 
   return {
@@ -242,8 +252,8 @@ export function seedHighlight(
  * flow is: open → type to filter (fuzzy) and/or arrow to move the highlight →
  * commit. Committing happens on Enter, on click, or on Tab — and Tab also
  * advances focus to the next control, which is what makes tabbing through the
- * toolbar confirm each control in turn and eventually land on the send button.
- * Escape closes without committing.
+ * persona controls confirm each in turn and, past the last, return to the chat
+ * input. Escape closes without committing.
  *
  * Adapted from jupyter-ai-jupyternaut's `SimpleAutocomplete`, specialized for
  * committing option values (not free text) and for Tab-to-confirm-and-advance.
@@ -260,8 +270,8 @@ export function SearchableMenu(props: {
   onChoose: (value: string | null, mode: CommitMode) => void;
   /** Close without committing, returning focus to the trigger. */
   onCancel: () => void;
-  /** Close without committing when focus/click leaves the menu. */
-  onClickAway: () => void;
+  /** Close without committing when a click/touch lands outside the menu. */
+  onClickAway: (event: MouseEvent | TouchEvent) => void;
 }): JSX.Element | null {
   const {
     anchorEl,
@@ -306,7 +316,8 @@ export function SearchableMenu(props: {
     const row = listRef.current?.children[highlighted] as
       | HTMLElement
       | undefined;
-    row?.scrollIntoView({ block: 'nearest' });
+    // Guarded: jsdom (unit tests) doesn't implement scrollIntoView.
+    row?.scrollIntoView?.({ block: 'nearest' });
   }, [highlighted, open]);
 
   // The value a commit would apply: the highlighted row, or the committed value
@@ -362,7 +373,16 @@ export function SearchableMenu(props: {
       className={`${SEARCH_CLASS}-popper`}
       modifiers={[{ name: 'offset', options: { offset: [0, 4] } }]}
     >
-      <ClickAwayListener onClickAway={onClickAway}>
+      {/* Close on mousedown/touchstart rather than the default click: the
+          pointer-down that dismisses the menu shouldn't also be a click that
+          activates whatever is underneath, and it fires before the option
+          rows' own mousedown-preventDefault. The trigger is excluded in
+          `onClickAway` so the opening click doesn't immediately close it. */}
+      <ClickAwayListener
+        onClickAway={onClickAway}
+        mouseEvent="onMouseDown"
+        touchEvent="onTouchStart"
+      >
         <Paper className={`${MENU_CLASS}-paper ${SEARCH_CLASS}-paper`}>
           <div className={`${SEARCH_CLASS}-search`}>
             <TextField

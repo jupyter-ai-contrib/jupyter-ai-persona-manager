@@ -243,23 +243,12 @@ export class TestHelpers {
     );
   }
 
-  /**
-   * Press Tab until the send button holds focus. Each persona control opens its
-   * searchable menu when focus reaches it, so a Tab there confirms that control
-   * and advances to the next one; this keeps tabbing until focus leaves the
-   * controls and lands on the (plain) send button. Bounded so a broken tab chain
-   * fails loudly rather than looping forever.
-   */
-  async tabToSendButton(): Promise<void> {
-    for (let i = 0; i < 12; i++) {
-      if (await this.sendButtonHasFocus()) {
-        return;
-      }
-      await this.page.keyboard.press('Tab');
-      // Let focus/menu transitions settle before checking again.
-      await this.page.waitForTimeout(50);
-    }
-    expect(await this.sendButtonHasFocus()).toBe(true);
+  /** Whether the chat input's textarea currently holds keyboard focus. */
+  async inputHasFocus(): Promise<boolean> {
+    return this.page.evaluate(
+      sel => !!document.activeElement?.closest(sel),
+      `${INPUT} .MuiInputBase-root`
+    );
   }
 
   /**

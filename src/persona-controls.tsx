@@ -355,9 +355,10 @@ function controlOptions(control: Control): SearchableOption[] {
 function ControlItem(props: {
   control: Control;
   onSelect: (value: string | null) => void;
+  focusInput: () => void;
 }): JSX.Element {
-  const { control, onSelect } = props;
-  const menu = useSearchableTrigger();
+  const { control, onSelect, focusInput } = props;
+  const menu = useSearchableTrigger({ focusInput });
   const choose = (value: string | null, mode: CommitMode) => {
     onSelect(value);
     menu.choose(mode);
@@ -455,8 +456,9 @@ function OverflowMenu(props: {
 function ControlsRow(props: {
   controls: Control[];
   onChange: (control: Control, value: string | null) => void;
+  focusInput: () => void;
 }): JSX.Element {
-  const { controls, onChange } = props;
+  const { controls, onChange, focusInput } = props;
   const rowRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
@@ -538,6 +540,7 @@ function ControlsRow(props: {
             key={control.id}
             control={control}
             onSelect={v => onChange(control, v)}
+            focusInput={focusInput}
           />
         ))}
       </div>
@@ -547,6 +550,7 @@ function ControlsRow(props: {
           key={control.id}
           control={control}
           onSelect={v => onChange(control, v)}
+          focusInput={focusInput}
         />
       ))}
 
@@ -895,8 +899,12 @@ export function PersonaControls(
   const [settingsCache, setSettingsCache] = useState<
     Record<string, PersonaSettings>
   >({});
+  // Return focus to the chat input's textarea. Tabbing past the last persona
+  // control lands back here, so Tab cycles the controls and returns to typing
+  // rather than walking on to the send button.
+  const focusInput = useCallback(() => model.focus(), [model]);
   // The searchable persona picker's open/focus state and trigger handlers.
-  const personaMenu = useSearchableTrigger();
+  const personaMenu = useSearchableTrigger({ focusInput });
   // Whether the user has explicitly picked a persona (or "No one") in this
   // chat. Guards the sole-persona convenience in reconcileSelection.
   const userPicked = useRef(false);
@@ -1084,7 +1092,11 @@ export function PersonaControls(
       {controls.length ? (
         <>
           <span className={`${SELECTOR_CLASS}-divider`} />
-          <ControlsRow controls={controls} onChange={handleControl} />
+          <ControlsRow
+            controls={controls}
+            onChange={handleControl}
+            focusInput={focusInput}
+          />
         </>
       ) : null}
 
