@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from jupyterlab_chat.models import Message
-from jupyter_ai_persona_manager.base_persona import BasePersona
+from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
 from jupyter_ai_persona_manager.persona_manager import (
     SYSTEM_USERNAME,
     PersonaManager,
@@ -281,3 +281,133 @@ class TestOnChatMessageRouting:
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
             routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
             assert routed == [target]
+
+
+# ---------------------------------------------------------------------------
+# TestRestartPersona
+# ---------------------------------------------------------------------------
+
+def _restart_manager(personas):
+    """A PersonaManager with only the state `restart_persona` touches.
+
+    Bypasses the heavy `__init__`; wires an empty YChat background-task set,
+    stubs the republish + avatar-cache side effects, and provides the
+    `parent.serverapp` chain the cache rebuild reads.
+    """
+    pm = PersonaManager.__new__(PersonaManager)
+    pm._personas = personas
+    pm.log = logging.getLogger("test-persona-manager")
+    pm.room_id = "room"
+    pm.ychat = MagicMock()
+    pm.ychat._background_tasks = set()
+    pm._publish_persona_list = Mock()
+    pm._display_persona_error_message = Mock()
+    # `parent` is a validated traitlets Instance trait; write the mock into the
+    # trait value store directly to bypass validation.
+    parent = MagicMock()
+    parent.serverapp.web_app.settings.get.return_value = {"persona-managers": {}}
+    pm._trait_values["parent"] = parent
+    return pm
+
+
+class _RestartableStub(BasePersona):
+    """Concrete persona whose reconstruction is observable in tests."""
+
+    instances: list = []
+
+    def __init__(self, *args, **kwargs):
+        # Bypass BasePersona.__init__ (needs a real YChat/awareness); just record
+        # the construction so a test can assert reconstruction happened.
+        _RestartableStub.instances.append(self)
+        self.shutdown = AsyncMock()
+
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="Restartable",
+            description="",
+            avatar_path="",
+            system_prompt="",
+        )
+
+    async def process_message(self, message):
+        pass
+
+
+class TestRestartPersona:
+
+    def setup_method(self):
+        _RestartableStub.instances = []
+
+    def _make_persona(self):
+        p = _RestartableStub.__new__(_RestartableStub)
+        p.shutdown = AsyncMock()
+        return p
+
+    @pytest.mark.asyncio
+    async def test_unknown_persona_returns_false(self):
+        pm = _restart_manager(personas={})
+        assert await pm.restart_persona("nope") is False
+
+    @pytest.mark.asyncio
+    async def test_shuts_down_old_and_reconstructs_under_same_id(self):
+        old = self._make_persona()
+        pm = _restart_manager(personas={"pid": old})
+
+        result = await pm.restart_persona("pid")
+
+        assert result is True
+        old.shutdown.assert_awaited_once()
+        # A fresh instance replaced the old one under the same key.
+        assert pm._personas["pid"] is not old
+        assert pm._personas["pid"] is _RestartableStub.instances[-1]
+
+    @pytest.mark.asyncio
+    async def test_republishes_persona_list(self):
+        old = self._make_persona()
+        pm = _restart_manager(personas={"pid": old})
+
+        await pm.restart_persona("pid")
+
+        pm._publish_persona_list.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_drains_background_tasks_before_shutdown(self):
+        old = self._make_persona()
+        pm = _restart_manager(personas={"pid": old})
+        done = AsyncMock()
+        pm.ychat._background_tasks = {done()}
+
+        await pm.restart_persona("pid")
+
+        # The task set is drained (mirrors shutdown_personas), so no transaction
+        # lock survives into the reconstruction.
+        assert pm.ychat._background_tasks == set()
+
+    @pytest.mark.asyncio
+    async def test_reconstruction_failure_drops_persona_and_returns_false(self):
+        old = self._make_persona()
+        pm = _restart_manager(personas={"pid": old})
+
+        with patch.object(
+            _RestartableStub, "__init__", side_effect=RuntimeError("boom")
+        ):
+            result = await pm.restart_persona("pid")
+
+        assert result is False
+        # The persona could not come back up, so it is removed from the chat and
+        # the list is republished to reflect that.
+        assert "pid" not in pm._personas
+        pm._publish_persona_list.assert_called_once()
+        pm._display_persona_error_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_other_personas_untouched(self):
+        old = self._make_persona()
+        sibling = _make_mock_persona()
+        pm = _restart_manager(personas={"pid": old, "other": sibling})
+
+        await pm.restart_persona("pid")
+
+        assert pm._personas["other"] is sibling
+        sibling.shutdown.assert_not_called()

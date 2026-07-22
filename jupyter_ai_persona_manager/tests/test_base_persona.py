@@ -1,6 +1,6 @@
 """Tests for BasePersona.handle_uncaught_exception() and stream_message() re-raise."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -198,6 +198,38 @@ class TestCancelResponse:
         await persona.cancel_response()
 
         assert cancelled is True
+
+
+# ---------------------------------------------------------------------------
+# TestRestart
+# ---------------------------------------------------------------------------
+
+class TestRestart:
+    """`BasePersona.restart()` delegates to `PersonaManager.restart_persona()`
+    with this persona's own ID; it owns the class registry to reconstruct it."""
+
+    @pytest.mark.asyncio
+    async def test_delegates_to_manager_with_own_id(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        parent = MagicMock()
+        parent.restart_persona = AsyncMock(return_value=True)
+        # `parent` is a validated traitlets Instance trait, so bypass validation
+        # by writing the mock into the trait value store directly.
+        persona._trait_values["parent"] = parent
+
+        result = await persona.restart()
+
+        parent.restart_persona.assert_awaited_once_with(persona.id)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_propagates_manager_return_value(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        parent = MagicMock()
+        parent.restart_persona = AsyncMock(return_value=False)
+        persona._trait_values["parent"] = parent
+
+        assert await persona.restart() is False
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,10 @@ chat's room** (`text:chat:<file-id>`). That manager:
 
 `/refresh-personas` tears the instances down and rebuilds them (picking up code
 changes and new local personas) without restarting the server.
+{py:meth}`~jupyter_ai_persona_manager.BasePersona.restart` is the single-persona
+counterpart: it shuts one persona down and reconstructs the same class under the
+same ID, leaving the other personas in the chat untouched. It backs the
+`/restart` command routed to a persona via `metadata["to_persona"]`.
 
 ## Selecting a persona: message metadata, not `@`-mentions
 

@@ -757,6 +757,27 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.error(f"Failed to resolve attachment {attachment_id}: {e}")
             return None
 
+    @mark_consumer_api
+    async def restart(self) -> bool:
+        """
+        Restart this persona: shut its current instance down and reconstruct it
+        under the same ID, leaving other personas in the chat untouched.
+
+        This is the single-persona counterpart to
+        `PersonaManager.refresh_personas()`. It is provided for *consumers* to
+        call — `jupyter_ai_chat_commands` invokes it when the `/restart` slash
+        command is routed to this persona. The default implementation delegates
+        to `PersonaManager.restart_persona()`, which owns the persona-class
+        registry needed to reconstruct the instance.
+
+        Returns `True` if the persona was restarted, `False` otherwise.
+
+        NOTE: after this returns, `self` refers to the *old* instance; the manager
+        has replaced it with a fresh one under the same ID. Callers should not
+        continue to use the persona object they called `restart()` on.
+        """
+        return await self.parent.restart_persona(self.id)
+
     @mark_recommended
     async def shutdown(self) -> None:
         """
