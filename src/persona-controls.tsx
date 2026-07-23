@@ -280,14 +280,24 @@ function ChoiceMenuItem(props: {
   selected: boolean;
   onSelect: () => void;
 }): JSX.Element {
-  const { primary, selected, onSelect } = props;
+  // MenuList clones the row it picks for initial focus with extra props
+  // (tabIndex, autoFocus); forward them to the MenuItem, or no row is ever
+  // focused and the menu's arrow-key and type-ahead handling never engages.
+  const {
+    primary,
+    description: rawDescription,
+    selected,
+    onSelect,
+    ...menuItemProps
+  } = props;
   const description =
-    props.description &&
-    props.description.trim().toLowerCase() !== primary.trim().toLowerCase()
-      ? props.description
+    rawDescription &&
+    rawDescription.trim().toLowerCase() !== primary.trim().toLowerCase()
+      ? rawDescription
       : null;
   return (
     <MenuItem
+      {...menuItemProps}
       selected={selected}
       onClick={onSelect}
       title={description ?? undefined}
