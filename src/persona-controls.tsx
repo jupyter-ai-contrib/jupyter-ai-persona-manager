@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState
@@ -334,9 +335,13 @@ function defaultChoiceLabel(control: Control): string {
  * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
  * it and the menu stays keyboard-navigable.
  */
-function ControlSubheader(props: { label: string }): JSX.Element {
+function ControlSubheader(props: { label: string; id?: string }): JSX.Element {
   return (
-    <ListSubheader disableSticky className={`${MENU_CLASS}-subheader`}>
+    <ListSubheader
+      id={props.id}
+      disableSticky
+      className={`${MENU_CLASS}-subheader`}
+    >
       {props.label}
     </ListSubheader>
   );
@@ -357,6 +362,10 @@ function ControlItem(props: {
 }): JSX.Element {
   const { control, onSelect } = props;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // The heading names the menu for assistive tech: the subheader itself is a
+  // roleless, never-focused list row, so without this wiring the popup has no
+  // accessible name at all.
+  const headingId = useId();
   return (
     <>
       <Button
@@ -376,9 +385,10 @@ function ControlItem(props: {
         anchorEl={anchor}
         open={!!anchor}
         onClose={() => setAnchor(null)}
+        MenuListProps={{ 'aria-labelledby': headingId }}
         {...menuAnchorProps}
       >
-        <ControlSubheader label={control.label} />
+        <ControlSubheader id={headingId} label={control.label} />
         <ChoiceMenuItem
           primary={defaultChoiceLabel(control)}
           description={null}
@@ -422,6 +432,7 @@ function OverflowMenu(props: {
       anchorEl={anchor}
       open={!!anchor}
       onClose={onClose}
+      MenuListProps={{ 'aria-label': 'More controls' }}
       {...menuAnchorProps}
     >
       {controls.flatMap(control => [
