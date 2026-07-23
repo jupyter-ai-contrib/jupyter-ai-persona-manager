@@ -319,8 +319,23 @@ function defaultChoiceLabel(control: Control): string {
 }
 
 /**
- * A dropdown for a control. The first row is "Default" (selection = null); the
- * rest are the persona's advertised options (selection = that option's id).
+ * The uppercase group label used in control menus: it titles a control's own
+ * dropdown and labels each control's section in the overflow menu. Rendered
+ * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
+ * it and the menu stays keyboard-navigable.
+ */
+function ControlSubheader(props: { label: string }): JSX.Element {
+  return (
+    <ListSubheader disableSticky className={`${MENU_CLASS}-subheader`}>
+      {props.label}
+    </ListSubheader>
+  );
+}
+
+/**
+ * A dropdown for a control, titled with the control's label. The first choice
+ * row is "Default" (selection = null); the rest are the persona's advertised
+ * options (selection = that option's id).
  */
 function ControlItem(props: {
   control: Control;
@@ -349,6 +364,7 @@ function ControlItem(props: {
         onClose={() => setAnchor(null)}
         {...menuAnchorProps}
       >
+        <ControlSubheader label={control.label} />
         <ChoiceMenuItem
           primary={defaultChoiceLabel(control)}
           description={null}
@@ -377,10 +393,8 @@ function ControlItem(props: {
 
 /**
  * The overflow popover: controls that did not fit inline, shown as a single flat
- * menu (no nested dropdowns). Each control renders as a `ListSubheader` group
- * label followed by its Default row and choices. Using MUI primitives keeps the
- * menu keyboard-navigable: `ListSubheader` has no tabindex so arrow-key focus
- * skips it.
+ * menu (no nested dropdowns). Each control renders as a group label followed by
+ * its Default row and choices.
  */
 function OverflowMenu(props: {
   controls: Control[];
@@ -397,13 +411,7 @@ function OverflowMenu(props: {
       {...menuAnchorProps}
     >
       {controls.flatMap(control => [
-        <ListSubheader
-          key={`${control.id}-label`}
-          disableSticky
-          className={`${SELECTOR_CLASS}-overflow-subheader`}
-        >
-          {control.label}
-        </ListSubheader>,
+        <ControlSubheader key={`${control.id}-label`} label={control.label} />,
         <ChoiceMenuItem
           key={`${control.id}-default`}
           primary={defaultChoiceLabel(control)}
