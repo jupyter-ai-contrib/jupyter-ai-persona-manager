@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState
@@ -280,14 +281,24 @@ function ChoiceMenuItem(props: {
   selected: boolean;
   onSelect: () => void;
 }): JSX.Element {
-  const { primary, selected, onSelect } = props;
+  // MenuList clones the row it picks for initial focus with extra props
+  // (tabIndex, autoFocus); forward them to the MenuItem, or no row is ever
+  // focused and the menu's arrow-key and type-ahead handling never engages.
+  const {
+    primary,
+    description: rawDescription,
+    selected,
+    onSelect,
+    ...menuItemProps
+  } = props;
   const description =
-    props.description &&
-    props.description.trim().toLowerCase() !== primary.trim().toLowerCase()
-      ? props.description
+    rawDescription &&
+    rawDescription.trim().toLowerCase() !== primary.trim().toLowerCase()
+      ? rawDescription
       : null;
   return (
     <MenuItem
+      {...menuItemProps}
       selected={selected}
       onClick={onSelect}
       title={description ?? undefined}
@@ -319,15 +330,42 @@ function defaultChoiceLabel(control: Control): string {
 }
 
 /**
- * A dropdown for a control. The first row is "Default" (selection = null); the
- * rest are the persona's advertised options (selection = that option's id).
+ * The uppercase group label used in control menus: it titles a control's own
+ * dropdown and labels each control's section in the overflow menu. Rendered
+ * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
+ * it and the menu stays keyboard-navigable.
  */
-function ControlItem(props: {
+function ControlSubheader(props: { label: string; id?: string }): JSX.Element {
+  return (
+    <ListSubheader
+      id={props.id}
+      disableSticky
+      className={`${MENU_CLASS}-subheader`}
+    >
+      {props.label}
+    </ListSubheader>
+  );
+}
+
+// MUI's MenuList skips initial focus for children whose type carries this
+// static; ListSubheader's own copy is hidden behind the wrapper.
+ControlSubheader.muiSkipListHighlight = true;
+
+/**
+ * A dropdown for a control, titled with the control's label. The first choice
+ * row is "Default" (selection = null); the rest are the persona's advertised
+ * options (selection = that option's id). Exported for tests.
+ */
+export function ControlItem(props: {
   control: Control;
   onSelect: (value: string | null) => void;
 }): JSX.Element {
   const { control, onSelect } = props;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  // The heading names the menu for assistive tech: the subheader itself is a
+  // roleless, never-focused list row, so without this wiring the popup has no
+  // accessible name at all.
+  const headingId = useId();
   return (
     <>
       <Button
@@ -347,8 +385,10 @@ function ControlItem(props: {
         anchorEl={anchor}
         open={!!anchor}
         onClose={() => setAnchor(null)}
+        MenuListProps={{ 'aria-labelledby': headingId }}
         {...menuAnchorProps}
       >
+        <ControlSubheader id={headingId} label={control.label} />
         <ChoiceMenuItem
           primary={defaultChoiceLabel(control)}
           description={null}
@@ -377,12 +417,10 @@ function ControlItem(props: {
 
 /**
  * The overflow popover: controls that did not fit inline, shown as a single flat
- * menu (no nested dropdowns). Each control renders as a `ListSubheader` group
- * label followed by its Default row and choices. Using MUI primitives keeps the
- * menu keyboard-navigable: `ListSubheader` has no tabindex so arrow-key focus
- * skips it.
+ * menu (no nested dropdowns). Each control renders as a group label followed by
+ * its Default row and choices. Exported for tests.
  */
-function OverflowMenu(props: {
+export function OverflowMenu(props: {
   controls: Control[];
   anchor: HTMLElement | null;
   onClose: () => void;
@@ -394,16 +432,11 @@ function OverflowMenu(props: {
       anchorEl={anchor}
       open={!!anchor}
       onClose={onClose}
+      MenuListProps={{ 'aria-label': 'More controls' }}
       {...menuAnchorProps}
     >
       {controls.flatMap(control => [
-        <ListSubheader
-          key={`${control.id}-label`}
-          disableSticky
-          className={`${SELECTOR_CLASS}-overflow-subheader`}
-        >
-          {control.label}
-        </ListSubheader>,
+        <ControlSubheader key={`${control.id}-label`} label={control.label} />,
         <ChoiceMenuItem
           key={`${control.id}-default`}
           primary={defaultChoiceLabel(control)}

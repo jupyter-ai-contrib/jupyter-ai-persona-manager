@@ -278,10 +278,11 @@
   flex-shrink: 0;
 }
 
-/* overflow popover: an uppercase group label above each overflowed control's
-   choices, with a hairline divider and top spacing separating the sections.
-   Scoped under the paper to win over MUI's ListSubheader defaults. */
-.jp-jai-controlMenu-paper .jp-jai-personaControls-overflow-subheader {
+/* Control menu group label: an uppercase heading above a control's choices.
+   It titles each control's own dropdown; in the overflow popover a hairline
+   divider and top spacing separate the controls' sections. Scoped under the
+   paper to win over MUI's ListSubheader defaults. */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-subheader {
   margin-top: 8px;
   padding: 8px 12px 2px;
   border-top: 1px solid var(--jp-border-color2);
@@ -295,9 +296,9 @@
   background-color: var(--jp-layout-color1);
 }
 
-/* first section sits flush at the top, no divider or extra gap above it. */
-.jp-jai-controlMenu-paper
-  .jp-jai-personaControls-overflow-subheader:first-child {
+/* The first (or only) label sits flush at the top, no divider or extra gap
+   above it. */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-subheader:first-child {
   margin-top: 0;
   border-top: none;
 }
@@ -361,8 +362,8 @@
   white-space: nowrap;
 }
 
-/* Usage popover card: labeled sections in the overflow-subheader style, then
-   one row per quantity, label muted and value right-aligned. */
+/* Usage popover card: labeled sections in the control menu's subheader style,
+   then one row per quantity, label muted and value right-aligned. */
 .jp-jai-usage-card {
   padding: 8px 12px;
   min-width: 220px;
