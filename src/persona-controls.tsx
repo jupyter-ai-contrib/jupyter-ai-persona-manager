@@ -354,9 +354,9 @@ ControlSubheader.muiSkipListHighlight = true;
 /**
  * A dropdown for a control, titled with the control's label. The first choice
  * row is "Default" (selection = null); the rest are the persona's advertised
- * options (selection = that option's id).
+ * options (selection = that option's id). Exported for tests.
  */
-function ControlItem(props: {
+export function ControlItem(props: {
   control: Control;
   onSelect: (value: string | null) => void;
 }): JSX.Element {
@@ -418,9 +418,9 @@ function ControlItem(props: {
 /**
  * The overflow popover: controls that did not fit inline, shown as a single flat
  * menu (no nested dropdowns). Each control renders as a group label followed by
- * its Default row and choices.
+ * its Default row and choices. Exported for tests.
  */
-function OverflowMenu(props: {
+export function OverflowMenu(props: {
   controls: Control[];
   anchor: HTMLElement | null;
   onClose: () => void;
