@@ -57,6 +57,10 @@ describe('control menus', () => {
       expect(screen.getByRole('menu').getAttribute('aria-labelledby')).toBe(
         heading().id
       );
+      // Sticky, so the title stays visible while a long option list scrolls.
+      expect(heading().classList.contains('MuiListSubheader-sticky')).toBe(
+        true
+      );
     });
 
     it('focuses the selected row and moves focus with the keyboard', async () => {
@@ -135,8 +139,12 @@ describe('control menus', () => {
       );
       const headings = Array.from(
         document.querySelectorAll(SUBHEADER_SELECTOR)
-      ).map(h => h.textContent);
-      expect(headings).toEqual(['Aaa', 'Bbb']);
+      );
+      expect(headings.map(h => h.textContent)).toEqual(['Aaa', 'Bbb']);
+      // Sticky, so the section a scrolled row belongs to stays visible.
+      for (const h of headings) {
+        expect(h.classList.contains('MuiListSubheader-sticky')).toBe(true);
+      }
       // "A one" is the only selected row; ArrowDown crosses the "Bbb" heading
       // to the next section's first choice row.
       expect(focused()).toBe(screen.getByRole('menuitem', { name: 'A one' }));
