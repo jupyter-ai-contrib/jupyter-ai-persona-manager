@@ -335,7 +335,10 @@ function defaultChoiceLabel(control: Control): string {
  * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
  * it and the menu stays keyboard-navigable.
  */
-function ControlSubheader(props: { label: string; id?: string }): JSX.Element {
+function ControlMenuSubheader(props: {
+  label: string;
+  id?: string;
+}): JSX.Element {
   return (
     <ListSubheader
       id={props.id}
@@ -349,14 +352,14 @@ function ControlSubheader(props: { label: string; id?: string }): JSX.Element {
 
 // MUI's MenuList skips initial focus for children whose type carries this
 // static; ListSubheader's own copy is hidden behind the wrapper.
-ControlSubheader.muiSkipListHighlight = true;
+ControlMenuSubheader.muiSkipListHighlight = true;
 
 /**
  * A dropdown for a control, titled with the control's label. The first choice
  * row is "Default" (selection = null); the rest are the persona's advertised
  * options (selection = that option's id). Exported for tests.
  */
-export function ControlItem(props: {
+export function ControlMenu(props: {
   control: Control;
   onSelect: (value: string | null) => void;
 }): JSX.Element {
@@ -388,7 +391,7 @@ export function ControlItem(props: {
         MenuListProps={{ 'aria-labelledby': headingId }}
         {...menuAnchorProps}
       >
-        <ControlSubheader id={headingId} label={control.label} />
+        <ControlMenuSubheader id={headingId} label={control.label} />
         <ChoiceMenuItem
           primary={defaultChoiceLabel(control)}
           description={null}
@@ -420,7 +423,7 @@ export function ControlItem(props: {
  * menu (no nested dropdowns). Each control renders as a group label followed by
  * its Default row and choices. Exported for tests.
  */
-export function OverflowMenu(props: {
+export function OverflowControlsMenu(props: {
   controls: Control[];
   anchor: HTMLElement | null;
   onClose: () => void;
@@ -436,7 +439,10 @@ export function OverflowMenu(props: {
       {...menuAnchorProps}
     >
       {controls.flatMap(control => [
-        <ControlSubheader key={`${control.id}-label`} label={control.label} />,
+        <ControlMenuSubheader
+          key={`${control.id}-label`}
+          label={control.label}
+        />,
         <ChoiceMenuItem
           key={`${control.id}-default`}
           primary={defaultChoiceLabel(control)}
@@ -550,7 +556,7 @@ function ControlsRow(props: {
         aria-hidden="true"
       >
         {controls.map(control => (
-          <ControlItem
+          <ControlMenu
             key={control.id}
             control={control}
             onSelect={v => onChange(control, v)}
@@ -559,7 +565,7 @@ function ControlsRow(props: {
       </div>
 
       {visible.map(control => (
-        <ControlItem
+        <ControlMenu
           key={control.id}
           control={control}
           onSelect={v => onChange(control, v)}
@@ -578,7 +584,7 @@ function ControlsRow(props: {
           >
             <MoreHorizIcon fontSize="small" />
           </button>
-          <OverflowMenu
+          <OverflowControlsMenu
             controls={overflow}
             anchor={overflowAnchor}
             onClose={() => setOverflowAnchor(null)}

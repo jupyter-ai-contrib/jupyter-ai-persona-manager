@@ -6,7 +6,11 @@
  */
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { Control, ControlItem, OverflowMenu } from '../persona-controls';
+import {
+  Control,
+  ControlMenu,
+  OverflowControlsMenu
+} from '../persona-controls';
 
 // React 18.3 ships `React.act`, which the installed @types/react (18.0) does
 // not declare yet.
@@ -69,7 +73,7 @@ describe('control menus', () => {
       onSelect: (value: string | null) => void = () => undefined
     ): void {
       act(() => {
-        root.render(<ControlItem control={control} onSelect={onSelect} />);
+        root.render(<ControlMenu control={control} onSelect={onSelect} />);
       });
       act(() => {
         (container.querySelector('button') as HTMLElement).dispatchEvent(
@@ -151,7 +155,7 @@ describe('control menus', () => {
       document.body.appendChild(anchor);
       act(() => {
         root.render(
-          <OverflowMenu
+          <OverflowControlsMenu
             controls={[first, second]}
             anchor={anchor}
             onClose={() => undefined}
