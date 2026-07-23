@@ -362,8 +362,8 @@
   white-space: nowrap;
 }
 
-/* Usage popover card: labeled sections in the overflow-subheader style, then
-   one row per quantity, label muted and value right-aligned. */
+/* Usage popover card: labeled sections in the control menu's subheader style,
+   then one row per quantity, label muted and value right-aligned. */
 .jp-jai-usage-card {
   padding: 8px 12px;
   min-width: 220px;
