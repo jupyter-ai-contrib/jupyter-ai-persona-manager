@@ -333,18 +333,17 @@ function defaultChoiceLabel(control: Control): string {
  * The uppercase group label used in control menus: it titles a control's own
  * dropdown and labels each control's section in the overflow menu. Rendered
  * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
- * it and the menu stays keyboard-navigable.
+ * it and the menu stays keyboard-navigable. Sticky: when the menu scrolls, the
+ * label pins to the top, so the group the visible rows belong to stays
+ * readable; in the overflow menu the next section's label paints over it on
+ * arrival.
  */
 function ControlMenuSubheader(props: {
   label: string;
   id?: string;
 }): JSX.Element {
   return (
-    <ListSubheader
-      id={props.id}
-      disableSticky
-      className={`${MENU_CLASS}-subheader`}
-    >
+    <ListSubheader id={props.id} className={`${MENU_CLASS}-subheader`}>
       {props.label}
     </ListSubheader>
   );
