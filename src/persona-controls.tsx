@@ -332,6 +332,10 @@ function ControlSubheader(props: { label: string }): JSX.Element {
   );
 }
 
+// MUI's MenuList skips initial focus for children whose type carries this
+// static; ListSubheader's own copy is hidden behind the wrapper.
+ControlSubheader.muiSkipListHighlight = true;
+
 /**
  * A dropdown for a control, titled with the control's label. The first choice
  * row is "Default" (selection = null); the rest are the persona's advertised
