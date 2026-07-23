@@ -83,7 +83,15 @@ const LOADING_PLACEHOLDER = '.jp-jai-personaControls-skeleton';
 const VISIBLE_CONTROL_BTN =
   '.jp-jai-personaControls-controls > .jp-jai-personaControls-control-btn';
 const INPUT = '.jp-chat-input-container';
+// The toolbar's send button, rendered by jupyter-chat. Focused last in the
+// input's tab order; pressing Enter on it sends the message.
+const SEND_BUTTON = '.jp-chat-send-button';
 const MESSAGE = '.jp-chat-rendered-message';
+// The searchable dropdown shared by the persona picker and every control: a
+// search field over a listbox of options, rendered in a page-scoped Popper
+// portal. Options carry role="option"; the search field role="combobox".
+const MENU_OPTION = '.jp-jai-searchMenu-option';
+const MENU_SEARCH = '.jp-jai-searchMenu-search input';
 // Each slash-command completion in the input's autocomplete popup renders its
 // name in a `.jp-chat-command-name` span (MUI list options, page-scoped portal).
 const COMMAND_NAME = '.jp-chat-command-name';
@@ -113,12 +121,16 @@ export async function installPersonas(
   const contents = galata.newContentsHelper(request);
   for (const persona of personas) {
     const file = `${persona}_persona.py`;
+    const dest = `${dir}/.jupyter/personas/${file}`;
+    // Idempotent: a suite's `beforeAll` can run more than once against the same
+    // shared server (e.g. Playwright retrying a failed test on a fresh worker),
+    // and re-uploading an existing file resolves false. Skip files already
+    // installed rather than treating that as a failure.
+    if (await contents.fileExists(dest)) {
+      continue;
+    }
     const source = fs.readFileSync(path.join(PERSONAS_SRC, file), 'utf-8');
-    const uploaded = await contents.uploadContent(
-      source,
-      'text',
-      `${dir}/.jupyter/personas/${file}`
-    );
+    const uploaded = await contents.uploadContent(source, 'text', dest);
     // uploadContent resolves false on failure rather than throwing; fail the
     // suite here instead of timing out later on a picker with no personas.
     if (!uploaded) {
@@ -192,13 +204,99 @@ export class TestHelpers {
     return this.chat.locator(LOADING_PLACEHOLDER);
   }
 
+  /** Focus the chat input's text field (the message combobox). */
+  async focusInput(): Promise<void> {
+    await this.chat.locator(INPUT).getByRole('combobox').focus();
+  }
+
+  /** Type text into the chat input without sending it. */
+  async typeInput(text: string): Promise<void> {
+    await this.chat
+      .locator(INPUT)
+      .getByRole('combobox')
+      .pressSequentially(text);
+  }
+
+  /**
+   * Whether a searchable menu is open with its search field focused. Opening a
+   * control (by Tab or click) moves focus into the menu's search field, so this
+   * doubles as "the control I just reached is open and ready for keyboard use".
+   * Reads the active element's `aria-label` so it doesn't depend on ids.
+   */
+  async menuSearchFocused(label: string): Promise<boolean> {
+    const active = await this.page.evaluate(
+      () => document.activeElement?.getAttribute('aria-label') ?? ''
+    );
+    return active === label;
+  }
+
+  /** Whether the persona picker's searchable menu is open and focused. */
+  async personaMenuFocused(): Promise<boolean> {
+    return this.menuSearchFocused('Search personas');
+  }
+
+  /** Whether the toolbar's send button currently holds keyboard focus. */
+  async sendButtonHasFocus(): Promise<boolean> {
+    return this.page.evaluate(
+      sel => !!document.activeElement?.closest(sel),
+      SEND_BUTTON
+    );
+  }
+
+  /** Whether the chat input's textarea currently holds keyboard focus. */
+  async inputHasFocus(): Promise<boolean> {
+    return this.page.evaluate(
+      sel => !!document.activeElement?.closest(sel),
+      `${INPUT} .MuiInputBase-root`
+    );
+  }
+
+  /**
+   * Press Tab (or Shift+Tab) until the given predicate holds, up to `max`
+   * presses. Returns the number of presses it took, or throws if the predicate
+   * never held — surfacing a broken tab order as a clear failure rather than a
+   * silent miss.
+   */
+  async tabUntil(
+    predicate: () => Promise<boolean>,
+    options: { shift?: boolean; max?: number } = {}
+  ): Promise<number> {
+    const { shift = false, max = 10 } = options;
+    for (let i = 1; i <= max; i++) {
+      await this.page.keyboard.press(shift ? 'Shift+Tab' : 'Tab');
+      if (await predicate()) {
+        return i;
+      }
+    }
+    throw new Error(`Focus target not reached within ${max} Tab presses`);
+  }
+
+  /**
+   * With a searchable menu open, press ArrowDown until the option with the given
+   * `name` is the highlighted one (`aria-selected`), asserting after each press
+   * so the highlight settles before the next — a real user doesn't out-type the
+   * UI. Stepping one at a time keeps the test independent of the list order.
+   * Bounded so a wrong direction / missing option fails loudly, not forever.
+   */
+  async arrowToOption(name: string): Promise<void> {
+    const highlighted = this.page.locator(`${MENU_OPTION}.jp-mod-highlighted`);
+    for (let i = 0; i < 12; i++) {
+      if (((await highlighted.textContent()) ?? '').includes(name)) {
+        return;
+      }
+      await this.page.keyboard.press('ArrowDown');
+      await expect(highlighted).toHaveCount(1, { timeout: TIMEOUT });
+    }
+    await expect(highlighted).toContainText(name);
+  }
+
   /** Select a fixture persona from the picker and wait for it to take. */
   async selectPersona(persona: FixturePersona): Promise<void> {
     const { name } = FIXTURE_PERSONAS[persona];
     const picker = this.chat.locator(PICKER);
     await expect(picker).toBeVisible({ timeout: TIMEOUT });
     await picker.click();
-    await this.page.getByRole('menuitem', { name }).click();
+    await this.page.getByRole('option', { name }).click();
     await expect(picker).toContainText(name);
   }
 
@@ -206,7 +304,7 @@ export class TestHelpers {
   async selectNoOne(): Promise<void> {
     await expect(this.personaPicker).toBeVisible({ timeout: TIMEOUT });
     await this.personaPicker.click();
-    await this.page.getByRole('menuitem', { name: 'No one' }).click();
+    await this.page.getByRole('option', { name: 'No one' }).click();
     await expect(this.personaPicker).toContainText('No one');
   }
 
@@ -221,7 +319,7 @@ export class TestHelpers {
   async setControl(title: string, optionValue: string): Promise<void> {
     await this.chat.locator(`${VISIBLE_CONTROL_BTN}[title="${title}"]`).click();
     await this.page
-      .getByRole('menuitem', { name: optionValue, exact: true })
+      .getByRole('option', { name: optionValue, exact: true })
       .click();
   }
 
@@ -240,16 +338,30 @@ export class TestHelpers {
   /**
    * Open the dropdown of the control with the given `title` and return the
    * option labels it offers (including the leading "Default (…)" row). The menu
-   * is a page-scoped MUI portal, so read its items from the page, not the chat.
+   * is a page-scoped Popper portal, so read its options from the page, not the
+   * chat.
    */
   async controlOptions(title: string): Promise<string[]> {
     await this.control(title).click();
-    const items = this.page.getByRole('menuitem');
+    const items = this.page.getByRole('option');
     await expect(items.first()).toBeVisible({ timeout: TIMEOUT });
     const labels = await items.allTextContents();
     // Close the menu so it doesn't overlap the next interaction.
     await this.page.keyboard.press('Escape');
     return labels.map(l => l.trim());
+  }
+
+  /**
+   * The open searchable menu's search input (page-scoped, since the menu is a
+   * portal at the page root). Present only while a menu is open.
+   */
+  get menuSearch(): Locator {
+    return this.page.locator(MENU_SEARCH);
+  }
+
+  /** The options currently listed in the open searchable menu, page-scoped. */
+  get menuOptions(): Locator {
+    return this.page.locator(MENU_OPTION);
   }
 
   /** The usage chip in the toolbar (present only once the persona reports usage). */

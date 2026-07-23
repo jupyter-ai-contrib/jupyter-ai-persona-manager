@@ -39,12 +39,12 @@ test.describe('picker', () => {
     await expect(helpers.personaPicker).toBeVisible({ timeout: 30000 });
     await helpers.personaPicker.click();
     await expect(
-      page.getByRole('menuitem', { name: 'Hello Persona' })
+      page.getByRole('option', { name: 'Hello Persona' })
     ).toBeVisible();
     await expect(
-      page.getByRole('menuitem', { name: 'Bonjour Persona' })
+      page.getByRole('option', { name: 'Bonjour Persona' })
     ).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'No one' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'No one' })).toBeVisible();
     await page.keyboard.press('Escape');
 
     // Switch to each persona in turn (and back to the first) and confirm the
