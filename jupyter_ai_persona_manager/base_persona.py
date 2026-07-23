@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import html
+import json
 import os
 import traceback
 from abc import ABC, ABCMeta, abstractmethod
@@ -716,8 +717,36 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 # Get relative path for display
                 rel_path = os.path.relpath(file_path, self.get_workspace_dir())
 
-                # Add file content with header
-                context_parts.append(f"File: {rel_path}\n```\n{file_content}\n```")
+                attachment_data = self.ychat.get_attachments().get(attachment_id)
+                if (
+                    isinstance(attachment_data, dict)
+                    and attachment_data.get("type") == "notebook"
+                    and attachment_data.get("cells")
+                ):
+                    notebook = json.loads(file_content)
+                    cells_by_id = {
+                        cell.get("id"): cell for cell in notebook.get("cells", [])
+                    }
+                    selected_cells = []
+                    for requested in attachment_data["cells"]:
+                        cell = cells_by_id.get(requested.get("id"))
+                        if cell is None:
+                            continue
+                        source = cell.get("source", "")
+                        if isinstance(source, list):
+                            source = "".join(source)
+                        cell_type = cell.get(
+                            "cell_type", requested.get("input_type", "")
+                        )
+                        selected_cells.append(
+                            f"Cell: {cell.get('id')} ({cell_type})\n```\n{source}\n```"
+                        )
+                    context_parts.append(
+                        f"Notebook: {rel_path}\n" + "\n\n".join(selected_cells)
+                    )
+                else:
+                    # Add file content with header
+                    context_parts.append(f"File: {rel_path}\n```\n{file_content}\n```")
 
             except Exception as e:
                 self.log.warning(f"Failed to read attachment {attachment_id}: {e}")
