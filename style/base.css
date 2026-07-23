@@ -227,6 +227,11 @@
   background-color: var(--jp-layout-color1);
   border: 1px solid var(--jp-border-color2);
   box-shadow: var(--jp-elevation-z6);
+
+  /* Keep focus-scrolled rows clear of the stuck group label: when arrow keys
+     scroll a row into view at the top, offset it by the label's height so the
+     label does not cover it. */
+  scroll-padding-top: 32px;
 }
 
 /* stylelint-disable selector-class-pattern -- theming MUI's menu item classes */
