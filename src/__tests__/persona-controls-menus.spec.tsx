@@ -97,12 +97,26 @@ describe('control menus', () => {
       expect(focused().textContent).toBe('Default (Alpha)');
       press('ArrowDown');
       expect(focused().textContent).toBe('Alpha');
-      // Type-ahead: "b" jumps to Beta; "m" matches only the heading text
-      // ("Model"), which never takes focus.
+      // Type-ahead: "b" jumps to Beta.
       press('b');
       expect(focused().textContent).toBe('Beta');
+    });
+
+    it('leaves focus in place when type-ahead matches only the heading', () => {
+      openMenu(modelControl('beta'));
+      // First key after open, so it cannot buffer onto a previous press: "m"
+      // matches the heading ("Model") and no choice row, and the heading
+      // never takes focus.
       press('m');
       expect(focused().textContent).toBe('Beta');
+    });
+
+    it('falls back to the first choice row when the selection is stale', () => {
+      // A selection id the persona no longer advertises leaves no row
+      // selected; initial focus then skips the heading to the first row.
+      openMenu(modelControl('stale'));
+      expect(focused().textContent).toBe('Default (Alpha)');
+      expect(focused().getAttribute('role')).toBe('menuitem');
     });
 
     it('activates the focused row with Enter', () => {
