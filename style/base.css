@@ -227,10 +227,14 @@
   background-color: var(--jp-layout-color1);
   border: 1px solid var(--jp-border-color2);
   box-shadow: var(--jp-elevation-z6);
+}
 
-  /* Keep focus-scrolled rows clear of the stuck group label: when arrow keys
-     scroll a row into view at the top, offset it by the label's height so the
-     label does not cover it. */
+/* Keep focus-scrolled rows clear of the stuck group label: when arrow keys
+   scroll a row into view at the top, offset it by the label's height so the
+   label does not cover it. Only menus containing a group label need the
+   offset; the persona picker and usage popover share this paper class and
+   keep edge-aligned scrolling. */
+.jp-jai-controlMenu-paper:has(.jp-jai-controlMenu-subheader) {
   scroll-padding-top: 32px;
 }
 
@@ -286,10 +290,11 @@
 /* Control menu group label: an uppercase heading above a control's choices.
    It titles each control's own dropdown; in the overflow popover a hairline
    divider and top spacing separate the controls' sections. Scoped under the
-   paper to win over MUI's ListSubheader defaults. The labels are sticky
-   (MUI's default, position from its sticky class), so the opaque background
-   is load-bearing: scrolled rows pass beneath it. One line only, so stacked
-   sticky labels in the overflow menu cover each other exactly. */
+   paper to win over MUI's ListSubheader defaults. The labels are sticky:
+   sticky is MUI's ListSubheader default, and its sticky class supplies the
+   positioning. The opaque background is load-bearing, scrolled rows pass
+   beneath it. One line only, so stacked sticky labels in the overflow menu
+   cover each other exactly. */
 .jp-jai-controlMenu-paper .jp-jai-controlMenu-subheader {
   margin-top: 8px;
   padding: 8px 12px 2px;
