@@ -156,6 +156,24 @@ export function buildControls(
 }
 
 /**
+ * Decide which persona list the toolbar should display: a freshly read empty
+ * list is treated as a transient blip (e.g. a Yjs awareness sync hiccup
+ * during a persona reload) rather than "no personas", so the toolbar keeps
+ * showing the previous list instead of unmounting - `PersonaControls` hides
+ * itself entirely when `personas.length === 0`, so accepting every empty
+ * read verbatim flashes the whole toolbar (persona name, model picker,
+ * everything) to nothing and back on each blip. A genuinely personas-less
+ * chat never reads a non-empty list in the first place, so this doesn't mask
+ * that case - it only guards against reverting an already-populated list.
+ */
+export function reconcilePersonas(
+  previous: PersonaOption[],
+  next: PersonaOption[]
+): PersonaOption[] {
+  return next.length ? next : previous;
+}
+
+/**
  * Decide how to reconcile the current selection with a freshly read persona
  * list: the new selection to apply, or `undefined` to keep the current one.
  *
@@ -1100,7 +1118,7 @@ export function PersonaControls(
       return;
     }
     const list = manager.personas;
-    setPersonas(list);
+    setPersonas(prev => reconcilePersonas(prev, list));
     setSelectedId(current => {
       const next = reconcileSelection(list, current, userPicked.current);
       return next === undefined ? current : next;

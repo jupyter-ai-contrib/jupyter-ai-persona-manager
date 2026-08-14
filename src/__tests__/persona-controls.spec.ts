@@ -9,6 +9,7 @@ import { PersonaOption } from '../awareness';
 import {
   buildControls,
   filterChoices,
+  reconcilePersonas,
   reconcileSelection,
   showLoadingPlaceholder
 } from '../persona-controls';
@@ -110,6 +111,23 @@ describe('buildControls', () => {
       { id: 'opus-48', name: 'Opus 4.8', description: null },
       { id: 'fable-5', name: 'Fable 5', description: null }
     ]);
+  });
+});
+
+describe('reconcilePersonas', () => {
+  it('accepts a fresh non-empty list', () => {
+    const previous = [personaOption('a')];
+    const next = [personaOption('a'), personaOption('b')];
+    expect(reconcilePersonas(previous, next)).toBe(next);
+  });
+
+  it('keeps the previous list on a transient empty read', () => {
+    const previous = [personaOption('a'), personaOption('b')];
+    expect(reconcilePersonas(previous, [])).toBe(previous);
+  });
+
+  it('stays empty when nothing has ever loaded', () => {
+    expect(reconcilePersonas([], [])).toEqual([]);
   });
 });
 
