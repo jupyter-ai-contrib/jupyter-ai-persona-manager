@@ -8,6 +8,7 @@ import { PersonaOption } from '../awareness';
 
 import {
   buildControls,
+  filterChoices,
   reconcileSelection,
   showLoadingPlaceholder
 } from '../persona-controls';
@@ -175,5 +176,42 @@ describe('showLoadingPlaceholder', () => {
 
   it('hides without an awareness channel to wait on', () => {
     expect(showLoadingPlaceholder(false, false, false, false)).toBe(false);
+  });
+});
+
+describe('filterChoices', () => {
+  const opus = { id: 'opus-48', primary: 'Opus 4.8', description: null };
+  const fable = { id: 'fable-5', primary: 'Fable 5', description: null };
+  const defaultChoice = {
+    id: null,
+    primary: 'Default (Opus 4.8)',
+    description: null
+  };
+  const choices = [defaultChoice, opus, fable];
+
+  it('returns everything for an empty query', () => {
+    expect(filterChoices(choices, '')).toEqual(choices);
+  });
+
+  it('returns everything for a whitespace-only query', () => {
+    expect(filterChoices(choices, '   ')).toEqual(choices);
+  });
+
+  it('matches case-insensitively as a substring', () => {
+    expect(filterChoices(choices, 'fable')).toEqual([defaultChoice, fable]);
+    expect(filterChoices(choices, 'FABLE')).toEqual([defaultChoice, fable]);
+    expect(filterChoices(choices, 'abl')).toEqual([defaultChoice, fable]);
+  });
+
+  it('always keeps the Default row first, even when it would not match', () => {
+    expect(filterChoices(choices, 'fable')).toEqual([defaultChoice, fable]);
+  });
+
+  it('drops non-Default choices with no match', () => {
+    expect(filterChoices(choices, 'nonexistent')).toEqual([defaultChoice]);
+  });
+
+  it('handles a Default-only list (no options advertised)', () => {
+    expect(filterChoices([defaultChoice], 'anything')).toEqual([defaultChoice]);
   });
 });

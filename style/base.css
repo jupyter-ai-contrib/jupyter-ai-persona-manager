@@ -319,6 +319,38 @@
   border-top: none;
 }
 
+/* Search box in a control's dropdown (ControlMenu - the searchable model/
+   settings picker). Sits between the subheader and the choice list; the
+   choice list scrolls independently (see below) so the box stays visible
+   while scrolling a long, filtered result set. */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-search-input {
+  padding: 4px 12px 8px;
+}
+
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-search-input .MuiInput-root {
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size1);
+}
+
+/* The choice list scrolls on its own, independent of the paper's own
+   max-height bound (see .jp-jai-controlMenu-paper above) - without this the
+   search box could scroll out of view along with the results, the opposite
+   of the point of keeping it pinned at the top. */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-search-list {
+  overflow-y: auto;
+  max-height: calc(60vh - 80px);
+}
+
+/* Keyboard-focused row when navigating the search results with arrow keys.
+   ControlMenu no longer renders choices inside a MenuList - see the comment
+   on ControlMenu in persona-controls.tsx - so this is a plain state-driven
+   highlight rather than real DOM/MUI focus styling, matching the existing
+   hover/selected treatment for visual consistency. */
+/* stylelint-disable-next-line selector-class-pattern -- theming MUI's menu item classes */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-kbd-focused.MuiMenuItem-root {
+  background-color: var(--jp-layout-color2);
+}
+
 /* Usage chip: a small ring gauge and percent of the active persona's context
    fill, next to the persona it describes. Borderless, matching the overflow
    button. The ring fill and percent take the chip's color, so the warn/error
