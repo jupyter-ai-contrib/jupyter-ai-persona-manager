@@ -10,6 +10,7 @@ import {
   buildControls,
   filterChoices,
   reconcilePersonas,
+  reconcilePersonaState,
   reconcileSelection,
   showLoadingPlaceholder
 } from '../persona-controls';
@@ -128,6 +129,23 @@ describe('reconcilePersonas', () => {
 
   it('stays empty when nothing has ever loaded', () => {
     expect(reconcilePersonas([], [])).toEqual([]);
+  });
+});
+
+describe('reconcilePersonaState', () => {
+  it('accepts a fresh non-null read', () => {
+    const previous = personaAwareness({});
+    const next = personaAwareness({});
+    expect(reconcilePersonaState(previous, next)).toBe(next);
+  });
+
+  it('keeps the previous state on a transient null read', () => {
+    const previous = personaAwareness({});
+    expect(reconcilePersonaState(previous, null)).toBe(previous);
+  });
+
+  it('stays null when nothing has ever loaded', () => {
+    expect(reconcilePersonaState(null, null)).toBeNull();
   });
 });
 

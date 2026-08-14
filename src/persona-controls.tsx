@@ -174,6 +174,30 @@ export function reconcilePersonas(
 }
 
 /**
+ * Decide which selected-persona state the toolbar should track: a fresh
+ * null read is treated as a transient blip (the same class of awareness
+ * sync hiccup `reconcilePersonas` guards against, e.g. during a persona
+ * reload) rather than "nothing selected", so the toolbar keeps the last
+ * known state instead of dropping it. This one is not just cosmetic:
+ * `buildControls` returns `[]` for a null persona state, so `controls`
+ * reads empty and `PersonaControls` conditionally unmounts `ControlsRow`
+ * entirely - destroying any open `ControlMenu`'s own state (its search
+ * query, its open popover) mid-interaction, not merely blanking a label.
+ *
+ * Only for the *recurring* awareness-driven read, not the initial one: the
+ * initial read (on mount, or when `selectedId` itself changes to a
+ * different persona) must apply unconditionally, including a genuine null
+ * result, or switching personas could show the previous persona's stale
+ * state under the new selection.
+ */
+export function reconcilePersonaState(
+  previous: PersonaAwareness | null,
+  next: PersonaAwareness | null
+): PersonaAwareness | null {
+  return next ?? previous;
+}
+
+/**
  * Decide how to reconcile the current selection with a freshly read persona
  * list: the new selection to apply, or `undefined` to keep the current one.
  *
@@ -1150,14 +1174,22 @@ export function PersonaControls(
 
   // Track the selected persona's view in state, re-reading on every awareness
   // change (a persona updating usage, model, or commands) so the toolbar
-  // reflects the latest published state.
+  // reflects the latest published state. The first read (right below)
+  // applies unconditionally, since it runs whenever `selectedId` itself
+  // changes and must reflect the newly selected persona, even a genuinely
+  // absent one; every later read goes through reconcilePersonaState so a
+  // transient blip doesn't blank this out - see its comment for why that
+  // matters more than it looks like it should.
   useEffect(() => {
     if (!awareness || !manager || !selectedId) {
       setPersonaState(null);
       return;
     }
-    const read = () => setPersonaState(readSelectedPersona());
-    read();
+    setPersonaState(readSelectedPersona());
+    const read = () =>
+      setPersonaState(prev =>
+        reconcilePersonaState(prev, readSelectedPersona())
+      );
     awareness.on('change', read);
     return () => {
       awareness.off('change', read);
