@@ -38,7 +38,13 @@ jobs:
     - name: Build the extension
       run: |
         set -eux
-        python -m pip install .[test]
+        # jupyter_collaboration 5.0.0 (2026-08-03) shows a "document is taking
+        # some time to load" dialog that never clears for jupyterlab_chat's
+        # .chat documents under slow-load timing, hanging ui-tests. Pin to the
+        # last 4.x line (4.4.2 carries the same security fix as 5.0.0) here in
+        # CI only, not in pyproject.toml, until this is fixed upstream or
+        # jupyterlab_chat verifies 5.x compatibility.
+        python -m pip install .[test] "jupyter_collaboration<5"
 
         pytest -vv -r ap --cov jupyter_ai_persona_manager
         jupyter server extension list
@@ -83,7 +89,8 @@ jobs:
         sudo rm -rf $(which node)
         sudo rm -rf $(which node)
 
-        pip install "jupyterlab>=4.0.0,<5" jupyter_ai_persona_manager*.whl
+        # See the "Build the extension" step above for why jupyter_collaboration is pinned.
+        pip install "jupyterlab>=4.0.0,<5" jupyter_ai_persona_manager*.whl "jupyter_collaboration<5"
 
 
         jupyter server extension list
@@ -116,7 +123,8 @@ jobs:
     - name: Install the extension
       run: |
         set -eux
-        python -m pip install "jupyterlab>=4.0.0,<5" jupyter_ai_persona_manager*.whl
+        # See the "Build the extension" step in the build job for why jupyter_collaboration is pinned.
+        python -m pip install "jupyterlab>=4.0.0,<5" jupyter_ai_persona_manager*.whl "jupyter_collaboration<5"
 
     - name: Install dependencies
       working-directory: ui-tests
