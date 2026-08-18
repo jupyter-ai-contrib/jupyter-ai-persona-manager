@@ -13,7 +13,8 @@ import {
   Menu,
   MenuItem,
   Popover,
-  Skeleton
+  Skeleton,
+  TextField
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CheckIcon from '@mui/icons-material/Check';
@@ -155,6 +156,48 @@ export function buildControls(
 }
 
 /**
+ * Decide which persona list the toolbar should display: a freshly read empty
+ * list is treated as a transient blip (e.g. a Yjs awareness sync hiccup
+ * during a persona reload) rather than "no personas", so the toolbar keeps
+ * showing the previous list instead of unmounting - `PersonaControls` hides
+ * itself entirely when `personas.length === 0`, so accepting every empty
+ * read verbatim flashes the whole toolbar (persona name, model picker,
+ * everything) to nothing and back on each blip. A genuinely personas-less
+ * chat never reads a non-empty list in the first place, so this doesn't mask
+ * that case - it only guards against reverting an already-populated list.
+ */
+export function reconcilePersonas(
+  previous: PersonaOption[],
+  next: PersonaOption[]
+): PersonaOption[] {
+  return next.length ? next : previous;
+}
+
+/**
+ * Decide which selected-persona state the toolbar should track: a fresh
+ * null read is treated as a transient blip (the same class of awareness
+ * sync hiccup `reconcilePersonas` guards against, e.g. during a persona
+ * reload) rather than "nothing selected", so the toolbar keeps the last
+ * known state instead of dropping it. This one is not just cosmetic:
+ * `buildControls` returns `[]` for a null persona state, so `controls`
+ * reads empty and `PersonaControls` conditionally unmounts `ControlsRow`
+ * entirely - destroying any open `ControlMenu`'s own state (its search
+ * query, its open popover) mid-interaction, not merely blanking a label.
+ *
+ * Only for the *recurring* awareness-driven read, not the initial one: the
+ * initial read (on mount, or when `selectedId` itself changes to a
+ * different persona) must apply unconditionally, including a genuine null
+ * result, or switching personas could show the previous persona's stale
+ * state under the new selection.
+ */
+export function reconcilePersonaState(
+  previous: PersonaAwareness | null,
+  next: PersonaAwareness | null
+): PersonaAwareness | null {
+  return next ?? previous;
+}
+
+/**
  * Decide how to reconcile the current selection with a freshly read persona
  * list: the new selection to apply, or `undefined` to keep the current one.
  *
@@ -280,10 +323,17 @@ function ChoiceMenuItem(props: {
   description: string | null;
   selected: boolean;
   onSelect: () => void;
+  /** Extra class name, used by ControlMenu to show keyboard focus. */
+  className?: string;
 }): JSX.Element {
   // MenuList clones the row it picks for initial focus with extra props
   // (tabIndex, autoFocus); forward them to the MenuItem, or no row is ever
   // focused and the menu's arrow-key and type-ahead handling never engages.
+  // Shared by OverflowControlsMenu (still a real Menu/MenuList, still
+  // depends on this) and ControlMenu (no longer rendered inside a
+  // MenuList - see the comment there - so this spread is a no-op for it,
+  // and it leaves `role` at MenuItem's own default rather than overriding
+  // it, to avoid disturbing OverflowControlsMenu's ARIA contract).
   const {
     primary,
     description: rawDescription,
@@ -316,6 +366,33 @@ function ChoiceMenuItem(props: {
       ) : null}
     </MenuItem>
   );
+}
+
+/** One selectable row in a control's dropdown: an option, or the leading
+ * "Default" row (`id: null`). */
+type Choice = {
+  id: string | null;
+  primary: string;
+  description: string | null;
+};
+
+/**
+ * Filter a control's choices by a search query: a case-insensitive substring
+ * match against each choice's name. An empty (or whitespace-only) query
+ * matches everything, so a freshly opened menu shows the full list. The
+ * leading "Default" choice (`id: null`) is excluded from filtering entirely -
+ * always kept, and always first - since it's a fixed, load-bearing option
+ * (what "no explicit selection" resolves to), not just another item to
+ * search among.
+ */
+export function filterChoices(choices: Choice[], query: string): Choice[] {
+  const defaultChoice = choices.filter(c => c.id === null);
+  const rest = choices.filter(c => c.id !== null);
+  const q = query.trim().toLowerCase();
+  const filteredRest = q
+    ? rest.filter(c => c.primary.toLowerCase().includes(q))
+    : rest;
+  return [...defaultChoice, ...filteredRest];
 }
 
 /**
@@ -354,9 +431,17 @@ function ControlMenuSubheader(props: {
 ControlMenuSubheader.muiSkipListHighlight = true;
 
 /**
- * A dropdown for a control, titled with the control's label. The first choice
- * row is "Default" (selection = null); the rest are the persona's advertised
- * options (selection = that option's id). Exported for tests.
+ * A searchable dropdown for a control, titled with the control's label. The
+ * first choice row is always "Default" (selection = null, never filtered
+ * out); the rest are the persona's advertised options (selection = that
+ * option's id), filtered by the search box as the user types. Exported for
+ * tests.
+ *
+ * Built on `Popover` rather than `Menu`/`MenuList`: `MenuList` owns its own
+ * keyboard handling (arrow keys, type-ahead-by-letter) which would fight a
+ * text input for keystrokes, so with a search box in the picture this
+ * component manages its own keyboard navigation (`focusedIndex`) instead of
+ * relying on `MenuList`'s.
  */
 export function ControlMenu(props: {
   control: Control;
@@ -364,10 +449,86 @@ export function ControlMenu(props: {
 }): JSX.Element {
   const { control, onSelect } = props;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [query, setQuery] = useState('');
+  // Index into the *filtered* choice list (Default row included at 0), for
+  // arrow-key navigation. Reset whenever the query changes, since the
+  // previously-focused row may no longer be in the filtered list.
+  const [focusedIndex, setFocusedIndex] = useState(0);
   // The heading names the menu for assistive tech: the subheader itself is a
   // roleless, never-focused list row, so without this wiring the popup has no
   // accessible name at all.
   const headingId = useId();
+
+  const choices: Choice[] = [
+    { id: null, primary: defaultChoiceLabel(control), description: null },
+    ...control.options.map(o => ({
+      id: o.id,
+      primary: o.name,
+      description: o.description
+    }))
+  ];
+  const filtered = filterChoices(choices, query);
+
+  const close = (): void => {
+    setAnchor(null);
+    setQuery('');
+    setFocusedIndex(0);
+  };
+
+  const select = (id: string | null): void => {
+    close();
+    onSelect(id);
+  };
+
+  const handleQueryChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ): void => {
+    setQuery(event.target.value);
+    setFocusedIndex(0);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent): void => {
+    if (!filtered.length) {
+      if (event.key === 'Escape') {
+        close();
+      }
+      return;
+    }
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        setFocusedIndex(i => (i + 1) % filtered.length);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        setFocusedIndex(i => (i - 1 + filtered.length) % filtered.length);
+        break;
+      case 'Enter': {
+        event.preventDefault();
+        const choice = filtered[focusedIndex];
+        if (choice) {
+          select(choice.id);
+        }
+        break;
+      }
+      case 'Escape':
+        event.preventDefault();
+        close();
+        break;
+    }
+  };
+
+  // Open focused on the currently selected row (falling back to Default,
+  // index 0, when the selection is stale/absent) - computed fresh on each
+  // open rather than via a lazy useState initializer, since this component
+  // instance persists across opens/closes (only `anchor` toggles), so a
+  // one-time initializer would never re-run for a later open.
+  const openMenu = (event: React.MouseEvent<HTMLElement>): void => {
+    setAnchor(event.currentTarget);
+    const idx = choices.findIndex(c => c.id === control.selection);
+    setFocusedIndex(idx >= 0 ? idx : 0);
+  };
+
   return (
     <>
       <Button
@@ -376,43 +537,63 @@ export function ControlMenu(props: {
         variant="text"
         disableRipple
         endIcon={<ArrowDropDownIcon className={`${SELECTOR_CLASS}-arrow`} />}
-        onClick={event => setAnchor(event.currentTarget)}
+        onClick={openMenu}
         title={control.label}
       >
         <span className={`${SELECTOR_CLASS}-control-value`}>
           {currentControlLabel(control)}
         </span>
       </Button>
-      <Menu
+      <Popover
         anchorEl={anchor}
         open={!!anchor}
-        onClose={() => setAnchor(null)}
-        MenuListProps={{ 'aria-labelledby': headingId }}
+        onClose={close}
         {...menuAnchorProps}
       >
         <ControlMenuSubheader id={headingId} label={control.label} />
-        <ChoiceMenuItem
-          primary={defaultChoiceLabel(control)}
-          description={null}
-          selected={control.selection === null}
-          onSelect={() => {
-            setAnchor(null);
-            onSelect(null);
-          }}
-        />
-        {control.options.map(option => (
-          <ChoiceMenuItem
-            key={option.id}
-            primary={option.name}
-            description={option.description}
-            selected={control.selection === option.id}
-            onSelect={() => {
-              setAnchor(null);
-              onSelect(option.id);
-            }}
+        {control.options.length > 0 ? (
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            variant="standard"
+            placeholder={`Search ${control.label.toLowerCase()}`}
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={handleKeyDown}
+            className={`${MENU_CLASS}-search-input`}
           />
-        ))}
-      </Menu>
+        ) : null}
+        {/* role="group", not "listbox": MenuItem's own default role
+            (menuitem) would mismatch a listbox's expected "option"
+            children, and changing MenuItem's role risks disturbing
+            OverflowControlsMenu, which shares ChoiceMenuItem and still
+            relies on the real Menu/MenuList's own ARIA menu semantics. */}
+        <div
+          role="group"
+          aria-labelledby={headingId}
+          className={`${MENU_CLASS}-search-list`}
+        >
+          {filtered.length ? (
+            filtered.map((choice, index) => (
+              <ChoiceMenuItem
+                key={choice.id ?? '__default__'}
+                primary={choice.primary}
+                description={choice.description}
+                selected={control.selection === choice.id}
+                onSelect={() => select(choice.id)}
+                className={
+                  index === focusedIndex
+                    ? `${MENU_CLASS}-kbd-focused`
+                    : undefined
+                }
+              />
+            ))
+          ) : (
+            <MenuItem disabled>No matches</MenuItem>
+          )}
+        </div>
+      </Popover>
     </>
   );
 }
@@ -961,7 +1142,7 @@ export function PersonaControls(
       return;
     }
     const list = manager.personas;
-    setPersonas(list);
+    setPersonas(prev => reconcilePersonas(prev, list));
     setSelectedId(current => {
       const next = reconcileSelection(list, current, userPicked.current);
       return next === undefined ? current : next;
@@ -993,14 +1174,22 @@ export function PersonaControls(
 
   // Track the selected persona's view in state, re-reading on every awareness
   // change (a persona updating usage, model, or commands) so the toolbar
-  // reflects the latest published state.
+  // reflects the latest published state. The first read (right below)
+  // applies unconditionally, since it runs whenever `selectedId` itself
+  // changes and must reflect the newly selected persona, even a genuinely
+  // absent one; every later read goes through reconcilePersonaState so a
+  // transient blip doesn't blank this out - see its comment for why that
+  // matters more than it looks like it should.
   useEffect(() => {
     if (!awareness || !manager || !selectedId) {
       setPersonaState(null);
       return;
     }
-    const read = () => setPersonaState(readSelectedPersona());
-    read();
+    setPersonaState(readSelectedPersona());
+    const read = () =>
+      setPersonaState(prev =>
+        reconcilePersonaState(prev, readSelectedPersona())
+      );
     awareness.on('change', read);
     return () => {
       awareness.off('change', read);
