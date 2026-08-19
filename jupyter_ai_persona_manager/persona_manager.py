@@ -24,10 +24,7 @@ from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
-from .persona_events import (
-    PersonaListPublisher,
-    register_persona_event_schemas,
-)
+from .persona_events import PersonaManagerSessionState
 
 try:
     # The chat event bus that carries client_connected/client_disconnected.
@@ -162,7 +159,7 @@ class PersonaManager(LoggingConfigurable):
     _personas: dict[str, BasePersona]
     file_id: str
 
-    _publisher: PersonaListPublisher
+    state: PersonaManagerSessionState
     """
     The manager's awareness slot, publishing the persona list under the fixed
     `PERSONA_MANAGER_AWARENESS_CLIENT_ID` via its `personas` property. Scoped to
@@ -213,20 +210,20 @@ class PersonaManager(LoggingConfigurable):
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
 
-        # Publish the list of personas over Jupyter Events. This is the source
-        # of truth the browser reads for the persona selector, and it works in
-        # both RTC and non-RTC mode (no Yjs awareness required).
+        # Publish the persona list and per-persona state over Jupyter Events.
+        # This is the source of truth the browser reads for the persona selector,
+        # and it works in both RTC and non-RTC mode (no Yjs awareness required).
+        # The event schemas are registered once at server-extension init.
+        self.state = PersonaManagerSessionState(
+            event_logger=self.event_logger, room_id=self.room_id, log=self.log
+        )
+        # Re-publish current state whenever a client connects to this chat, so a
+        # client that joins an already-live chat catches up. This rides
+        # jupyterlab_chat's room/v1 event bus (client_connected action).
         if self.event_logger is not None:
-            register_persona_event_schemas(self.event_logger)
-            # Re-publish current state whenever a client connects to this chat,
-            # so a client that joins an already-live chat catches up. This rides
-            # jupyterlab_chat's room/v1 event bus (client_connected action).
             self.event_logger.add_listener(
                 schema_id=CHAT_ROOM_EVENT_SCHEMA_ID, listener=self._on_chat_event
             )
-        self._publisher = PersonaListPublisher(
-            event_logger=self.event_logger, room_id=self.room_id, log=self.log
-        )
         self._publish_persona_list()
 
         if self.default_persona:
@@ -470,7 +467,7 @@ class PersonaManager(LoggingConfigurable):
         of personas changes (e.g. ``/refresh-personas``), and re-emitted for
         catch-up when a client connects.
         """
-        self._publisher.personas = [
+        self.state.personas = [
             PersonaOption(
                 id=persona.id,
                 name=persona.name,

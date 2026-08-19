@@ -11,7 +11,7 @@ from jupyter_ai_persona_manager.awareness_models import (
 )
 from jupyter_ai_persona_manager.persona_events import (
     PERSONA_STATE_EVENT_SCHEMA_ID,
-    PersonaState,
+    PersonaSessionState,
     register_persona_event_schemas,
 )
 
@@ -32,7 +32,7 @@ def _logger_and_capture():
 def test_setting_fields_emits_state_events():
     async def run():
         logger, captured = _logger_and_capture()
-        state = PersonaState(
+        state = PersonaSessionState(
             event_logger=logger,
             room_id="room:chat:x",
             persona_id="jupyternaut",
@@ -55,7 +55,7 @@ def test_setting_fields_emits_state_events():
 def test_publish_reemits_current_state_for_catchup():
     async def run():
         logger, captured = _logger_and_capture()
-        state = PersonaState(
+        state = PersonaSessionState(
             event_logger=logger,
             room_id="room:chat:x",
             persona_id="p1",
@@ -77,7 +77,7 @@ def test_publish_reemits_current_state_for_catchup():
 
 
 def test_no_event_logger_is_noop():
-    state = PersonaState(
+    state = PersonaSessionState(
         event_logger=None,
         room_id="room:chat:x",
         persona_id="p1",

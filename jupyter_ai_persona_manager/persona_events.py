@@ -88,8 +88,9 @@ def register_persona_event_schemas(event_logger: "EventLogger") -> None:
             pass
 
 
-class PersonaListPublisher:
-    """Publishes the chat's persona list over Jupyter Events.
+class PersonaManagerSessionState:
+    """The persona-manager's session state that is published to clients via the
+    events API: the chat's persona list.
 
     Replaces ``PersonaManagerAwareness``. Holds the last-published list in memory
     so it can be re-emitted for catch-up when a new client connects.
@@ -133,8 +134,9 @@ class PersonaListPublisher:
             self._log.exception("Failed to emit persona list event")
 
 
-class PersonaState:
-    """A persona's session state, published over Jupyter Events.
+class PersonaSessionState:
+    """A persona's session state that is published to clients via the events API:
+    its model configuration, general settings, usage, and slash commands.
 
     Replaces ``PersonaAwareness``. The typed properties keep the last value in
     memory and emit a ``persona_state`` event on every change, so consumers see

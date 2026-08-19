@@ -14,7 +14,7 @@ from jupyterlab_chat.models import Message
 
 from jupyter_ai_persona_manager.persona_events import (
     PERSONAS_EVENT_SCHEMA_ID,
-    PersonaListPublisher,
+    PersonaManagerSessionState,
     register_persona_event_schemas,
 )
 from jupyter_ai_persona_manager.persona_manager import (
@@ -34,12 +34,12 @@ def _mock_persona(id: str, name: str, avatar_url: str = "/a"):
 
 
 def _manager(personas, event_logger):
-    """A PersonaManager wired to an events-based PersonaListPublisher."""
+    """A PersonaManager wired to an events-based PersonaManagerSessionState."""
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-events")
     pm.room_id = "room:chat:file-id"
-    pm._publisher = PersonaListPublisher(
+    pm.state = PersonaManagerSessionState(
         event_logger=event_logger, room_id=pm.room_id, log=pm.log
     )
     return pm

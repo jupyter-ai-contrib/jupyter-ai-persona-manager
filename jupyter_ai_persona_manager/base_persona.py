@@ -29,7 +29,7 @@ from .doc_markers import (
     mark_required,
     mark_subclass_api,
 )
-from .persona_events import PersonaState
+from .persona_events import PersonaSessionState
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -95,7 +95,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     `LoggingConfigurable` parent class.
     """
 
-    state: PersonaState
+    state: PersonaSessionState
     """
     This persona's session state, published over Jupyter Events. It holds the
     persona's broadcast session state (model configuration, settings, usage,
@@ -135,7 +135,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # PersonaManager (this persona's ``parent``); when constructed without a
         # manager (e.g. some unit tests) the state simply does not emit.
         manager = self.parent
-        self.state = PersonaState(
+        self.state = PersonaSessionState(
             event_logger=getattr(manager, "event_logger", None),
             room_id=getattr(manager, "room_id", None),
             persona_id=self.id,

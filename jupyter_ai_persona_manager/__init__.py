@@ -20,8 +20,8 @@ from .doc_markers import (
 )
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
 from .persona_events import (
-    PersonaListPublisher,
-    PersonaState,
+    PersonaManagerSessionState,
+    PersonaSessionState,
     register_persona_event_schemas,
 )
 from .awareness_models import (
