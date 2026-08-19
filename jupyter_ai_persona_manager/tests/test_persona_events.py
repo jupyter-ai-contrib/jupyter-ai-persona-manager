@@ -40,16 +40,14 @@ def test_setting_fields_emits_state_events():
         )
         state.model = ModelConfiguration(current="gpt-9")
         state.usage = Usage(input_tokens=42)
-        state.is_writing = "msg-1"
         await asyncio.sleep(0.1)
 
-        assert len(captured) == 3
+        assert len(captured) == 2
         last = captured[-1]
         assert last["room_id"] == "room:chat:x"
         assert last["persona_id"] == "jupyternaut"
         assert last["model"]["current"] == "gpt-9"
         assert last["usage"]["input_tokens"] == 42
-        assert last["is_writing"] == "msg-1"
 
     asyncio.run(run())
 

@@ -7,8 +7,8 @@ Jupyter Events:
 - ``jupyter_ai_persona_manager/personas/v1`` -- the list of personas in a chat
   (published by the manager).
 - ``jupyter_ai_persona_manager/persona_state/v1`` -- a single persona's session
-  state: model configuration, general settings, usage, slash commands, and
-  whether it is writing (published by each persona on change).
+  state: model configuration, general settings, usage, and slash commands
+  (published by each persona on change).
 
 Events are fire-and-forget, so a client that connects after an event was emitted
 would miss it. Catch-up is handled by re-emitting the current state when a client
@@ -64,7 +64,7 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "version": "1",
     "title": "Persona session state",
     "personal-data": True,
-    "description": "A single persona's model, settings, usage, slash commands, and writing status.",
+    "description": "A single persona's model, settings, usage, and slash commands.",
     "type": "object",
     "required": ["room_id", "persona_id"],
     "properties": {
@@ -74,10 +74,6 @@ PERSONA_STATE_EVENT_SCHEMA = {
         "settings": {"type": "array", "items": {"type": "object"}},
         "usage": {"type": "object"},
         "slash_commands": {"type": "array", "items": {"type": "object"}},
-        "is_writing": {
-            "type": ["boolean", "string"],
-            "description": "False when idle, or the id of the message being written.",
-        },
     },
     "additionalProperties": False,
 }
@@ -161,7 +157,6 @@ class PersonaState:
         self._settings: list[SettingConfiguration] = []
         self._usage = Usage()
         self._slash_commands: list[CommandOption] = []
-        self._is_writing: bool | str = False
 
     @property
     def id(self) -> str:
@@ -203,15 +198,6 @@ class PersonaState:
         self._slash_commands = commands
         self.publish()
 
-    @property
-    def is_writing(self) -> bool | str:
-        return self._is_writing
-
-    @is_writing.setter
-    def is_writing(self, value: bool | str) -> None:
-        self._is_writing = value
-        self.publish()
-
     def to_data(self) -> dict[str, Any]:
         return {
             "room_id": self._room_id,
@@ -220,7 +206,6 @@ class PersonaState:
             "settings": [s.model_dump() for s in self._settings],
             "usage": self._usage.model_dump(),
             "slash_commands": [c.model_dump() for c in self._slash_commands],
-            "is_writing": self._is_writing,
         }
 
     def publish(self) -> None:

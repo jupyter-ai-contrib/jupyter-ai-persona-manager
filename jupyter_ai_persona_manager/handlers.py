@@ -116,14 +116,14 @@ class MessageHandler(JupyterHandler):
         )
 
         await target_persona.process_message(msg)
-        # Streaming personas may still be writing after process_message returns.
-        # Wait until the persona reports it has finished (state.is_writing falsy),
-        # up to the response timeout.
+        # Streaming personas may still be working after process_message returns.
+        # Wait until the persona is no longer processing, up to the response
+        # timeout.
         loop = asyncio.get_event_loop()
         deadline = loop.time() + DEFAULT_RESPONSE_TIMEOUT
-        while target_persona.state.is_writing:
+        while target_persona.processing:
             if loop.time() > deadline:
-                self.log.warning("Timeout waiting for persona to finish writing")
+                self.log.warning("Timeout waiting for persona to finish")
                 break
             await asyncio.sleep(0.05)
 

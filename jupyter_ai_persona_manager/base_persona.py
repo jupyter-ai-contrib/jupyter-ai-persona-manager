@@ -533,12 +533,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         `value` is `True` (writing started), `False` (writing stopped), or the
         ID of the message being written into.
 
-        The chat's typing indicator is driven via ``broadcast_writing_status()``
-        (which works in both RTC and non-RTC mode); the same value is recorded on
-        the persona's session state and emitted as a ``persona_state`` event.
+        This drives the chat's typing indicator via ``broadcast_writing_status()``
+        (Jupyter Chat's writers mechanism), which works in both RTC and non-RTC
+        mode. Writing status is intentionally not part of the persona-state
+        events; the chat already owns it.
         """
-        self.state.is_writing = value
-
         if value is False:
             self.chat.broadcast_writing_status(self.as_user(), None)
         elif value is True:

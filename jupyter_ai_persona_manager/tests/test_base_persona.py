@@ -158,8 +158,7 @@ class TestStreamMessageReRaise:
             await persona.stream_message(_failing_stream())
 
         # The `finally` clears the writing status via set_writing_status(False),
-        # which records it on the persona's session state and broadcasts a stop.
-        assert persona.state.is_writing is False
+        # which drives the chat's writers indicator (broadcast_writing_status).
         persona.chat.broadcast_writing_status.assert_called_with(
             persona.as_user(), None
         )
