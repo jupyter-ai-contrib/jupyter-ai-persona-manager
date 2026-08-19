@@ -224,6 +224,7 @@ class PersonaManagerExtension(ExtensionApp):
                 root_dir=root_dir,
                 event_loop=self.event_loop,
                 base_url=base_url,
+                event_logger=self.serverapp.web_app.settings.get("event_logger"),
             )
         except Exception as e:
             self.log.error(

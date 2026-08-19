@@ -43,7 +43,7 @@ def _make_persona(mock_ychat):
     persona = _ConcretePersona.__new__(_ConcretePersona)
     persona.chat = mock_ychat
     persona.log = MagicMock()
-    persona.awareness = MagicMock()
+    persona.state = MagicMock()
     persona._processing_count = 0
     return persona
 
@@ -157,9 +157,12 @@ class TestStreamMessageReRaise:
         with pytest.raises(RuntimeError):
             await persona.stream_message(_failing_stream())
 
-        # The `finally` clears the writing status via set_writing_status(),
-        # which calls set_local_state_field when awareness is present.
-        persona.awareness.set_local_state_field.assert_called_with("isWriting", False)
+        # The `finally` clears the writing status via set_writing_status(False),
+        # which records it on the persona's session state and broadcasts a stop.
+        assert persona.state.is_writing is False
+        persona.chat.broadcast_writing_status.assert_called_with(
+            persona.as_user(), None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +197,7 @@ class TestCancelResponse:
         persona = _CancellablePersona.__new__(_CancellablePersona)
         persona.chat = mock_ychat
         persona.log = MagicMock()
-        persona.awareness = MagicMock()
+        persona.state = MagicMock()
 
         await persona.cancel_response()
 

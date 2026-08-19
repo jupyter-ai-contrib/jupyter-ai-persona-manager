@@ -162,8 +162,6 @@ class TestRefreshPersonas:
         The entry point is unavailable at startup (requirements unmet) and only
         becomes loadable on the second scan during refresh.
         """
-        from pycrdt import Awareness, Doc
-
         load_results = [
             PersonaRequirementsUnmet("missing CLI"),
             RefreshedEntryPointPersona,
@@ -194,13 +192,6 @@ class TestRefreshPersonas:
         # Keep local persona discovery out of this test; focus on entry points.
         mock_fileid_manager.get_path.return_value = "chat.ipynb"
 
-        # PersonaManager / BasePersona now publish awareness state. Use a real
-        # pycrdt Awareness so construction and refresh don't trip over Mocks.
-        ydoc = Doc()
-        mock_ychat._ydoc = ydoc
-        mock_ychat.awareness = Awareness(ydoc=ydoc)
-        mock_ychat._yusers = {}
-
         manager = PersonaManager(
             room_id="room:chat:file-id",
             chat=mock_ychat,
@@ -212,19 +203,9 @@ class TestRefreshPersonas:
         # parent stays None; refresh_personas' avatar-cache rebuild is best-effort
         # and swallows the resulting AttributeError.
 
-        # Cancel awareness heartbeats started under the running test event loop.
-        if getattr(manager._awareness, "_heartbeat_task", None):
-            manager._awareness._heartbeat_task.cancel()
-
         assert manager.personas == {}
 
         await manager.refresh_personas()
-
-        # Newly created persona awareness may also start a heartbeat; cancel it.
-        for persona in manager.personas.values():
-            task = getattr(getattr(persona, "awareness", None), "_heartbeat_task", None)
-            if task is not None:
-                task.cancel()
 
         assert len(manager.personas) == 1
         refreshed_persona = next(iter(manager.personas.values()))

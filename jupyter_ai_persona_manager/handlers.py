@@ -10,7 +10,6 @@ from jupyter_server.base.handlers import JupyterHandler
 from jupyter_ydoc.ybasedoc import YBaseDoc
 from jupyterlab_chat.models import Message, User
 from jupyterlab_chat.ychat import YChat
-from pycrdt import Awareness
 import tornado
 
 
@@ -81,14 +80,13 @@ class MessageHandler(JupyterHandler):
         # Obtain or create a PersonaManager for this temporary room
         # Reuse existing if present, otherwise instantiate a minimal manager
         ychat = YChat()
-        ychat.awareness = Awareness(ydoc=ychat._ydoc)
         # Retrieve required managers from server settings
         # Instantiate PersonaManager
         from .persona_manager import PersonaManager
 
         persona_manager = PersonaManager(
             room_id=temp_room_id,
-            ychat=ychat,
+            chat=ychat,
             fileid_manager=fileid_manager,
             root_dir=root_dir,
             event_loop=asyncio.get_event_loop(),
@@ -117,21 +115,17 @@ class MessageHandler(JupyterHandler):
             metadata=metadata
         )
 
-        done_event = asyncio.Event()
         await target_persona.process_message(msg)
-        def on_awareness_change(event, *args, **kwargs):
-            local_state = target_persona.awareness.get_local_state()
-            if not local_state.get('isWriting', False):
-                done_event.set()
-
-        ychat.awareness.observe(on_awareness_change)
-
-        try:
-            # If currently writing, wait for the event that indicates it's done
-            if target_persona.awareness.get_local_state().get('isWriting', False):
-                await asyncio.wait_for(done_event.wait(), timeout=DEFAULT_RESPONSE_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.log.warning("Timeout waiting for persona to finish writing")
+        # Streaming personas may still be writing after process_message returns.
+        # Wait until the persona reports it has finished (state.is_writing falsy),
+        # up to the response timeout.
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + DEFAULT_RESPONSE_TIMEOUT
+        while target_persona.state.is_writing:
+            if loop.time() > deadline:
+                self.log.warning("Timeout waiting for persona to finish writing")
+                break
+            await asyncio.sleep(0.05)
 
         # Return the captured response
         response = "".join(

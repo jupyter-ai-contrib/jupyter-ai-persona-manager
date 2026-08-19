@@ -29,7 +29,7 @@ from .doc_markers import (
     mark_required,
     mark_subclass_api,
 )
-from .persona_awareness import PersonaAwareness
+from .persona_events import PersonaState
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -95,15 +95,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     `LoggingConfigurable` parent class.
     """
 
-    awareness: PersonaAwareness
+    state: PersonaState
     """
-    This persona's awareness slot: a `PersonaAwareness` scoped to this persona's
-    own Yjs client ID. It holds the persona's broadcast session state (model
-    configuration, settings, usage, slash commands, writing status) as typed
-    properties, so `self.awareness.model = ...` publishes over the awareness
-    channel directly. Use this instead of accessing the chat's awareness directly, whose default
-    API cannot set state for more than one client ID. See `PersonaAwareness` and
-    its base `ScopedAwareness` for details.
+    This persona's session state, published over Jupyter Events. It holds the
+    persona's broadcast session state (model configuration, settings, usage,
+    slash commands, writing status) as typed properties, so ``self.state.model =
+    ...`` emits a ``persona_state`` event. Works in both RTC and non-RTC mode
+    (unlike the previous awareness slot, which required a Yjs document).
 
     Automatically set by `BasePersona`.
     """
@@ -132,16 +130,17 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.chat = chat
         self._processing_count = 0
 
-        # TODO: RTC decoupling gap PersonaAwareness uses ychat.awareness and
-        # ychat._ydoc directly. Needs an RTC-free persona-state publisher.
-        
-        if hasattr(self.chat, 'awareness'):
-            self.awareness = PersonaAwareness(
-                ychat=self.chat, log=self.log, user=self.as_user(), id=self.id
-            )
-        else:
-            # Non-RTC: no awareness channel. Use broadcast_writing_status()
-            self.awareness = None
+        # Publish this persona's session state over Jupyter Events. Works in
+        # both RTC and non-RTC mode. The event logger and room id come from the
+        # PersonaManager (this persona's ``parent``); when constructed without a
+        # manager (e.g. some unit tests) the state simply does not emit.
+        manager = self.parent
+        self.state = PersonaState(
+            event_logger=getattr(manager, "event_logger", None),
+            room_id=getattr(manager, "room_id", None),
+            persona_id=self.id,
+            log=self.log,
+        )
 
         # Register this persona as a user in the chat
         self.chat.set_user(self.as_user())
@@ -472,36 +471,36 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # reading session information
     ################################################
     # These `get_*` readers and the `report_*` setters below are thin views over
-    # `self.awareness`, whose typed properties are backed directly by the Yjs
+    # `self.state`, whose typed properties are backed directly by the Yjs
     # awareness slot — reading returns the currently-published value and setting
     # rebroadcasts. There is no separate in-memory copy to keep in sync.
     @mark_subclass_api
     def get_model_configuration(self) -> ModelConfiguration:
         """Return the current model, model settings, and all options for both."""
-        if self.awareness is None:
+        if self.state is None:
             return ModelConfiguration()
-        return self.awareness.model
+        return self.state.model
 
     @mark_subclass_api
     def get_setting_configurations(self) -> list[SettingConfiguration]:
         """Return the current value and all options for each general setting."""
-        if self.awareness is None:
+        if self.state is None:
             return []
-        return self.awareness.settings
+        return self.state.settings
 
     @mark_subclass_api
     def get_model(self) -> str | None:
         """Return the current model ID, or None if using the default."""
-        if self.awareness is None:
+        if self.state is None:
             return None
-        return self.awareness.model.current
+        return self.state.model.current
 
     @mark_subclass_api
     def get_model_settings(self) -> dict[str, str | None]:
         """Return the current model settings, keyed by setting ID."""
-        if self.awareness is None:
+        if self.state is None:
             return {}
-        return {s.id: s.current for s in self.awareness.model.settings}
+        return {s.id: s.current for s in self.state.model.settings}
 
     @mark_subclass_api
     def get_settings(self) -> dict[str, str | None]:
@@ -509,23 +508,23 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Return the current general settings, keyed by setting ID. This is
         separate from the model settings returned by `get_model_settings()`.
         """
-        if self.awareness is None:
+        if self.state is None:
             return {}
-        return {s.id: s.current for s in self.awareness.settings}
+        return {s.id: s.current for s in self.state.settings}
 
     @mark_subclass_api
     def get_usage(self) -> Usage:
         """Return the usage currently reported by this persona."""
-        if self.awareness is None:
+        if self.state is None:
             return Usage()
-        return self.awareness.usage
+        return self.state.usage
 
     @mark_subclass_api
     def get_slash_commands(self) -> list[CommandOption]:
         """Return the slash commands currently advertised by this persona."""
-        if self.awareness is None:
+        if self.state is None:
             return []
-        return self.awareness.slash_commands
+        return self.state.slash_commands
 
     @mark_subclass_api
     def set_writing_status(self, value: "bool | str") -> None:
@@ -534,14 +533,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         `value` is `True` (writing started), `False` (writing stopped), or the
         ID of the message being written into.
 
-        In RTC mode this writes to the Yjs awareness slot. In non-RTC mode it
-        uses `broadcast_writing_status()`.
+        The chat's typing indicator is driven via ``broadcast_writing_status()``
+        (which works in both RTC and non-RTC mode); the same value is recorded on
+        the persona's session state and emitted as a ``persona_state`` event.
         """
-        if self.awareness is not None:
-            self.awareness.set_local_state_field("isWriting", value)
-            return
+        self.state.is_writing = value
 
-        # Non-RTC: broadcast the equivalent status over the chat WebSocket.
         if value is False:
             self.chat.broadcast_writing_status(self.as_user(), None)
         elif value is True:
@@ -558,7 +555,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     # A persona calls these `report_*` methods to publish its own session state
     # over awareness. They are the counterpart to the `get_*` readers, and are
     # meant to be called by the persona (and its collaborators), not by
-    # consumers of the persona. Assigning an `self.awareness` property publishes
+    # consumers of the persona. Assigning an `self.state` property publishes
     # it, so these just forward — except `report_usage`, which owns the merge.
     @mark_subclass_api
     def report_model_configuration(self, model: ModelConfiguration) -> None:
@@ -567,18 +564,18 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         and model settings). A persona calls this once it knows its models (e.g.
         an ACP persona on session create/load).
         """
-        if self.awareness is None:
+        if self.state is None:
             return
-        self.awareness.model = model
+        self.state.model = model
 
     @mark_subclass_api
     def report_settings_configuration(
         self, settings: list[SettingConfiguration]
     ) -> None:
         """Publish the persona's general (non-model) settings configuration."""
-        if self.awareness is None:
+        if self.state is None:
             return
-        self.awareness.settings = settings
+        self.state.settings = settings
 
     @mark_subclass_api
     def report_usage(self, usage: Usage, *, append: bool = False) -> None:
@@ -596,9 +593,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         sources that emit per-turn deltas. Snapshot fields (context_*) should
         not be sent this way — you don't sum window sizes.
         """
-        if self.awareness is None:
+        if self.state is None:
             return
-        current = self.awareness.usage
+        current = self.state.usage
         # Only the fields explicitly set on `usage` are merged; unset fields
         # (still None because they were never provided) leave the stored value
         # untouched.
@@ -609,14 +606,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 setattr(current, field, (existing or 0) + value)
             else:
                 setattr(current, field, value)
-        self.awareness.usage = current
+        self.state.usage = current
 
     @mark_subclass_api
     def report_slash_commands(self, commands: list[CommandOption]) -> None:
         """Publish the advertised slash commands."""
-        if self.awareness is None:
+        if self.state is None:
             return
-        self.awareness.slash_commands = commands
+        self.state.slash_commands = commands
 
     ################################################
     # applying model & settings (overridden by configurable personas)
@@ -676,13 +673,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         # Record the new current values and republish (assigning the property
         # rebroadcasts). Read a fresh copy, mutate, write it back.
-        model = self.awareness.model
+        model = self.state.model
         if model_changed:
             model.current = spec.id
         for setting in model.settings:
             if setting.id in changed:
                 setting.current = changed[setting.id]
-        self.awareness.model = model
+        self.state.model = model
 
     @mark_consumer_api
     async def apply_settings_spec(self, spec: dict[str, str | None]) -> None:
@@ -705,11 +702,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             return
 
         await self.update_settings(changed)
-        settings = self.awareness.settings
+        settings = self.state.settings
         for setting in settings:
             if setting.id in changed:
                 setting.current = changed[setting.id]
-        self.awareness.settings = settings
+        self.state.settings = settings
 
     @mark_consumer_api
     async def apply_specs_in_message(self, message: Message) -> None:
@@ -824,8 +821,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         before running custom shutdown logic.
         """
         # Stop awareness heartbeat task & remove self from chat awareness
-        if self.awareness is not None:
-            self.awareness.shutdown()
+        if self.state is not None:
+            self.state.shutdown()
 
 
 class GenerationInterrupted(asyncio.CancelledError):

@@ -19,10 +19,10 @@ from .doc_markers import (
     mark_subclass_api,
 )
 from .persona_manager import PersonaManager, PersonaRequirementsUnmet
-from .persona_awareness import (
-    PersonaAwareness,
-    PersonaManagerAwareness,
-    ScopedAwareness,
+from .persona_events import (
+    PersonaListPublisher,
+    PersonaState,
+    register_persona_event_schemas,
 )
 from .awareness_models import (
     CommandOption,
