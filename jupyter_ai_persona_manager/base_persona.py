@@ -350,10 +350,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
-            if self.awareness:
-                self.awareness.is_writing = True
-            else:
-                self.chat.broadcast_writing_status(self.as_user(), {"typingIndicator": "Writing..."})
+            self.set_writing_status(True)
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -368,10 +365,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     stream_id = self.chat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
-                    if self.awareness:
-                        self.awareness.is_writing = stream_id
-                    else:
-                        self.chat.broadcast_writing_status(self.as_user(), {"messageID": stream_id})
+                    self.set_writing_status(stream_id)
 
                 assert stream_id
                 self.chat.update_message(
@@ -401,10 +395,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            if self.awareness:
-                self.awareness.is_writing = False
-            else:
-                self.chat.broadcast_writing_status(self.as_user(), None)
+            self.set_writing_status(False)
 
     @mark_subclass_api
     def send_message(self, body: str) -> None:
@@ -535,7 +526,31 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         if self.awareness is None:
             return []
         return self.awareness.slash_commands
-        return self.awareness.slash_commands
+
+    @mark_subclass_api
+    def set_writing_status(self, value: "bool | str") -> None:
+        """Set this persona's writing status in a transport-neutral way.
+
+        `value` is `True` (writing started), `False` (writing stopped), or the
+        ID of the message being written into.
+
+        In RTC mode this writes to the Yjs awareness slot. In non-RTC mode it
+        uses `broadcast_writing_status()`.
+        """
+        if self.awareness is not None:
+            self.awareness.set_local_state_field("isWriting", value)
+            return
+
+        # Non-RTC: broadcast the equivalent status over the chat WebSocket.
+        if value is False:
+            self.chat.broadcast_writing_status(self.as_user(), None)
+        elif value is True:
+            self.chat.broadcast_writing_status(
+                self.as_user(), {"typingIndicator": "Writing..."}
+            )
+        else:
+            # value is the message ID being written into
+            self.chat.broadcast_writing_status(self.as_user(), {"messageID": value})
 
     ################################################
     # reporting session information (called by the persona itself)
