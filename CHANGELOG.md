@@ -2,6 +2,29 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.0a0
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.3...daab096466773f2f38519bc3ab59559bb9a0c093))
+
+### Enhancements made
+
+- Decouple persona manager from YChat and RTC internals [#121](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/121) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+
+### Other merged PRs
+
+- Group Dependabot npm updates into a single PR [#120](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/120) ([@srdas](https://github.com/srdas), [@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-18&to=2026-08-19&type=c))
+
+@bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-18..2026-08-19&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-18..2026-08-19&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-08-18..2026-08-19&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.1.3
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.2...f667cf50508b3af486cfc5b99f6efd2f943101fa))
@@ -23,8 +46,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-07-23&to=2026-08-18&type=c))
 
 @claude ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Aclaude+updated%3A2026-07-23..2026-08-18&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-07-23..2026-08-18&type=Issues)) | @rickmcgeer ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Arickmcgeer+updated%3A2026-07-23..2026-08-18&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-07-23..2026-08-18&type=Issues)) | @wattmto ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Awattmto+updated%3A2026-07-23..2026-08-18&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.1.2
 
