@@ -41,7 +41,7 @@ def _make_persona(mock_ychat):
     stream_message — neither accesses self.parent.
     """
     persona = _ConcretePersona.__new__(_ConcretePersona)
-    persona.ychat = mock_ychat
+    persona.chat = mock_ychat
     persona.log = MagicMock()
     persona.awareness = MagicMock()
     persona._processing_count = 0
@@ -191,7 +191,7 @@ class TestCancelResponse:
                 cancelled = True
 
         persona = _CancellablePersona.__new__(_CancellablePersona)
-        persona.ychat = mock_ychat
+        persona.chat = mock_ychat
         persona.log = MagicMock()
         persona.awareness = MagicMock()
 

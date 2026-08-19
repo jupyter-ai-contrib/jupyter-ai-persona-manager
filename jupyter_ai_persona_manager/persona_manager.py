@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from jupyter_server_fileid.manager import (  # type: ignore[import-untyped]
         BaseFileIdManager,
     )
-    from jupyterlab_chat.ychat import YChat
+    from jupyterlab_chat.models import BaseChatModel
 
 # EPG := entry point group
 EPG_NAME = "jupyter_ai.personas"
@@ -136,7 +136,7 @@ class PersonaManager(LoggingConfigurable):
     _ep_persona_classes: ClassVar[list[dict] | None] = None
 
     # instance attrs
-    ychat: "YChat"
+    chat: "BaseChatModel"
     fileid_manager: "BaseFileIdManager"
     root_dir: str
     event_loop: "AbstractEventLoop"
@@ -166,7 +166,7 @@ class PersonaManager(LoggingConfigurable):
         self,
         *args,
         room_id: str,
-        ychat: "YChat",
+        chat: "BaseChatModel",
         fileid_manager: "BaseFileIdManager",
         root_dir: str,
         event_loop: "AbstractEventLoop",
@@ -178,14 +178,25 @@ class PersonaManager(LoggingConfigurable):
 
         # Bind instance attributes
         self.room_id = room_id
-        self.ychat = ychat
+        self.chat = chat
         self.fileid_manager = fileid_manager
         self.root_dir = root_dir
         self.event_loop = event_loop
         self.base_url = base_url
 
-        # Store file ID
-        self.file_id = room_id.split(":")[2]
+        # Store file ID. In RTC mode room_id is "text:chat:{file_id}";
+        # in non-RTC mode it is the file path, which needs to be resolved
+        # through the FileIdManager.
+        parts = room_id.split(":")
+        if len(parts) >= 3:
+            self.file_id = parts[2]
+        else:
+            # Non-RTC: room_id is a file path. Look up or index its file ID.
+            self.file_id = self.fileid_manager.get_id(
+                os.path.join(self.root_dir, room_id)
+            ) or self.fileid_manager.index(
+                os.path.join(self.root_dir, room_id)
+            )
 
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
@@ -195,7 +206,12 @@ class PersonaManager(LoggingConfigurable):
         # Register the manager's own awareness slot (under a fixed client ID) and
         # publish the list of personas. This is the source of truth the browser
         # reads for the persona selector, replacing REST polling.
-        self._awareness = PersonaManagerAwareness(ychat=self.ychat, log=self.log)
+        # TODO: RTC decoupling gap  PersonaManagerAwareness uses ychat.awareness
+        # and ychat._ydoc directly. Needs an RTC-free persona-state publisher.
+        if hasattr(self.chat, 'awareness'):
+            self._awareness = PersonaManagerAwareness(ychat=self.chat, log=self.log)
+        else:
+            self._awareness = None
         self._publish_persona_list()
 
         if self.default_persona:
@@ -329,7 +345,7 @@ class PersonaManager(LoggingConfigurable):
             return {}
 
         self.log.info(
-            f"PENDING: Initializing AI personas for chat room '{self.ychat.get_id()}'..."
+            f"PENDING: Initializing AI personas for chat room '{self.chat.get_id()}'..."
         )
         start_time_ns = time_ns()
 
@@ -346,7 +362,7 @@ class PersonaManager(LoggingConfigurable):
             try:
                 persona = Persona(
                     parent=self,
-                    ychat=self.ychat,
+                    chat=self.chat,
                 )
             except Exception:
                 tb_str = traceback.format_exc()
@@ -383,7 +399,7 @@ class PersonaManager(LoggingConfigurable):
 
         elapsed_time_ms = (time_ns() - start_time_ns) // 1_000_000
         self.log.info(
-            f"SUCCESS: Initialized {len(personas)} AI personas for chat room '{self.ychat.get_id()}'. Time elapsed: {elapsed_time_ms}ms."
+            f"SUCCESS: Initialized {len(personas)} AI personas for chat room '{self.chat.get_id()}'. Time elapsed: {elapsed_time_ms}ms."
         )
 
         return personas
@@ -393,28 +409,36 @@ class PersonaManager(LoggingConfigurable):
         Sends a system message to the chat.
         """
         # Set a 'System' user use it to send the message
-        with self.ychat._ydoc.transaction():
-            self.ychat.set_user(
+        # TODO: RTC decoupling gap uses _ydoc.transaction() and _yusers.pop().
+        
+        
+        # In RTC mode, group the operations
+        # In non-RTC mode, just call the methods directly.
+        if hasattr(self.chat, '_ydoc'):
+            with self.chat._ydoc.transaction():
+                self.chat.set_user(
+                    user=User(
+                        username=SYSTEM_USERNAME, name="System", display_name="System"
+                    )
+                )
+                self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
+
+            # Hide 'System' user from `@`-mention menu by removing the user.
+            async def _remove_system_user():
+                await asyncio.sleep(1)
+                try:
+                    self.chat._yusers.pop(SYSTEM_USERNAME)
+                except KeyError:
+                    pass
+
+            asyncio.create_task(_remove_system_user())
+        else:
+            self.chat.set_user(
                 user=User(
                     username=SYSTEM_USERNAME, name="System", display_name="System"
                 )
             )
-            self.ychat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
-
-        # Hide 'System' user from `@`-mention menu by removing the user. This
-        # has to wait a second to allow the frontend to render the system user
-        # before removing it.
-        # TODO: allow users to be hidden from `@`-mentions, possibly based on
-        # username. Currently this will show 'User undefined' after reloading a
-        # chat with a system message.
-        async def _remove_system_user():
-            await asyncio.sleep(1)
-            try:
-                self.ychat._yusers.pop(SYSTEM_USERNAME)
-            except KeyError:
-                pass
-
-        asyncio.create_task(_remove_system_user())
+            self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
 
     @property
     def personas(self) -> dict[str, BasePersona]:
@@ -432,12 +456,14 @@ class PersonaManager(LoggingConfigurable):
         awareness slot so the browser can look up its state in O(1). Called on
         init and whenever the set of personas changes (e.g. `/refresh-personas`).
         """
+        if self._awareness is None:
+            return
         self._awareness.personas = [
             PersonaOption(
                 id=persona.id,
                 name=persona.name,
                 avatar_url=persona.as_user().avatar_url,
-                yjs_client_id=persona.awareness.client_id,
+                yjs_client_id=getattr(persona, 'awareness', None) and persona.awareness.client_id or 0,
             )
             for persona in self._personas.values()
         ]
@@ -619,14 +645,14 @@ class PersonaManager(LoggingConfigurable):
         called when the server is shutting down or when a chat session is
         closed.
         """
-        # First, free all transaction locks on the YDoc by awaiting the YChat
-        # background tasks first. These tasks run concurrently, so awaiting each
-        # in serial has no performance drawback.
+        # TODO: RTC decoupling gap directly accesses ychat._background_tasks.
+        
         # Without this, `/refresh-personas` causes a runtime error.
-        while self.ychat._background_tasks:
-            task = next(iter(self.ychat._background_tasks))
-            await task
-            self.ychat._background_tasks.discard(task)
+        if hasattr(self.chat, '_background_tasks'):
+            while self.chat._background_tasks:
+                task = next(iter(self.chat._background_tasks))
+                await task
+                self.chat._background_tasks.discard(task)
 
         # Then, shut down each persona
         for persona in self.personas.values():
