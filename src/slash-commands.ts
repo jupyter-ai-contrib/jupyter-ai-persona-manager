@@ -1,6 +1,6 @@
 import { ChatCommand, IChatCommandProvider, IInputModel } from '@jupyter/chat';
 
-import { PersonaAwareness, PersonaManagerAwareness } from './awareness';
+import { PersonaSessionRegistry } from './persona-events';
 
 export const SLASH_COMMAND_PROVIDER_ID =
   '@jupyter-ai/persona-manager:slash-command-provider';
@@ -23,12 +23,15 @@ export const SLASH_COMMAND_PROVIDER_ID =
 export class SlashCommandProvider implements IChatCommandProvider {
   public id: string = SLASH_COMMAND_PROVIDER_ID;
 
+  constructor(private _registry: PersonaSessionRegistry) {}
+
   /**
    * Returns slash command completions for the current input.
    *
-   * Slash commands are read from the selected persona's awareness slot — the
-   * same source the toolbar reads — with no REST call. The target persona is the
-   * one the picker stamped onto the input metadata as `to_persona`.
+   * Slash commands are read from the selected persona's session state (fed by
+   * Jupyter Events) — the same source the toolbar reads — with no REST call. The
+   * target persona is the one the picker stamped onto the input metadata as
+   * `to_persona`.
    */
   async listCommandCompletions(
     inputModel: IInputModel
@@ -40,8 +43,8 @@ export class SlashCommandProvider implements IChatCommandProvider {
       return [];
     }
 
-    const awareness = inputModel.chatContext?.awareness ?? null;
-    if (!awareness) {
+    const path = inputModel.chatContext?.name ?? null;
+    if (!path) {
       return [];
     }
 
@@ -50,20 +53,10 @@ export class SlashCommandProvider implements IChatCommandProvider {
       return [];
     }
 
-    // `from()` resolves immediately when the manager is already registered
-    // (the normal case). If it never registers, this rejects after a bounded
-    // wait; a late/failed completion query is harmless.
-    let manager: PersonaManagerAwareness;
-    try {
-      manager = await PersonaManagerAwareness.from(awareness);
-    } catch {
+    const persona = this._registry.get(path).getPersona(personaId);
+    if (!persona) {
       return [];
     }
-    const option = manager.personas.find(p => p.id === personaId);
-    if (!option) {
-      return [];
-    }
-    const persona = PersonaAwareness.from(awareness, option);
 
     const commandSuggestions: ChatCommand[] = [];
     for (const cmd of persona.slash_commands) {

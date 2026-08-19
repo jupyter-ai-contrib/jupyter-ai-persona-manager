@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState
 } from 'react';
@@ -23,12 +24,11 @@ import { PageConfig } from '@jupyterlab/coreutils';
 import { InputToolbarRegistry } from '@jupyter/chat';
 import {
   EMPTY_USAGE,
-  PersonaAwareness,
-  PersonaManagerAwareness,
   PersonaOption,
   SettingConfiguration,
   Usage
 } from './awareness';
+import { PersonaSessionRegistry, PersonaSessionState } from './persona-events';
 import {
   PersonaSettings,
   buildMessageMetadata,
@@ -113,7 +113,7 @@ function settingToControl(
  * The user's current selection seeds each control's `selection`.
  */
 export function buildControls(
-  persona: PersonaAwareness | null,
+  persona: PersonaSessionState | null,
   settings: PersonaSettings
 ): Control[] {
   if (!persona) {
@@ -191,9 +191,9 @@ export function reconcilePersonas(
  * state under the new selection.
  */
 export function reconcilePersonaState(
-  previous: PersonaAwareness | null,
-  next: PersonaAwareness | null
-): PersonaAwareness | null {
+  previous: PersonaSessionState | null,
+  next: PersonaSessionState | null
+): PersonaSessionState | null {
   return next ?? previous;
 }
 
@@ -1067,27 +1067,32 @@ export function PersonaControls(
      * Optional so the component still works without a registry.
      */
     controlRegistry?: IPersonaControlRegistry;
+    /**
+     * The per-chat persona session-state registry (fed by Jupyter Events).
+     * Optional so the component still works without it (renders nothing).
+     */
+    sessionRegistry?: PersonaSessionRegistry;
   }
 ): JSX.Element | null {
-  const { chatModel, model, controlRegistry } = props;
-  const awareness = chatModel?.awareness ?? null;
+  const { chatModel, model, controlRegistry, sessionRegistry } = props;
+  // The chat's server-root-relative path scopes persona events to this chat.
+  const path = chatModel?.name ?? null;
 
-  // The manager's awareness view, resolved once its slot appears. Null until
-  // then. `PersonaManagerAwareness.from()` polls internally, so nothing here
-  // polls; once resolved, awareness `change` events drive all updates.
-  const [manager, setManager] = useState<PersonaManagerAwareness | null>(null);
-  // Whether resolving the manager's slot failed (timed out, extension absent).
-  // Hides the loading placeholder along with the toolbar.
-  const [managerFailed, setManagerFailed] = useState(false);
-  // Whether the first persona-list read has completed after the manager
-  // resolved. Before that, an empty list means "still loading", not "this chat
-  // has no personas".
-  const [listRead, setListRead] = useState(false);
+  // The per-chat persona session state, built from persona events and shared
+  // via the registry. Created on demand; discarded when the chat closes.
+  const managerState = useMemo(
+    () => (sessionRegistry && path ? sessionRegistry.get(path) : null),
+    [sessionRegistry, path]
+  );
+
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
+  // Whether a persona list has been received for this chat yet. Before that, an
+  // empty list means "still loading", not "this chat has no personas".
+  const [ready, setReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     DEFAULT_PERSONA_ID
   );
-  const [personaState, setPersonaState] = useState<PersonaAwareness | null>(
+  const [personaState, setPersonaState] = useState<PersonaSessionState | null>(
     null
   );
   // Per-persona settings the user has chosen, indexed by persona ID. Remembers
@@ -1108,93 +1113,71 @@ export function PersonaControls(
     ? (settingsCache[selectedId] ?? emptyPersonaSettings())
     : emptyPersonaSettings();
 
-  // Resolve the manager's awareness view once the manager registers its slot.
-  useEffect(() => {
-    if (!awareness) {
-      return;
-    }
-    let cancelled = false;
-    PersonaManagerAwareness.from(awareness)
-      .then(pm => {
-        if (!cancelled) {
-          setManager(pm);
-        }
-      })
-      .catch(reason => {
-        // Manager never registered (e.g. extension disabled); the toolbar
-        // stays hidden. Surface why, or the empty toolbar is undiagnosable.
-        console.warn('Persona toolbar hidden:', reason);
-        if (!cancelled) {
-          setManagerFailed(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [awareness]);
-
-  // Re-read the persona list from the manager view and reconcile the selection
-  // (see reconcileSelection for the decision rules). This is the reactive
-  // plumbing that replaces polling: a persona publishing or updating its state
-  // fires an awareness `change` event.
+  // Re-read the persona list from the session state and reconcile the
+  // selection (see reconcileSelection for the decision rules).
   const readManager = useCallback(() => {
-    if (!manager) {
+    if (!managerState) {
       return;
     }
-    const list = manager.personas;
+    const list = managerState.personas;
     setPersonas(prev => reconcilePersonas(prev, list));
     setSelectedId(current => {
       const next = reconcileSelection(list, current, userPicked.current);
       return next === undefined ? current : next;
     });
-  }, [manager]);
+  }, [managerState]);
 
+  // React to the session state's `changed` signal: re-read the persona list and
+  // readiness. This replaces the awareness `change` subscription — a persona
+  // publishing or updating its state fires `changed`.
   useEffect(() => {
-    if (!awareness || !manager) {
+    if (!managerState) {
       return;
     }
-    readManager();
-    setListRead(true);
-    const onChange = () => readManager();
-    awareness.on('change', onChange);
-    return () => {
-      awareness.off('change', onChange);
+    const sync = () => {
+      readManager();
+      setReady(managerState.ready);
     };
-  }, [awareness, manager, readManager]);
+    sync();
+    managerState.changed.connect(sync);
+    return () => {
+      managerState.changed.disconnect(sync);
+    };
+  }, [managerState, readManager]);
 
-  // Build a view of the selected persona's slot from the manager's list, or
-  // null when nothing is selected / the persona isn't present yet.
-  const readSelectedPersona = (): PersonaAwareness | null => {
-    if (!awareness || !manager || !selectedId) {
-      return null;
-    }
-    const option = manager.personas.find(p => p.id === selectedId);
-    return option ? PersonaAwareness.from(awareness, option) : null;
-  };
-
-  // Track the selected persona's view in state, re-reading on every awareness
-  // change (a persona updating usage, model, or commands) so the toolbar
-  // reflects the latest published state. The first read (right below)
-  // applies unconditionally, since it runs whenever `selectedId` itself
-  // changes and must reflect the newly selected persona, even a genuinely
-  // absent one; every later read goes through reconcilePersonaState so a
-  // transient blip doesn't blank this out - see its comment for why that
-  // matters more than it looks like it should.
+  // Track the selected persona's state, re-reading on every change so the
+  // toolbar reflects the latest published model/usage/commands. The first read
+  // applies unconditionally (it runs whenever `selectedId` changes and must
+  // reflect the newly selected persona, even an absent one); later reads go
+  // through reconcilePersonaState so a transient absence doesn't blank it out.
   useEffect(() => {
-    if (!awareness || !manager || !selectedId) {
+    if (!managerState || !selectedId) {
       setPersonaState(null);
       return;
     }
-    setPersonaState(readSelectedPersona());
+    setPersonaState(managerState.getPersona(selectedId) ?? null);
     const read = () =>
       setPersonaState(prev =>
-        reconcilePersonaState(prev, readSelectedPersona())
+        reconcilePersonaState(prev, managerState.getPersona(selectedId) ?? null)
       );
-    awareness.on('change', read);
+    managerState.changed.connect(read);
     return () => {
-      awareness.off('change', read);
+      managerState.changed.disconnect(read);
     };
-  }, [awareness, manager, selectedId]);
+  }, [managerState, selectedId]);
+
+  // Discard this chat's session state when the chat model is disposed (chat
+  // closed), freeing its memory.
+  useEffect(() => {
+    if (!sessionRegistry || !path || !chatModel) {
+      return;
+    }
+    const onDisposed = () => sessionRegistry.discard(path);
+    chatModel.disposed.connect(onDisposed);
+    return () => {
+      chatModel.disposed.disconnect(onDisposed);
+    };
+  }, [sessionRegistry, path, chatModel]);
 
   // Stamp the current persona + its settings onto the input model's metadata,
   // so it rides out with the next message and the PersonaManager routes and
@@ -1207,16 +1190,12 @@ export function PersonaControls(
 
   // No personas yet. While the manager's slot or its first list read is still
   // pending, show a loading placeholder (on slow networks this takes seconds);
-  // once resolution failed or the chat genuinely has no personas, show nothing.
+  // once ready with no personas, show nothing.
   if (!personas.length) {
-    if (
-      showLoadingPlaceholder(
-        awareness !== null,
-        manager !== null,
-        managerFailed,
-        listRead
-      )
-    ) {
+    // Still loading while the session state exists but no persona list has
+    // arrived yet (events are in flight). Once ready with an empty list, or
+    // with no registry at all, render nothing.
+    if (managerState && !ready) {
       return <LoadingPlaceholder />;
     }
     return null;
