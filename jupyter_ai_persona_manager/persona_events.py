@@ -49,7 +49,8 @@ PERSONAS_EVENT_SCHEMA = {
     "type": "object",
     "required": ["room_id", "personas"],
     "properties": {
-        "room_id": {"type": "string", "description": "The chat's room id or path."},
+        "room_id": {"type": "string", "description": "The chat's room id."},
+        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
         "personas": {
             "type": "array",
             "items": {"type": "object"},
@@ -68,7 +69,8 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "type": "object",
     "required": ["room_id", "persona_id"],
     "properties": {
-        "room_id": {"type": "string", "description": "The chat's room id or path."},
+        "room_id": {"type": "string", "description": "The chat's room id."},
+        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
         "persona_id": {"type": "string", "description": "The persona's stable id."},
         "model": {"type": "object"},
         "settings": {"type": "array", "items": {"type": "object"}},
@@ -102,9 +104,11 @@ class PersonaManagerSessionState:
         event_logger: Optional["EventLogger"],
         room_id: str,
         log: Logger,
+        path: Optional[str] = None,
     ):
         self._event_logger = event_logger
         self._room_id = room_id
+        self._path = path or room_id
         self._log = log
         self._personas: list[PersonaOption] = []
 
@@ -127,6 +131,7 @@ class PersonaManagerSessionState:
                 schema_id=PERSONAS_EVENT_SCHEMA_ID,
                 data={
                     "room_id": self._room_id,
+                    "path": self._path,
                     "personas": [p.model_dump() for p in self._personas],
                 },
             )
@@ -150,9 +155,11 @@ class PersonaSessionState:
         room_id: Optional[str],
         persona_id: str,
         log: Logger,
+        path: Optional[str] = None,
     ):
         self._event_logger = event_logger
         self._room_id = room_id or ""
+        self._path = path or (room_id or "")
         self._persona_id = persona_id
         self._log = log
         self._model = ModelConfiguration()
@@ -203,6 +210,7 @@ class PersonaSessionState:
     def to_data(self) -> dict[str, Any]:
         return {
             "room_id": self._room_id,
+            "path": self._path,
             "persona_id": self._persona_id,
             "model": self._model.model_dump(),
             "settings": [s.model_dump() for s in self._settings],

@@ -140,6 +140,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             room_id=getattr(manager, "room_id", None),
             persona_id=self.id,
             log=self.log,
+            path=getattr(manager, "chat_path", None),
         )
 
         # Register this persona as a user in the chat

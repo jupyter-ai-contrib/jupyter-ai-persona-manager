@@ -39,6 +39,7 @@ def _manager(personas, event_logger):
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-events")
     pm.room_id = "room:chat:file-id"
+    pm.chat_path = "file-id.chat"
     pm.state = PersonaManagerSessionState(
         event_logger=event_logger, room_id=pm.room_id, log=pm.log
     )

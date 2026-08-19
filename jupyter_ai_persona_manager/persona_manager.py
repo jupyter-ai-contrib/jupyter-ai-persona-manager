@@ -205,6 +205,14 @@ class PersonaManager(LoggingConfigurable):
                 os.path.join(self.root_dir, room_id)
             )
 
+        # The chat's server-root-relative path, used to scope events to a chat
+        # on the frontend. In non-RTC room_id is already the path; under RTC we
+        # resolve it from the file id (falling back to room_id if unavailable).
+        try:
+            self.chat_path = self.get_chat_path(relative=True)
+        except Exception:
+            self.chat_path = room_id
+
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
@@ -214,8 +222,14 @@ class PersonaManager(LoggingConfigurable):
         # This is the source of truth the browser reads for the persona selector,
         # and it works in both RTC and non-RTC mode (no Yjs awareness required).
         # The event schemas are registered once at server-extension init.
+        # The chat's server-root-relative path, used to scope events to a chat
+        # on the frontend. In non-RTC room_id is already the path; under RTC we
+        # resolve it from the file id (falling back to room_id if unavailable).
         self.state = PersonaManagerSessionState(
-            event_logger=self.event_logger, room_id=self.room_id, log=self.log
+            event_logger=self.event_logger,
+            room_id=self.room_id,
+            log=self.log,
+            path=self.chat_path,
         )
         # Re-publish current state whenever a client connects to this chat, so a
         # client that joins an already-live chat catches up. This rides
@@ -478,10 +492,14 @@ class PersonaManager(LoggingConfigurable):
         ]
 
     def _matches_this_chat(self, data: dict) -> bool:
-        """Whether a chat event refers to this manager's chat. In non-RTC mode
-        ``room_id`` is the file path; in RTC mode it is ``{fmt}:chat:{file_id}``,
-        so match on either the event's ``room_id`` or ``path``."""
-        return data.get("room_id") == self.room_id or data.get("path") == self.room_id
+        """Whether a chat event refers to this manager's chat. Matches on the
+        RTC room id or the server-root-relative path (the two identifiers the
+        room/v1 client events may carry)."""
+        return (
+            data.get("room_id") == self.room_id
+            or data.get("path") == self.room_id
+            or data.get("path") == self.chat_path
+        )
 
     async def _on_chat_event(self, logger, schema_id, data) -> None:
         """Re-publish the full persona state when a client connects to this chat,
