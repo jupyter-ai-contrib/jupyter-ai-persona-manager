@@ -35,7 +35,7 @@ from .persona_awareness import PersonaAwareness
 # types imported under this block have to be surrounded in single quotes on use
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
-    from jupyterlab_chat.ychat import YChat
+    from jupyterlab_chat.models import BaseChatModel
     from .mcp_server_models import McpSettings
     from .persona_manager import PersonaManager
 
@@ -77,15 +77,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     Abstract base class that defines a persona when implemented.
     """
 
-    ychat: "YChat"
+    chat: "BaseChatModel"
     """
-    Reference to the `YChat` that this persona instance is scoped to.
+    Reference to the chat model that this persona instance is scoped to.
     Automatically set by `BasePersona`.
     """
 
     parent: "PersonaManager"  # type: ignore
     """
-    Reference to the `PersonaManager` for this `YChat`, which manages this
+    Reference to the `PersonaManager` for this chat, which manages this
     instance. Automatically set by the `LoggingConfigurable` parent class.
     """
 
@@ -101,7 +101,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     own Yjs client ID. It holds the persona's broadcast session state (model
     configuration, settings, usage, slash commands, writing status) as typed
     properties, so `self.awareness.model = ...` publishes over the awareness
-    channel directly. Use this instead of `self.ychat.awareness`, whose default
+    channel directly. Use this instead of accessing the chat's awareness directly, whose default
     API cannot set state for more than one client ID. See `PersonaAwareness` and
     its base `ScopedAwareness` for details.
 
@@ -122,26 +122,29 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     def __init__(
         self,
         *args,
-        ychat: "YChat",
+        chat: "BaseChatModel",
         **kwargs,
     ):
         # Forward other arguments to parent class
         super().__init__(*args, **kwargs)
 
         # Bind arguments to instance attributes
-        self.ychat = ychat
+        self.chat = chat
         self._processing_count = 0
 
-        # Initialize this persona's awareness slot. It starts with a default
-        # (empty) session state already published; the persona fills in its
-        # model/settings/usage once it knows them (e.g. an ACP persona on session
-        # create/load), and a persona that never does simply carries the defaults.
-        self.awareness = PersonaAwareness(
-            ychat=self.ychat, log=self.log, user=self.as_user(), id=self.id
-        )
+        # TODO: RTC decoupling gap PersonaAwareness uses ychat.awareness and
+        # ychat._ydoc directly. Needs an RTC-free persona-state publisher.
+        
+        if hasattr(self.chat, 'awareness'):
+            self.awareness = PersonaAwareness(
+                ychat=self.chat, log=self.log, user=self.as_user(), id=self.id
+            )
+        else:
+            # Non-RTC: no awareness channel. Use broadcast_writing_status()
+            self.awareness = None
 
         # Register this persona as a user in the chat
-        self.ychat.set_user(self.as_user())
+        self.chat.set_user(self.as_user())
 
     ################################################
     # abstract methods, required by subclasses.
@@ -164,7 +167,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Processes a new message. This method exclusively defines how new
         messages are handled by a persona, and should be considered the "main
         entry point" to this persona. Reading chat history and streaming a reply
-        can be done through method calls to `self.ychat`. See
+        can be done through method calls to `self.chat`. See
         `JupyternautPersona` for a reference implementation on how to do so.
 
         This is an abstract method that must be implemented by subclasses.
@@ -336,7 +339,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ) -> None:
         """
         Takes an async iterator, dubbed the 'reply stream', and streams it to a
-        new message by this persona in the YChat. The async iterator may yield
+        new message by this persona in the chat. The async iterator may yield
         either strings or `litellm.ModelResponseStream` objects. Details:
 
         - Creates a new message upon receiving the first chunk from the reply
@@ -347,7 +350,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
-            self.awareness.is_writing = True
+            self.set_writing_status(True)
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -359,13 +362,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     continue
 
                 if not stream_id:
-                    stream_id = self.ychat.add_message(
+                    stream_id = self.chat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
-                    self.awareness.is_writing = stream_id
+                    self.set_writing_status(stream_id)
 
                 assert stream_id
-                self.ychat.update_message(
+                self.chat.update_message(
                     Message(
                         id=stream_id,
                         body=chunk,
@@ -379,9 +382,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
             # Stream complete - trigger mention extraction and notifications
             if stream_id:
-                msg = self.ychat.get_message(stream_id)
+                msg = self.chat.get_message(stream_id)
                 if msg:
-                    self.ychat.update_message(
+                    self.chat.update_message(
                         msg,
                         trigger_actions=[find_mentions],  # Extract mentions and notify mentioned personas
                     )
@@ -392,14 +395,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            self.awareness.is_writing = False
+            self.set_writing_status(False)
 
     @mark_subclass_api
     def send_message(self, body: str) -> None:
         """
         Sends a new message to the chat from this persona.
         """
-        self.ychat.add_message(NewMessage(body=body, sender=self.id))
+        self.chat.add_message(NewMessage(body=body, sender=self.id))
 
     @mark_optional
     async def handle_uncaught_exception(self, exc: Exception) -> None:
@@ -475,21 +478,29 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     @mark_subclass_api
     def get_model_configuration(self) -> ModelConfiguration:
         """Return the current model, model settings, and all options for both."""
+        if self.awareness is None:
+            return ModelConfiguration()
         return self.awareness.model
 
     @mark_subclass_api
     def get_setting_configurations(self) -> list[SettingConfiguration]:
         """Return the current value and all options for each general setting."""
+        if self.awareness is None:
+            return []
         return self.awareness.settings
 
     @mark_subclass_api
     def get_model(self) -> str | None:
         """Return the current model ID, or None if using the default."""
+        if self.awareness is None:
+            return None
         return self.awareness.model.current
 
     @mark_subclass_api
     def get_model_settings(self) -> dict[str, str | None]:
         """Return the current model settings, keyed by setting ID."""
+        if self.awareness is None:
+            return {}
         return {s.id: s.current for s in self.awareness.model.settings}
 
     @mark_subclass_api
@@ -498,17 +509,48 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Return the current general settings, keyed by setting ID. This is
         separate from the model settings returned by `get_model_settings()`.
         """
+        if self.awareness is None:
+            return {}
         return {s.id: s.current for s in self.awareness.settings}
 
     @mark_subclass_api
     def get_usage(self) -> Usage:
         """Return the usage currently reported by this persona."""
+        if self.awareness is None:
+            return Usage()
         return self.awareness.usage
 
     @mark_subclass_api
     def get_slash_commands(self) -> list[CommandOption]:
         """Return the slash commands currently advertised by this persona."""
+        if self.awareness is None:
+            return []
         return self.awareness.slash_commands
+
+    @mark_subclass_api
+    def set_writing_status(self, value: "bool | str") -> None:
+        """Set this persona's writing status in a transport-neutral way.
+
+        `value` is `True` (writing started), `False` (writing stopped), or the
+        ID of the message being written into.
+
+        In RTC mode this writes to the Yjs awareness slot. In non-RTC mode it
+        uses `broadcast_writing_status()`.
+        """
+        if self.awareness is not None:
+            self.awareness.set_local_state_field("isWriting", value)
+            return
+
+        # Non-RTC: broadcast the equivalent status over the chat WebSocket.
+        if value is False:
+            self.chat.broadcast_writing_status(self.as_user(), None)
+        elif value is True:
+            self.chat.broadcast_writing_status(
+                self.as_user(), {"typingIndicator": "Writing..."}
+            )
+        else:
+            # value is the message ID being written into
+            self.chat.broadcast_writing_status(self.as_user(), {"messageID": value})
 
     ################################################
     # reporting session information (called by the persona itself)
@@ -525,6 +567,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         and model settings). A persona calls this once it knows its models (e.g.
         an ACP persona on session create/load).
         """
+        if self.awareness is None:
+            return
         self.awareness.model = model
 
     @mark_subclass_api
@@ -532,6 +576,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self, settings: list[SettingConfiguration]
     ) -> None:
         """Publish the persona's general (non-model) settings configuration."""
+        if self.awareness is None:
+            return
         self.awareness.settings = settings
 
     @mark_subclass_api
@@ -550,6 +596,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         sources that emit per-turn deltas. Snapshot fields (context_*) should
         not be sent this way — you don't sum window sizes.
         """
+        if self.awareness is None:
+            return
         current = self.awareness.usage
         # Only the fields explicitly set on `usage` are merged; unset fields
         # (still None because they were never provided) leave the stored value
@@ -566,6 +614,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     @mark_subclass_api
     def report_slash_commands(self, commands: list[CommandOption]) -> None:
         """Publish the advertised slash commands."""
+        if self.awareness is None:
+            return
         self.awareness.slash_commands = commands
 
     ################################################
@@ -735,7 +785,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
 
         try:
-            attachment_data = self.ychat.get_attachments().get(attachment_id)
+            attachment_data = self.chat.get_attachments().get(attachment_id)
 
             if attachment_data and isinstance(attachment_data, dict):
                 # If attachment has a 'value' field with filename
@@ -774,7 +824,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         before running custom shutdown logic.
         """
         # Stop awareness heartbeat task & remove self from chat awareness
-        self.awareness.shutdown()
+        if self.awareness is not None:
+            self.awareness.shutdown()
 
 
 class GenerationInterrupted(asyncio.CancelledError):

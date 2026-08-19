@@ -203,7 +203,7 @@ class TestRefreshPersonas:
 
         manager = PersonaManager(
             room_id="room:chat:file-id",
-            ychat=mock_ychat,
+            chat=mock_ychat,
             fileid_manager=mock_fileid_manager,
             root_dir=str(tmp_dir),
             event_loop=Mock(),

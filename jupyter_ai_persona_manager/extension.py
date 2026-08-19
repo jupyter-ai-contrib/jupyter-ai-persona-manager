@@ -23,7 +23,7 @@ from .persona_manager import PersonaManager
 if TYPE_CHECKING:
     from typing import Any
     from asyncio import AbstractEventLoop
-    from jupyterlab_chat.ychat import YChat
+    from jupyterlab_chat.models import BaseChatModel
 
 
 class PersonaManagerExtension(ExtensionApp):
@@ -145,7 +145,7 @@ class PersonaManagerExtension(ExtensionApp):
         except Exception as e:
             self.log.error(f"Error setting up router integration: {e}")
     
-    def _on_router_chat_init(self, room_id: str, ychat: "YChat") -> None:
+    def _on_router_chat_init(self, room_id: str, chat: "BaseChatModel") -> None:
         """
         Callback for when router detects a new chat initialization.
         This initializes persona manager for the new chat room.
@@ -153,7 +153,7 @@ class PersonaManagerExtension(ExtensionApp):
         self.log.info(f"Router detected new chat room, initializing persona manager: {room_id}")
 
         # Initialize persona manager for this chat
-        persona_manager = self._init_persona_manager(room_id, ychat)
+        persona_manager = self._init_persona_manager(room_id, chat)
         if not persona_manager:
             self.log.error(
                 "Jupyter AI was unable to initialize its AI personas. They are not available for use in chat until this error is resolved. "
@@ -190,10 +190,10 @@ class PersonaManagerExtension(ExtensionApp):
         self._stopping_rooms[room_id] = task
     
     def _init_persona_manager(
-        self, room_id: str, ychat: "YChat"
+        self, room_id: str, chat: "BaseChatModel"
     ) -> PersonaManager | None:
         """
-        Initializes a `PersonaManager` instance scoped to a `YChat`.
+        Initializes a `PersonaManager` instance scoped to a chat model.
         
         This method should not raise an exception. Upon encountering an
         exception, this method will catch it, log it, and return `None`.
@@ -219,7 +219,7 @@ class PersonaManagerExtension(ExtensionApp):
             persona_manager = PersonaManagerClass(
                 parent=self,
                 room_id=room_id,
-                ychat=ychat,
+                chat=chat,
                 fileid_manager=fileid_manager,
                 root_dir=root_dir,
                 event_loop=self.event_loop,
@@ -227,7 +227,7 @@ class PersonaManagerExtension(ExtensionApp):
             )
         except Exception as e:
             self.log.error(
-                f"Unable to initialize PersonaManager in YChat with ID '{ychat.get_id()}' due to an exception printed below."
+                f"Unable to initialize PersonaManager in chat with ID '{chat.get_id()}' due to an exception printed below."
             )
             self.log.exception(e)
         finally:
