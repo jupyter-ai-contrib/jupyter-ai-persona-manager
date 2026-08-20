@@ -784,19 +784,17 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         try:
             attachment_data = self.chat.get_attachments().get(attachment_id)
 
-            if attachment_data and isinstance(attachment_data, dict):
-                # If attachment has a 'value' field with filename
-                if "value" in attachment_data:
-                    filename = attachment_data["value"]
+            # attachment_data is a FileAttachment/NotebookAttachment dataclass
+            filename = getattr(attachment_data, "value", None)
+            if filename:
+                # Try relative to workspace directory
+                workspace_path = os.path.join(self.get_workspace_dir(), filename)
+                if os.path.exists(workspace_path):
+                    return workspace_path
 
-                    # Try relative to workspace directory
-                    workspace_path = os.path.join(self.get_workspace_dir(), filename)
-                    if os.path.exists(workspace_path):
-                        return workspace_path
-
-                    # Try as absolute path
-                    if os.path.exists(filename):
-                        return filename
+                # Try as absolute path
+                if os.path.exists(filename):
+                    return filename
 
             return None
 
