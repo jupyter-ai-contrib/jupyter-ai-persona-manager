@@ -162,16 +162,20 @@ class CancelHandler(JupyterHandler):
                 400, "chat_path is required as a URL query parameter"
             )
 
-        file_id = self.file_id_manager.get_id(chat_path)
-        if not file_id:
-            raise tornado.web.HTTPError(404, f"Chat not found: {chat_path}")
-        room_id = f"text:chat:{file_id}"
+        persona_managers = self.serverapp.web_app.settings.get(
+            "jupyter-ai", {}
+        ).get("persona-managers", {})
 
-        persona_manager = (
-            self.serverapp.web_app.settings.get("jupyter-ai", {})
-            .get("persona-managers", {})
-            .get(room_id)
-        )
+        # The router registers each PersonaManager under the room_id it supplies,
+        # which is the chat's path in RTC-free mode and `text:chat:{file_id}`
+        # under RTC. Resolve the path first (RTC-free), then fall back to the RTC
+        # room_id, so cancellation works regardless of transport.
+        persona_manager = persona_managers.get(chat_path)
+        if persona_manager is None:
+            file_id = self.file_id_manager.get_id(chat_path)
+            if file_id:
+                persona_manager = persona_managers.get(f"text:chat:{file_id}")
+
         if not persona_manager:
             raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
 
