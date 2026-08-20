@@ -2,6 +2,25 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.0a1
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a0...c7677a2d05716003bcc1cdc036282d0829682fd0))
+
+### Enhancements made
+
+- Replace persona awareness with Jupyter Events API [#129](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/129) ([@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-19&to=2026-08-20&type=c))
+
+@dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-19..2026-08-20&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.2.0a0
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.3...daab096466773f2f38519bc3ab59559bb9a0c093))
@@ -22,8 +41,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-18&to=2026-08-19&type=c))
 
 @bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-18..2026-08-19&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-18..2026-08-19&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-08-18..2026-08-19&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.1.3
 
