@@ -1,19 +1,21 @@
 """
-Tests for the PersonaManager awareness state (the persona list published under
-the fixed client ID) and for spec application happening before processing in the
-message-dispatch path.
+Tests for the PersonaManager persona-list publishing (now over Jupyter Events)
+and for spec application happening before processing in the message-dispatch
+path.
 """
 
+import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from jupyter_events import EventLogger
 from jupyterlab_chat.models import Message
-from jupyterlab_chat.ychat import YChat
-from pycrdt import Awareness
 
-from jupyter_ai_persona_manager.persona_awareness import (
-    PERSONA_MANAGER_AWARENESS_CLIENT_ID,
-    PersonaManagerAwareness,
+from jupyter_ai_persona_manager.persona_events import (
+    PERSONAS_EVENT_SCHEMA_ID,
+    PersonaManagerSessionState,
+    register_persona_event_schemas,
 )
 from jupyter_ai_persona_manager.persona_manager import (
     PersonaManager,
@@ -21,69 +23,112 @@ from jupyter_ai_persona_manager.persona_manager import (
 )
 
 
-def _mock_persona(id: str, name: str, client_id: int, avatar_url: str = "/a"):
+def _mock_persona(id: str, name: str, avatar_url: str = "/a"):
     persona = MagicMock()
     persona.id = id
     persona.name = name
-    persona.awareness.client_id = client_id
     user = MagicMock()
     user.avatar_url = avatar_url
     persona.as_user.return_value = user
     return persona
 
 
-def _manager(personas):
-    """A PersonaManager wired to a real PersonaManagerAwareness over an in-memory
-    YChat (no event loop, so no heartbeat), plus the state the awareness methods
-    read."""
-    ychat = YChat()
-    ychat.awareness = Awareness(ydoc=ychat._ydoc)
+def _manager(personas, event_logger):
+    """A PersonaManager wired to an events-based PersonaManagerSessionState."""
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
-    pm.log = logging.getLogger("test-pm-awareness")
-    pm._awareness = PersonaManagerAwareness(ychat=ychat, log=pm.log)
+    pm.log = logging.getLogger("test-pm-events")
+    pm.room_id = "room:chat:file-id"
+    pm.chat_path = "file-id.chat"
+    pm.state = PersonaManagerSessionState(
+        event_logger=event_logger, room_id=pm.room_id, log=pm.log
+    )
     return pm
 
 
-class TestAwarenessState:
-    def test_publishes_every_persona_with_yjs_client_id(self):
-        pm = _manager(
-            {
-                "p1": _mock_persona("p1", "One", 111, "/one"),
-                "p2": _mock_persona("p2", "Two", 222, "/two"),
-            }
-        )
-        pm._publish_persona_list()
+class TestPersonaListEvents:
+    def test_publishes_every_persona(self):
+        async def run():
+            captured: list = []
+            logger = EventLogger()
+            register_persona_event_schemas(logger)
 
-        # Read the published personas back off the awareness slot.
-        by_id = {p.id: p for p in pm._awareness.personas}
-        assert by_id["p1"].name == "One"
-        assert by_id["p1"].yjs_client_id == 111
-        assert by_id["p1"].avatar_url == "/one"
-        assert by_id["p2"].yjs_client_id == 222
+            async def listener(logger, schema_id, data):
+                if schema_id == PERSONAS_EVENT_SCHEMA_ID:
+                    captured.append(data)
+
+            logger.add_listener(schema_id=PERSONAS_EVENT_SCHEMA_ID, listener=listener)
+
+            pm = _manager(
+                {
+                    "p1": _mock_persona("p1", "One", "/one"),
+                    "p2": _mock_persona("p2", "Two", "/two"),
+                },
+                logger,
+            )
+            pm._publish_persona_list()
+            await asyncio.sleep(0.1)
+
+            assert captured, "no personas event emitted"
+            data = captured[-1]
+            assert data["room_id"] == "room:chat:file-id"
+            by_id = {p["id"]: p for p in data["personas"]}
+            assert by_id["p1"]["name"] == "One"
+            assert by_id["p1"]["avatar_url"] == "/one"
+            assert set(by_id) == {"p1", "p2"}
+
+        asyncio.run(run())
 
     def test_empty_when_no_personas(self):
-        pm = _manager({})
-        pm._publish_persona_list()
-        assert pm._awareness.personas == []
+        async def run():
+            captured: list = []
+            logger = EventLogger()
+            register_persona_event_schemas(logger)
 
-    def test_republishes_after_personas_change(self):
-        pm = _manager({"p1": _mock_persona("p1", "One", 111)})
-        pm._publish_persona_list()
-        assert [p.id for p in pm._awareness.personas] == ["p1"]
+            async def listener(logger, schema_id, data):
+                captured.append(data)
 
-        pm._personas = {"p2": _mock_persona("p2", "Two", 222)}
-        pm._publish_persona_list()
-        assert [p.id for p in pm._awareness.personas] == ["p2"]
+            logger.add_listener(schema_id=PERSONAS_EVENT_SCHEMA_ID, listener=listener)
 
-    def test_fixed_client_id_constant_is_53_bit(self):
-        # A 53-bit integer is representable exactly as a JS number.
-        assert 0 < PERSONA_MANAGER_AWARENESS_CLIENT_ID < 2**53
+            pm = _manager({}, logger)
+            pm._publish_persona_list()
+            await asyncio.sleep(0.1)
+
+            assert captured[-1]["personas"] == []
+
+        asyncio.run(run())
+
+    def test_catchup_reemits_on_client_connected(self):
+        async def run():
+            logger = EventLogger()
+            register_persona_event_schemas(logger)
+            personas = {"p1": _mock_persona("p1", "One")}
+            pm = _manager(personas, logger)
+
+            # A client connecting to this chat triggers a full re-publish.
+            await pm._on_chat_event(
+                None,
+                "https://schema.jupyter.org/jupyterlab_chat/room/v1",
+                {"action": "client_connected", "room_id": pm.room_id},
+            )
+            personas["p1"].state.publish.assert_called()
+
+            # An event for a different chat is ignored.
+            personas["p1"].state.publish.reset_mock()
+            await pm._on_chat_event(
+                None,
+                "https://schema.jupyter.org/jupyterlab_chat/room/v1",
+                {"action": "client_connected", "room_id": "room:chat:other"},
+            )
+            personas["p1"].state.publish.assert_not_called()
+
+        asyncio.run(run())
 
 
 class TestSafeProcessAppliesSpecsFirst:
     """apply_specs_in_message must run before process_message."""
 
+    @pytest.mark.asyncio
     async def test_specs_applied_before_processing(self):
         order = []
         persona = MagicMock()
@@ -101,6 +146,7 @@ class TestSafeProcessAppliesSpecsFirst:
 
         assert order == ["apply", "process"]
 
+    @pytest.mark.asyncio
     async def test_processing_error_routed_to_handler(self):
         persona = MagicMock()
         persona.name = "P"
@@ -114,6 +160,7 @@ class TestSafeProcessAppliesSpecsFirst:
 
         persona.handle_uncaught_exception.assert_awaited_once_with(exc)
 
+    @pytest.mark.asyncio
     async def test_spec_error_routed_to_handler(self):
         # A failure while applying specs is also delivered to the user rather
         # than crashing the dispatch task.

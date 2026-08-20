@@ -19,6 +19,7 @@ from jupyter_ai_persona_manager.handlers import (
 )
 
 from .persona_manager import PersonaManager
+from .persona_events import register_persona_event_schemas
 
 if TYPE_CHECKING:
     from typing import Any
@@ -72,6 +73,12 @@ class PersonaManagerExtension(ExtensionApp):
             self.settings['jupyter-ai'] = {}
         if 'persona-managers' not in self.settings['jupyter-ai']:
             self.settings['jupyter-ai']['persona-managers'] = {}
+
+        # Register the persona event schemas once, at server-extension init, so
+        # every PersonaManager can emit without re-registering per chat.
+        event_logger = self.serverapp.web_app.settings.get("event_logger")
+        if event_logger is not None:
+            register_persona_event_schemas(event_logger)
 
         # Advertise the default persona ID to the frontend via PageConfig, so a
         # chat with no prior persona selection can pre-select it without a
@@ -224,6 +231,7 @@ class PersonaManagerExtension(ExtensionApp):
                 root_dir=root_dir,
                 event_loop=self.event_loop,
                 base_url=base_url,
+                event_logger=self.serverapp.web_app.settings.get("event_logger"),
             )
         except Exception as e:
             self.log.error(

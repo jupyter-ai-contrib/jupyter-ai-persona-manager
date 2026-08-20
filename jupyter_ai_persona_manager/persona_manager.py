@@ -24,14 +24,19 @@ from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
-from .persona_awareness import (
-    PERSONA_MANAGER_AWARENESS_CLIENT_ID,
-    PersonaManagerAwareness,
-)
+from .persona_events import PersonaManagerSessionState
+
+try:
+    # The chat event bus that carries client_connected/client_disconnected.
+    from jupyterlab_chat.events import CHAT_ROOM_EVENT_SCHEMA_ID
+except Exception:  # pragma: no cover - very old jupyterlab_chat
+    CHAT_ROOM_EVENT_SCHEMA_ID = "https://schema.jupyter.org/jupyterlab_chat/room/v1"
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
-    from typing import Any, ClassVar
+    from typing import Any, ClassVar, Optional
+
+    from jupyter_events import EventLogger
 
     from jupyter_server_fileid.manager import (  # type: ignore[import-untyped]
         BaseFileIdManager,
@@ -154,7 +159,7 @@ class PersonaManager(LoggingConfigurable):
     _personas: dict[str, BasePersona]
     file_id: str
 
-    _awareness: PersonaManagerAwareness
+    state: PersonaManagerSessionState
     """
     The manager's awareness slot, publishing the persona list under the fixed
     `PERSONA_MANAGER_AWARENESS_CLIENT_ID` via its `personas` property. Scoped to
@@ -171,6 +176,7 @@ class PersonaManager(LoggingConfigurable):
         root_dir: str,
         event_loop: "AbstractEventLoop",
         base_url: str = "/",
+        event_logger: "Optional[EventLogger]" = None,
         **kwargs,
     ):
         # Forward other arguments to parent class
@@ -183,6 +189,7 @@ class PersonaManager(LoggingConfigurable):
         self.root_dir = root_dir
         self.event_loop = event_loop
         self.base_url = base_url
+        self.event_logger = event_logger
 
         # Store file ID. In RTC mode room_id is "text:chat:{file_id}";
         # in non-RTC mode it is the file path, which needs to be resolved
@@ -198,20 +205,39 @@ class PersonaManager(LoggingConfigurable):
                 os.path.join(self.root_dir, room_id)
             )
 
+        # The chat's server-root-relative path, used to scope events to a chat
+        # on the frontend. In non-RTC room_id is already the path; under RTC we
+        # resolve it from the file id (falling back to room_id if unavailable).
+        try:
+            self.chat_path = self.get_chat_path(relative=True)
+        except Exception:
+            self.chat_path = room_id
+
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
         self._personas = self._init_personas()
         self.log.info(f"Personas initialized in chat '{self.room_id}'.")
 
-        # Register the manager's own awareness slot (under a fixed client ID) and
-        # publish the list of personas. This is the source of truth the browser
-        # reads for the persona selector, replacing REST polling.
-        # TODO: RTC decoupling gap  PersonaManagerAwareness uses ychat.awareness
-        # and ychat._ydoc directly. Needs an RTC-free persona-state publisher.
-        if hasattr(self.chat, 'awareness'):
-            self._awareness = PersonaManagerAwareness(ychat=self.chat, log=self.log)
-        else:
-            self._awareness = None
+        # Publish the persona list and per-persona state over Jupyter Events.
+        # This is the source of truth the browser reads for the persona selector,
+        # and it works in both RTC and non-RTC mode (no Yjs awareness required).
+        # The event schemas are registered once at server-extension init.
+        # The chat's server-root-relative path, used to scope events to a chat
+        # on the frontend. In non-RTC room_id is already the path; under RTC we
+        # resolve it from the file id (falling back to room_id if unavailable).
+        self.state = PersonaManagerSessionState(
+            event_logger=self.event_logger,
+            room_id=self.room_id,
+            log=self.log,
+            path=self.chat_path,
+        )
+        # Re-publish current state whenever a client connects to this chat, so a
+        # client that joins an already-live chat catches up. This rides
+        # jupyterlab_chat's room/v1 event bus (client_connected action).
+        if self.event_logger is not None:
+            self.event_logger.add_listener(
+                schema_id=CHAT_ROOM_EVENT_SCHEMA_ID, listener=self._on_chat_event
+            )
         self._publish_persona_list()
 
         if self.default_persona:
@@ -450,23 +476,41 @@ class PersonaManager(LoggingConfigurable):
 
     def _publish_persona_list(self) -> None:
         """
-        Rebuild the persona list from the current personas and publish it under
-        the manager's client ID, which rebroadcasts it over the Yjs awareness
-        channel. Each `PersonaOption` carries the Yjs client ID of that persona's
-        awareness slot so the browser can look up its state in O(1). Called on
-        init and whenever the set of personas changes (e.g. `/refresh-personas`).
+        Rebuild the persona list from the current personas and publish it over
+        Jupyter Events (``personas`` event). Called on init and whenever the set
+        of personas changes (e.g. ``/refresh-personas``), and re-emitted for
+        catch-up when a client connects.
         """
-        if self._awareness is None:
-            return
-        self._awareness.personas = [
+        self.state.personas = [
             PersonaOption(
                 id=persona.id,
                 name=persona.name,
                 avatar_url=persona.as_user().avatar_url,
-                yjs_client_id=getattr(persona, 'awareness', None) and persona.awareness.client_id or 0,
+                yjs_client_id=0,
             )
             for persona in self._personas.values()
         ]
+
+    def _matches_this_chat(self, data: dict) -> bool:
+        """Whether a chat event refers to this manager's chat. Matches on the
+        RTC room id or the server-root-relative path (the two identifiers the
+        room/v1 client events may carry)."""
+        return (
+            data.get("room_id") == self.room_id
+            or data.get("path") == self.room_id
+            or data.get("path") == self.chat_path
+        )
+
+    async def _on_chat_event(self, logger, schema_id, data) -> None:
+        """Re-publish the full persona state when a client connects to this chat,
+        so a newly-connected consumer catches up (events are fire-and-forget)."""
+        if data.get("action") != "client_connected":
+            return
+        if not self._matches_this_chat(data):
+            return
+        self._publish_persona_list()
+        for persona in self._personas.values():
+            persona.state.publish()
 
     @property
     def default_persona(self) -> BasePersona | None:

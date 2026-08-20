@@ -10,7 +10,6 @@ from jupyter_server.base.handlers import JupyterHandler
 from jupyter_ydoc.ybasedoc import YBaseDoc
 from jupyterlab_chat.models import Message, User
 from jupyterlab_chat.ychat import YChat
-from pycrdt import Awareness
 import tornado
 
 
@@ -81,14 +80,13 @@ class MessageHandler(JupyterHandler):
         # Obtain or create a PersonaManager for this temporary room
         # Reuse existing if present, otherwise instantiate a minimal manager
         ychat = YChat()
-        ychat.awareness = Awareness(ydoc=ychat._ydoc)
         # Retrieve required managers from server settings
         # Instantiate PersonaManager
         from .persona_manager import PersonaManager
 
         persona_manager = PersonaManager(
             room_id=temp_room_id,
-            ychat=ychat,
+            chat=ychat,
             fileid_manager=fileid_manager,
             root_dir=root_dir,
             event_loop=asyncio.get_event_loop(),
@@ -117,21 +115,17 @@ class MessageHandler(JupyterHandler):
             metadata=metadata
         )
 
-        done_event = asyncio.Event()
         await target_persona.process_message(msg)
-        def on_awareness_change(event, *args, **kwargs):
-            local_state = target_persona.awareness.get_local_state()
-            if not local_state.get('isWriting', False):
-                done_event.set()
-
-        ychat.awareness.observe(on_awareness_change)
-
-        try:
-            # If currently writing, wait for the event that indicates it's done
-            if target_persona.awareness.get_local_state().get('isWriting', False):
-                await asyncio.wait_for(done_event.wait(), timeout=DEFAULT_RESPONSE_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.log.warning("Timeout waiting for persona to finish writing")
+        # Streaming personas may still be working after process_message returns.
+        # Wait until the persona is no longer processing, up to the response
+        # timeout.
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + DEFAULT_RESPONSE_TIMEOUT
+        while target_persona.processing:
+            if loop.time() > deadline:
+                self.log.warning("Timeout waiting for persona to finish")
+                break
+            await asyncio.sleep(0.05)
 
         # Return the captured response
         response = "".join(
@@ -168,16 +162,20 @@ class CancelHandler(JupyterHandler):
                 400, "chat_path is required as a URL query parameter"
             )
 
-        file_id = self.file_id_manager.get_id(chat_path)
-        if not file_id:
-            raise tornado.web.HTTPError(404, f"Chat not found: {chat_path}")
-        room_id = f"text:chat:{file_id}"
+        persona_managers = self.serverapp.web_app.settings.get(
+            "jupyter-ai", {}
+        ).get("persona-managers", {})
 
-        persona_manager = (
-            self.serverapp.web_app.settings.get("jupyter-ai", {})
-            .get("persona-managers", {})
-            .get(room_id)
-        )
+        # The router registers each PersonaManager under the room_id it supplies,
+        # which is the chat's path in RTC-free mode and `text:chat:{file_id}`
+        # under RTC. Resolve the path first (RTC-free), then fall back to the RTC
+        # room_id, so cancellation works regardless of transport.
+        persona_manager = persona_managers.get(chat_path)
+        if persona_manager is None:
+            file_id = self.file_id_manager.get_id(chat_path)
+            if file_id:
+                persona_manager = persona_managers.get(f"text:chat:{file_id}")
+
         if not persona_manager:
             raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
 

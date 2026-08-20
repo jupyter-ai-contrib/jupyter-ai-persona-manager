@@ -9,20 +9,28 @@ import {
   InputToolbarRegistry
 } from '@jupyter/chat';
 
+import { IEventListener } from 'jupyterlab-eventlistener';
+
 import { PersonaControls } from './persona-controls';
 import {
   IPersonaControlRegistry,
   PersonaControlRegistry
 } from './persona-control-registry';
 import {
+  IPersonaSessionRegistry,
+  PersonaSessionRegistry
+} from './persona-events';
+import {
   SLASH_COMMAND_PROVIDER_ID,
   SlashCommandProvider
 } from './slash-commands';
 import { StopButton } from './stop-button';
 
-// Public awareness API: typed, read-only views of the persona-manager and
-// persona awareness slots, for consumers building on the awareness channel.
+// Public persona session data types (event payloads).
 export * from './awareness';
+
+// Public persona session-state models + registry (fed by Jupyter Events).
+export * from './persona-events';
 
 // Public API for contributing controls to the persona controls toolbar.
 export * from './persona-control-registry';
@@ -42,16 +50,39 @@ const plugin: JupyterFrontEndPlugin<void> = {
 };
 
 /**
+ * Plugin that provides the shared per-chat persona session-state registry,
+ * fed by Jupyter Events via `jupyterlab-eventlistener`.
+ */
+const sessionRegistryPlugin: JupyterFrontEndPlugin<PersonaSessionRegistry> = {
+  id: '@jupyter-ai/persona-manager:session-registry',
+  description:
+    'Provides the per-chat persona session-state registry (fed by Jupyter Events).',
+  autoStart: true,
+  provides: IPersonaSessionRegistry,
+  requires: [IEventListener],
+  activate: (
+    app: JupyterFrontEnd,
+    eventListener: IEventListener
+  ): PersonaSessionRegistry => {
+    return new PersonaSessionRegistry(eventListener);
+  }
+};
+
+/**
  * Plugin registering slash-command completions read from the selected
- * persona's awareness slot.
+ * persona's session state (fed by Jupyter Events).
  */
 const slashCommandPlugin: JupyterFrontEndPlugin<void> = {
   id: SLASH_COMMAND_PROVIDER_ID,
   description: 'Adds support for slash commands in Jupyter AI.',
   autoStart: true,
-  requires: [IChatCommandRegistry],
-  activate: (app: JupyterFrontEnd, registry: IChatCommandRegistry) => {
-    registry.addProvider(new SlashCommandProvider());
+  requires: [IChatCommandRegistry, IPersonaSessionRegistry],
+  activate: (
+    app: JupyterFrontEnd,
+    registry: IChatCommandRegistry,
+    sessionRegistry: PersonaSessionRegistry
+  ) => {
+    registry.addProvider(new SlashCommandProvider(sessionRegistry));
   }
 };
 
@@ -82,17 +113,17 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
   description: 'Provides the chat input toolbar with persona controls.',
   autoStart: true,
   provides: IInputToolbarRegistryFactory,
-  requires: [IPersonaControlRegistry],
+  requires: [IPersonaControlRegistry, IPersonaSessionRegistry],
   activate: (
     app: JupyterFrontEnd,
-    controlRegistry: IPersonaControlRegistry
+    controlRegistry: IPersonaControlRegistry,
+    sessionRegistry: PersonaSessionRegistry
   ): IInputToolbarRegistryFactory => {
-    // Wrap the persona controls to inject the control registry, which the
-    // generic toolbar-item props don't carry. Contributed controls (e.g. a
-    // persona's settings button) render for the selected persona.
+    // Wrap the persona controls to inject the control + session registries,
+    // which the generic toolbar-item props don't carry.
     const PersonaControlsItem = (
       itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) => PersonaControls({ ...itemProps, controlRegistry });
+    ) => PersonaControls({ ...itemProps, controlRegistry, sessionRegistry });
     return {
       create: () => {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)
@@ -117,6 +148,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
 
 export default [
   plugin,
+  sessionRegistryPlugin,
   slashCommandPlugin,
   controlRegistryPlugin,
   toolbarPlugin
