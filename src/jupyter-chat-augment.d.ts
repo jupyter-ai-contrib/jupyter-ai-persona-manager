@@ -37,6 +37,9 @@ declare module '@jupyter/chat' {
       chat_id: string;
       title: string;
       detail?: string | null;
+      diffs?:
+        | { path: string; new_text: string; old_text?: string | null }[]
+        | null;
       correlation_id?: string | null;
       options: { option_id: string; name: string; kind?: string | null }[];
       status: 'pending' | 'resolved';

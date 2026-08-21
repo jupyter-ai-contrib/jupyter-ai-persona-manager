@@ -18,6 +18,7 @@ import uuid
 
 from jupyter_ai_persona_manager import (
     BasePersona,
+    PermissionDiff,
     PermissionOption,
     PermissionRequest,
     PersonaDefaults,
@@ -65,6 +66,13 @@ class PermissionPersona(BasePersona):
             PermissionRequest(
                 title="Approve action?",
                 detail="permission-fixture-detail",
+                diffs=[
+                    PermissionDiff(
+                        path="notebooks/example.py",
+                        old_text="print('old')\n",
+                        new_text="print('new-diff-line')\n",
+                    )
+                ],
                 options=[
                     PermissionOption(
                         option_id="allow", name="Allow", kind="allow_once"

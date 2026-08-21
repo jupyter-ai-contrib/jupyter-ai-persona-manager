@@ -52,6 +52,13 @@ test.describe('permissions', () => {
     await expect(helpers.permissionRequest.first()).toContainText(
       'permission-fixture-detail'
     );
+    // The proposed diff is shown with the request (no regression vs ACP).
+    await expect(helpers.permissionRequest.first()).toContainText(
+      'notebooks/example.py'
+    );
+    await expect(helpers.permissionRequest.first()).toContainText(
+      'new-diff-line'
+    );
 
     // Click Allow: the frontend emits the decision event, the persona resumes.
     await helpers.clickPermission('Allow');

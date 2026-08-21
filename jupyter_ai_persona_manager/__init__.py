@@ -27,6 +27,7 @@ from .persona_events import (
 from .permissions import (
     PERMISSION_METADATA_KEY,
     PERMISSION_RESPONSE_EVENT_SCHEMA_ID,
+    PermissionDiff,
     PermissionOption,
     PermissionOutcome,
     PermissionRequest,

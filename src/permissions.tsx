@@ -109,6 +109,13 @@ function PermissionRequestView({
       {block.detail ? (
         <div className="jp-jupyter-ai-permission-detail">{block.detail}</div>
       ) : null}
+      {block.diffs && block.diffs.length > 0 ? (
+        <div className="jp-jupyter-ai-permission-diffs">
+          {block.diffs.map((diff, i) => (
+            <PermissionDiffBlock key={i} diff={diff} />
+          ))}
+        </div>
+      ) : null}
       {resolved ? (
         selected ? (
           <div className="jp-jupyter-ai-permission-resolved">
@@ -138,6 +145,49 @@ function PermissionRequestView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+type PermissionDiffData = NonNullable<PermissionBlock['diffs']>[number];
+
+/**
+ * Minimal file-diff renderer: a path header followed by removed (`-`) lines
+ * then added (`+`) lines. Kept dependency-free; richer per-backend rendering
+ * (e.g. ACP's structuredPatch view) stays in that backend's own preamble.
+ */
+function PermissionDiffBlock({
+  diff
+}: {
+  diff: PermissionDiffData;
+}): JSX.Element {
+  const oldLines = (diff.old_text ?? '').length
+    ? (diff.old_text as string).split('\n')
+    : [];
+  const newLines = diff.new_text.length ? diff.new_text.split('\n') : [];
+  return (
+    <div className="jp-jupyter-ai-permission-diff-block">
+      <div className="jp-jupyter-ai-permission-diff-header" title={diff.path}>
+        {diff.path}
+      </div>
+      <div className="jp-jupyter-ai-permission-diff-content">
+        {oldLines.map((line, i) => (
+          <div
+            key={`o-${i}`}
+            className="jp-jupyter-ai-permission-diff-line jp-jupyter-ai-permission-diff-removed"
+          >
+            - {line}
+          </div>
+        ))}
+        {newLines.map((line, i) => (
+          <div
+            key={`n-${i}`}
+            className="jp-jupyter-ai-permission-diff-line jp-jupyter-ai-permission-diff-added"
+          >
+            + {line}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

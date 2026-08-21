@@ -11,6 +11,7 @@ from jupyter_ai_persona_manager.permissions import (
     PERMISSION_METADATA_KEY,
     PERMISSION_RESPONSE_EVENT_SCHEMA,
     PERMISSION_RESPONSE_EVENT_SCHEMA_ID,
+    PermissionDiff,
     PermissionOption,
     PermissionOutcome,
     PermissionRequest,
@@ -78,6 +79,19 @@ class TestPermissionModels:
         assert block["selected_option_id"] is None
         assert block["options"] == [
             {"option_id": "allow", "name": "Allow", "kind": "allow_once"}
+        ]
+
+    def test_build_metadata_includes_diffs(self):
+        req = PermissionRequest(
+            title="edit",
+            diffs=[PermissionDiff(path="a.py", old_text="x\n", new_text="y\n")],
+            options=[PermissionOption(option_id="a", name="Allow")],
+        )
+        block = build_permission_metadata(
+            request_id="r1", persona_id="p1", chat_id="chat-1", request=req
+        )
+        assert block["diffs"] == [
+            {"path": "a.py", "old_text": "x\n", "new_text": "y\n"}
         ]
 
     def test_build_metadata_excludes_context(self):

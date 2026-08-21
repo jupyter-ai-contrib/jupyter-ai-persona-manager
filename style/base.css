@@ -527,3 +527,40 @@
   color: var(--jp-ui-font-color2);
   margin-top: 2px;
 }
+
+/* Permission request diffs */
+.jp-jupyter-ai-permission-diffs {
+  margin-top: 4px;
+}
+
+.jp-jupyter-ai-permission-diff-block {
+  border: 1px solid var(--jp-border-color2);
+  border-radius: var(--jp-border-radius);
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.jp-jupyter-ai-permission-diff-header {
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+}
+
+.jp-jupyter-ai-permission-diff-content {
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  white-space: pre-wrap;
+}
+
+.jp-jupyter-ai-permission-diff-line {
+  padding: 0 6px;
+}
+
+.jp-jupyter-ai-permission-diff-added {
+  background: var(--jp-diff-added-color, rgb(0 255 0 / 10%));
+}
+
+.jp-jupyter-ai-permission-diff-removed {
+  background: var(--jp-diff-deleted-color, rgb(255 0 0 / 10%));
+}

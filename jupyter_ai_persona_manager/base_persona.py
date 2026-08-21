@@ -281,16 +281,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         # Reflect the resolution wherever the request was surfaced.
         if message_id is not None:
-            self._write_permission_metadata(
-                message_id,
-                build_permission_metadata(
-                    request_id=request_id,
-                    persona_id=self.id,
-                    chat_id=self.chat.get_id(),
-                    request=request,
-                    status="resolved",
-                    selected_option_id=option_id,
-                ),
+            self._finalize_permission_request(
+                request_id, request, message_id, option_id
             )
 
         return PermissionOutcome(
@@ -331,6 +323,35 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             ),
         )
         return message_id
+
+    @mark_subclass_api
+    def _finalize_permission_request(
+        self,
+        request_id: str,
+        request: PermissionRequest,
+        message_id: str,
+        option_id: Optional[str],
+    ) -> None:
+        """Reflect a resolved permission request wherever it was surfaced.
+
+        The default implementation updates the ``permission_request`` metadata
+        block to ``resolved`` with the chosen ``option_id`` (``None`` when
+        cancelled). Paired with :meth:`_publish_permission_request`: a subclass
+        that overrides how a request is surfaced (e.g. ACP rendering it in a
+        tool-call row, with a diff) should override this too, so the resolved
+        state is reflected the same way.
+        """
+        self._write_permission_metadata(
+            message_id,
+            build_permission_metadata(
+                request_id=request_id,
+                persona_id=self.id,
+                chat_id=self.chat.get_id(),
+                request=request,
+                status="resolved",
+                selected_option_id=option_id,
+            ),
+        )
 
     @mark_consumer_api
     def resolve_permission(self, request_id: str, option_id: Optional[str]) -> bool:

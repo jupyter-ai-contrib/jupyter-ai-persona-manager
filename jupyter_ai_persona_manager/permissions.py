@@ -49,6 +49,18 @@ class PermissionOption(BaseModel):
     onto this freely."""
 
 
+class PermissionDiff(BaseModel):
+    """A file diff shown alongside a permission request (e.g. a proposed edit).
+
+    Mirrors the ``IToolCallDiff`` shape the frontend understands: a target
+    ``path``, the proposed ``new_text``, and the optional ``old_text`` it
+    replaces (absent for a new file)."""
+
+    path: str
+    new_text: str
+    old_text: Optional[str] = None
+
+
 class PermissionRequest(BaseModel):
     """A request for the user to approve (or reject) an action."""
 
@@ -61,6 +73,11 @@ class PermissionRequest(BaseModel):
 
     detail: Optional[str] = None
     """Optional longer body shown under the title (a command, path, or preview)."""
+
+    diffs: Optional[list[PermissionDiff]] = None
+    """Optional file diffs to show with the request (e.g. a proposed edit), so a
+    persona can surface exactly what it wants to change before the user approves.
+    Rendered by the frontend; no feature regression versus ACP's diff preview."""
 
     message_id: Optional[str] = None
     """When set, the request is attached to this existing chat message's
@@ -170,6 +187,9 @@ def build_permission_metadata(
         "chat_id": chat_id,
         "title": request.title,
         "detail": request.detail,
+        "diffs": (
+            [d.model_dump() for d in request.diffs] if request.diffs else None
+        ),
         "correlation_id": request.correlation_id,
         "options": [opt.model_dump() for opt in request.options],
         "status": status,
