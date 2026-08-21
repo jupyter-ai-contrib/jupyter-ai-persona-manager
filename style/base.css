@@ -484,3 +484,46 @@
   background-color: var(--jp-border-color2);
 }
 /* stylelint-enable selector-class-pattern */
+
+/* Persona permission requests (BasePersona.request_permission) */
+.jp-jupyter-ai-permission-request {
+  margin: 4px 0;
+  font-size: var(--jp-ui-font-size1);
+}
+
+.jp-jupyter-ai-permission-title {
+  font-style: italic;
+}
+
+.jp-jupyter-ai-permission-detail {
+  white-space: pre-wrap;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  color: var(--jp-ui-font-color2);
+  margin: 2px 0;
+}
+
+.jp-jupyter-ai-permission-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.jp-jupyter-ai-permission-btn {
+  cursor: pointer;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: var(--jp-border-radius);
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  padding: 2px 8px;
+}
+
+.jp-jupyter-ai-permission-btn:hover {
+  background: var(--jp-layout-color2);
+}
+
+.jp-jupyter-ai-permission-resolved {
+  color: var(--jp-ui-font-color2);
+  margin-top: 2px;
+}

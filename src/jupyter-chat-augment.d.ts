@@ -24,5 +24,21 @@ declare module '@jupyter/chat' {
      * A null value means "use the persona's current value".
      */
     settings?: { [id: string]: string | null };
+    /**
+     * A permission request raised by a persona, awaiting the user's decision.
+     * Written by the server (`BasePersona.request_permission`); the frontend
+     * renders buttons from it and emits a `permission_response` event on click.
+     */
+    permission_request?: {
+      request_id: string;
+      persona_id: string;
+      room_id: string;
+      title: string;
+      detail?: string | null;
+      correlation_id?: string | null;
+      options: { option_id: string; name: string; kind?: string | null }[];
+      status: 'pending' | 'resolved';
+      selected_option_id?: string | null;
+    };
   }
 }

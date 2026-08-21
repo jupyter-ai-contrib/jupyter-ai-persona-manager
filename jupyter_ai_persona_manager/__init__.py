@@ -24,6 +24,14 @@ from .persona_events import (
     PersonaSessionState,
     register_persona_event_schemas,
 )
+from .permissions import (
+    PERMISSION_METADATA_KEY,
+    PERMISSION_RESPONSE_EVENT_SCHEMA_ID,
+    PermissionOption,
+    PermissionOutcome,
+    PermissionRequest,
+    register_permission_event_schemas,
+)
 from .awareness_models import (
     CommandOption,
     ModelConfiguration,

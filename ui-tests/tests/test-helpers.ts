@@ -47,7 +47,8 @@ export enum FixturePersona {
   BrokenInit = 'broken-init',
   SlowLoad = 'slow-load',
   SystemMessage = 'system-message',
-  Status = 'status'
+  Status = 'status',
+  Permission = 'permission'
 }
 
 interface FixturePersonaInfo {
@@ -72,7 +73,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
   [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
   [FixturePersona.SystemMessage]: { name: 'System Message Persona' },
-  [FixturePersona.Status]: { name: 'Status Persona' }
+  [FixturePersona.Status]: { name: 'Status Persona' },
+  [FixturePersona.Permission]: { name: 'Permission Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -94,6 +96,11 @@ const COMMAND_NAME = '.jp-chat-command-name';
 // The toolbar's stop button: enabled only while an AI persona is writing, so its
 // disabled state doubles as a "is the persona still streaming?" signal.
 const STOP_BUTTON = '.jp-jai-stopButton';
+
+// Permission request UI (rendered by the persona-manager permissions preamble):
+// a container with Allow?/buttons while pending, and a resolved label after.
+const PERMISSION_REQUEST = '.jp-jupyter-ai-permission-request';
+const PERMISSION_BTN = '.jp-jupyter-ai-permission-btn';
 
 // The usage chip and the parts that distinguish which usage a persona reported:
 // a context ring + percent, and/or a session-token breakdown in the popover
@@ -417,5 +424,22 @@ export class TestHelpers {
     const message = this.chat.locator(MESSAGE, { hasText: text });
     await expect(message.first()).toBeVisible({ timeout: TIMEOUT });
     return (await message.first().textContent()) ?? '';
+  }
+
+  /** The pending permission request container (buttons visible while pending). */
+  get permissionRequest(): Locator {
+    return this.chat.locator(PERMISSION_REQUEST);
+  }
+
+  /** Wait for a persona's permission request buttons to render. */
+  async waitForPermissionButtons(): Promise<void> {
+    await expect(this.chat.locator(PERMISSION_BTN).first()).toBeVisible({
+      timeout: TIMEOUT
+    });
+  }
+
+  /** Click a permission button by its label (e.g. "Allow" / "Deny"). */
+  async clickPermission(label: string): Promise<void> {
+    await this.chat.locator(PERMISSION_BTN, { hasText: label }).first().click();
   }
 }

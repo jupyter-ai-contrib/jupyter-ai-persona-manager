@@ -6,6 +6,7 @@ import {
 import {
   IChatCommandRegistry,
   IInputToolbarRegistryFactory,
+  IMessagePreambleRegistry,
   InputToolbarRegistry
 } from '@jupyter/chat';
 
@@ -20,6 +21,7 @@ import {
   IPersonaSessionRegistry,
   PersonaSessionRegistry
 } from './persona-events';
+import { createPermissionPreamble } from './permissions';
 import {
   SLASH_COMMAND_PROVIDER_ID,
   SlashCommandProvider
@@ -146,10 +148,37 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
   }
 };
 
+/**
+ * Plugin that renders persona permission requests in message preambles and
+ * sends the user's decision back to the server over the events plane.
+ */
+const permissionsPlugin: JupyterFrontEndPlugin<void> = {
+  id: '@jupyter-ai/persona-manager:permissions',
+  description:
+    'Renders persona permission requests and relays decisions via Jupyter Events.',
+  autoStart: true,
+  optional: [IMessagePreambleRegistry],
+  activate: (
+    app: JupyterFrontEnd,
+    preambleRegistry: IMessagePreambleRegistry | null
+  ) => {
+    if (!preambleRegistry) {
+      console.warn(
+        '[persona-manager] IMessagePreambleRegistry not available — permission request UI disabled'
+      );
+      return;
+    }
+    preambleRegistry.addComponent(
+      createPermissionPreamble(app.serviceManager.events)
+    );
+  }
+};
+
 export default [
   plugin,
   sessionRegistryPlugin,
   slashCommandPlugin,
   controlRegistryPlugin,
-  toolbarPlugin
+  toolbarPlugin,
+  permissionsPlugin
 ];

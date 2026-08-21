@@ -1,13 +1,15 @@
 import asyncio
+import asyncio
 import contextlib
 import html
 import os
 import traceback
+import uuid
 from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
 from logging import Logger
 from time import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
@@ -30,6 +32,12 @@ from .doc_markers import (
     mark_subclass_api,
 )
 from .persona_events import PersonaSessionState
+from .permissions import (
+    PERMISSION_METADATA_KEY,
+    PermissionOutcome,
+    PermissionRequest,
+    build_permission_metadata,
+)
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -130,6 +138,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.chat = chat
         self._processing_count = 0
 
+        # Pending permission requests, keyed by request_id. Each maps to a
+        # Future resolved when the user's decision arrives over the events plane
+        # (see `request_permission` / `resolve_permission`).
+        self._pending_permissions: dict[str, "asyncio.Future[Optional[str]]"] = {}
+
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and room id come from the
         # PersonaManager (this persona's ``parent``); when constructed without a
@@ -226,6 +239,120 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # base class methods, available to subclasses.
     ################################################
+    @mark_consumer_api
+    async def request_permission(
+        self, request: PermissionRequest
+    ) -> PermissionOutcome:
+        """Ask the user to approve (or reject) an action, and suspend until they
+        decide.
+
+        This is the general, backend-agnostic permission API. The request is
+        reflected in the chat by writing a ``permission_request`` block into a
+        chat message's metadata (a new message, or ``request.message_id`` if
+        given), which the frontend renders as buttons. The user's decision
+        arrives back over the Jupyter Events plane and resolves this call.
+
+        ACP-specific identifiers (``session_id`` etc.) belong in
+        ``request.context``; they are echoed back verbatim in
+        ``PermissionOutcome.request`` and never leave the server.
+
+        Returns a :class:`PermissionOutcome`. ``option_id`` is ``None`` and
+        ``cancelled`` is ``True`` if the request was cancelled rather than
+        answered.
+        """
+        manager = self.parent
+        room_id = getattr(manager, "room_id", "")
+        request_id = uuid.uuid4().hex
+
+        # Reflect the request in the chat so the frontend can render buttons.
+        message_id = request.message_id
+        if message_id is None:
+            message_id = self.chat.add_message(
+                NewMessage(body="", sender=self.id), trigger_actions=[]
+            )
+        self._write_permission_metadata(
+            message_id,
+            build_permission_metadata(
+                request_id=request_id,
+                persona_id=self.id,
+                room_id=room_id,
+                request=request,
+                status="pending",
+            ),
+        )
+
+        # Suspend until the decision arrives (via `resolve_permission`).
+        loop = asyncio.get_event_loop()
+        future: "asyncio.Future[Optional[str]]" = loop.create_future()
+        self._pending_permissions[request_id] = future
+        try:
+            option_id = await future
+        finally:
+            self._pending_permissions.pop(request_id, None)
+
+        # Reflect the resolution in the chat message.
+        self._write_permission_metadata(
+            message_id,
+            build_permission_metadata(
+                request_id=request_id,
+                persona_id=self.id,
+                room_id=room_id,
+                request=request,
+                status="resolved",
+                selected_option_id=option_id,
+            ),
+        )
+
+        return PermissionOutcome(
+            option_id=option_id,
+            request=request,
+            cancelled=option_id is None,
+        )
+
+    @mark_consumer_api
+    def resolve_permission(self, request_id: str, option_id: Optional[str]) -> bool:
+        """Resolve a pending permission request with the user's decision.
+
+        Called by the :class:`PersonaManager`'s event listener when a
+        ``permission_response`` event arrives. Returns ``True`` if a matching
+        pending request was found and resolved, ``False`` otherwise.
+        """
+        future = self._pending_permissions.get(request_id)
+        if future is None or future.done():
+            return False
+        future.set_result(option_id)
+        return True
+
+    @mark_consumer_api
+    def cancel_permissions(self) -> int:
+        """Cancel all pending permission requests (e.g. on interrupt/shutdown).
+
+        Each pending request resolves as cancelled (``option_id=None``). Returns
+        the number of requests cancelled.
+        """
+        cancelled = 0
+        for request_id, future in list(self._pending_permissions.items()):
+            if not future.done():
+                future.set_result(None)
+                cancelled += 1
+        return cancelled
+
+    def _write_permission_metadata(
+        self, message_id: str, block: dict[str, Any]
+    ) -> None:
+        """Merge a ``permission_request`` block into a chat message's metadata."""
+        msg = self.chat.get_message(message_id)
+        if msg is None:
+            self.log.warning(
+                f"request_permission: chat message {message_id} not found; "
+                "cannot render permission request."
+            )
+            return
+        metadata = dict(msg.metadata or {})
+        metadata[PERMISSION_METADATA_KEY] = block
+        msg.metadata = metadata
+        self.chat.update_message(msg, trigger_actions=[])
+
     @mark_consumer_api
     @property
     def id(self) -> str:

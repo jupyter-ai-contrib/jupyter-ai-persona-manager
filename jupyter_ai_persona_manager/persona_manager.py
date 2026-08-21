@@ -24,6 +24,7 @@ from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
 from .persona_events import PersonaManagerSessionState
+from .permissions import PERMISSION_RESPONSE_EVENT_SCHEMA_ID
 
 try:
     # The chat event bus that carries client_connected/client_disconnected.
@@ -243,6 +244,12 @@ class PersonaManager(LoggingConfigurable):
         if self.event_logger is not None:
             self.event_logger.add_listener(
                 schema_id=CHAT_ROOM_EVENT_SCHEMA_ID, listener=self._on_chat_event
+            )
+            # Route user permission decisions (emitted by the frontend as
+            # `permission_response` events) to the requesting persona.
+            self.event_logger.add_listener(
+                schema_id=PERMISSION_RESPONSE_EVENT_SCHEMA_ID,
+                listener=self._on_permission_response,
             )
         self._publish_persona_list()
 
@@ -488,6 +495,34 @@ class PersonaManager(LoggingConfigurable):
         self._publish_persona_list()
         for persona in self._personas.values():
             persona.state.publish()
+
+    async def _on_permission_response(self, logger, schema_id, data) -> None:
+        """Route a ``permission_response`` event to the requesting persona.
+
+        The frontend emits this event (client -> server) when the user answers a
+        permission request. Addressing is direct: ``room_id`` selects this
+        manager, ``persona_id`` selects the persona, and ``request_id`` selects
+        the pending request — no search over personas/clients.
+        """
+        if data.get("room_id") != self.room_id:
+            return
+        persona_id = data.get("persona_id")
+        request_id = data.get("request_id")
+        if not persona_id or not request_id:
+            return
+        persona = self._personas.get(persona_id)
+        if persona is None:
+            self.log.warning(
+                f"permission_response for unknown persona '{persona_id}' "
+                f"in room '{self.room_id}'."
+            )
+            return
+        resolved = persona.resolve_permission(request_id, data.get("option_id"))
+        if not resolved:
+            self.log.debug(
+                f"permission_response: no pending request '{request_id}' for "
+                f"persona '{persona_id}'."
+            )
 
     @property
     def default_persona(self) -> BasePersona | None:
