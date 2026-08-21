@@ -21,7 +21,7 @@ import {
   IPersonaSessionRegistry,
   PersonaSessionRegistry
 } from './persona-events';
-import { createPermissionPreamble } from './permissions';
+import { createPersonaPreamble } from './tool-calls';
 import {
   SLASH_COMMAND_PROVIDER_ID,
   SlashCommandProvider
@@ -169,7 +169,7 @@ const permissionsPlugin: JupyterFrontEndPlugin<void> = {
       return;
     }
     preambleRegistry.addComponent(
-      createPermissionPreamble(app.serviceManager.events)
+      createPersonaPreamble(app.serviceManager.events)
     );
   }
 };

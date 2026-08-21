@@ -51,7 +51,8 @@ export enum FixturePersona {
   Permission = 'permission',
   QuietPermission = 'quiet-permission',
   VerbosePermission = 'verbose-permission',
-  StopPermission = 'stop-permission'
+  StopPermission = 'stop-permission',
+  ToolCall = 'tool-call'
 }
 
 interface FixturePersonaInfo {
@@ -80,7 +81,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.Permission]: { name: 'Permission Persona' },
   [FixturePersona.QuietPermission]: { name: 'Quiet Requester Persona' },
   [FixturePersona.VerbosePermission]: { name: 'Verbose Requester Persona' },
-  [FixturePersona.StopPermission]: { name: 'Stop Requester Persona' }
+  [FixturePersona.StopPermission]: { name: 'Stop Requester Persona' },
+  [FixturePersona.ToolCall]: { name: 'Tool Call Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -106,7 +108,12 @@ const STOP_BUTTON = '.jp-jai-stopButton';
 // Permission request UI (rendered by the persona-manager permissions preamble):
 // a container with Allow?/buttons while pending, and a resolved label after.
 const PERMISSION_REQUEST = '.jp-jupyter-ai-permission-request';
-const PERMISSION_BTN = '.jp-jupyter-ai-permission-btn';
+// Permission buttons appear both as standalone requests and attached to a tool
+// call row, so match either class.
+const PERMISSION_BTN = '.jp-jupyter-ai-permission-btn, .jp-jai-permission-btn';
+// Tool-call rows and diff blocks (report_tool_call UI).
+const TOOL_CALL = '.jp-jai-tool-call';
+const DIFF_BLOCK = '.jp-jai-diff-block';
 
 // The usage chip and the parts that distinguish which usage a persona reported:
 // a context ring + percent, and/or a session-token breakdown in the popover
@@ -457,6 +464,16 @@ export class TestHelpers {
   /** How many permission decision buttons are currently rendered. */
   async permissionButtonCount(): Promise<number> {
     return this.chat.locator(PERMISSION_BTN).count();
+  }
+
+  /** All rendered tool-call rows. */
+  get toolCalls(): Locator {
+    return this.chat.locator(TOOL_CALL);
+  }
+
+  /** All rendered diff blocks. */
+  get diffBlocks(): Locator {
+    return this.chat.locator(DIFF_BLOCK);
   }
 
   /**
