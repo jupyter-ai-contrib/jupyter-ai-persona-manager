@@ -5,9 +5,10 @@ import os
 import traceback
 from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
+from enum import Enum
 from logging import Logger
 from time import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
@@ -72,6 +73,23 @@ class ABCLoggingConfigurableMeta(ABCMeta, MetaHasTraits):
     """
 
 
+class PreparationState(str, Enum):
+    """
+    The state of a persona's one-time `prepare()` lifecycle.
+
+    - NOT_STARTED: `prepare()` has not been run yet.
+    - PREPARING: a `prepare()` run is in flight.
+    - PREPARED: `prepare()` completed successfully.
+    - FAILED: the last `prepare()` run raised; it will be retried on the next
+      message.
+    """
+
+    NOT_STARTED = "not_started"
+    PREPARING = "preparing"
+    PREPARED = "prepared"
+    FAILED = "failed"
+
+
 class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta):
     """
     Abstract base class that defines a persona when implemented.
@@ -130,6 +148,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.chat = chat
         self._processing_count = 0
 
+        self._prepare_task: Optional[asyncio.Task] = None
+
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and room id come from the
         # PersonaManager (this persona's ``parent``); when constructed without a
@@ -172,6 +192,45 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         This is an abstract method that must be implemented by subclasses.
         """
+
+    @mark_recommended
+    async def prepare(self) -> None:
+        """
+        One-time startup hook. Override to perform per-persona startup (e.g.
+        spawning an agent subprocess) on first engagement instead of in
+        `__init__`. Default is a no-op.
+
+        The manager runs it once, before the persona's first message, via
+        `_ensure_prepared()` — which also awaits an in-flight run for concurrent
+        messages and retries it only if a run failed — so implementations do not
+        need to guard against concurrent or repeated calls themselves.
+        """
+        return
+
+    @mark_consumer_api
+    @property
+    def preparation_state(self) -> "PreparationState":
+        """The state of this persona's `prepare()` lifecycle."""
+        task = self._prepare_task
+        if task is None:
+            return PreparationState.NOT_STARTED
+        if not task.done():
+            return PreparationState.PREPARING
+        if task.cancelled() or task.exception() is not None:
+            return PreparationState.FAILED
+        return PreparationState.PREPARED
+
+    async def _ensure_prepared(self) -> None:
+        """
+        Run `prepare()` exactly once, awaiting an in-flight run if one exists.
+
+        """
+        if self.preparation_state in (
+            PreparationState.NOT_STARTED,
+            PreparationState.FAILED,
+        ):
+            self._prepare_task = asyncio.ensure_future(self.prepare())
+        await self._prepare_task
 
     @mark_recommended
     async def cancel_response(self) -> None:

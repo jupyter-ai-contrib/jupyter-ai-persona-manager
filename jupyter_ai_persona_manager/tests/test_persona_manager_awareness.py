@@ -134,6 +134,7 @@ class TestSafeProcessAppliesSpecsFirst:
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
+        persona._ensure_prepared = AsyncMock()
         persona.apply_specs_in_message = AsyncMock(
             side_effect=lambda m: order.append("apply")
         )
@@ -151,6 +152,7 @@ class TestSafeProcessAppliesSpecsFirst:
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
+        persona._ensure_prepared = AsyncMock()
         persona.apply_specs_in_message = AsyncMock()
         exc = RuntimeError("boom")
         persona.process_message = AsyncMock(side_effect=exc)
@@ -167,6 +169,7 @@ class TestSafeProcessAppliesSpecsFirst:
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
+        persona._ensure_prepared = AsyncMock()
         exc = RuntimeError("bad spec")
         persona.apply_specs_in_message = AsyncMock(side_effect=exc)
         persona.process_message = AsyncMock()

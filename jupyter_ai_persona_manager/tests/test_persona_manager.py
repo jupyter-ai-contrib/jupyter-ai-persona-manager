@@ -2,6 +2,7 @@
 Test the persona manager functionality.
 """
 
+import asyncio
 import logging
 import tempfile
 from pathlib import Path
@@ -9,7 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from jupyterlab_chat.models import Message
-from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
+from jupyter_ai_persona_manager.base_persona import (
+    BasePersona,
+    PersonaDefaults,
+    PreparationState,
+)
 from jupyter_ai_persona_manager.persona_manager import (
     SYSTEM_USERNAME,
     PersonaManager,
@@ -334,6 +339,7 @@ def _make_mock_persona():
     persona = MagicMock()
     persona.name = "TestPersona"
     persona.log = MagicMock()
+    persona._ensure_prepared = AsyncMock()
     persona.process_message = AsyncMock()
     persona.apply_specs_in_message = AsyncMock()
     persona.handle_uncaught_exception = AsyncMock()
@@ -405,6 +411,186 @@ class TestSafeProcess:
         await _safe_process(persona, message)
 
         persona.handle_uncaught_exception.assert_not_called()
+
+
+class _LifecyclePersona(BasePersona):
+    """
+    A real BasePersona subclass with an instrumented prepare()/process_message,
+    for integration-testing the prepare lifecycle through the real _safe_process
+    and _ensure_prepared.
+    """
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Lifecycle",
+            description="",
+            avatar_path="",
+            system_prompt="",
+        )
+
+    async def prepare(self) -> None:
+        self.prepare_calls += 1
+        if self.prepare_gate is not None:
+            await self.prepare_gate.wait()
+        if self.prepare_should_fail:
+            raise RuntimeError("prepare boom")
+
+    async def process_message(self, message) -> None:
+        self.process_calls += 1
+        if self.process_should_fail:
+            raise RuntimeError("process boom")
+
+
+class _RecordingLoop:
+    """
+    Wraps the running event loop, recording the tasks the real PersonaManager
+    dispatches via `on_chat_message`, so tests can await them.
+    """
+
+    def __init__(self, loop):
+        self._loop = loop
+        self.tasks = []
+
+    def create_task(self, coro):
+        task = self._loop.create_task(coro)
+        self.tasks.append(task)
+        return task
+
+
+def _make_manager_and_persona():
+    """
+    A real PersonaManager routing to a real _LifecyclePersona.
+
+    The manager is built via __new__ with only the attributes its routing path
+    (`on_chat_message` -> `_safe_process`) touches; the persona is a real
+    BasePersona subclass with a real `prepare()` / `process_message`.
+    """
+    pm = PersonaManager.__new__(PersonaManager)
+    pm.event_loop = _RecordingLoop(asyncio.get_event_loop())
+    pm.log = logging.getLogger("test-persona-manager")
+    pm.room_id = "room:chat:test"
+    pm.chat_path = "test.chat"
+
+    persona = _LifecyclePersona.__new__(_LifecyclePersona)
+    persona.chat = MagicMock()
+    persona.chat.add_message = MagicMock(return_value="msg-1")
+    persona.log = logging.getLogger("test-persona")
+    persona.state = MagicMock()
+    persona._processing_count = 0
+    persona._prepare_task = None
+    persona.prepare_calls = 0
+    persona.process_calls = 0
+    persona.prepare_should_fail = False
+    persona.process_should_fail = False
+    persona.prepare_gate = None
+
+    pm._personas = {persona.id: persona}
+    return pm, persona
+
+
+def _message_to(persona):
+    """A message addressed to `persona` (as the chat input's picker stamps it)."""
+    msg = MagicMock(spec=Message)
+    msg.metadata = {PersonaManager.TO_PERSONA_METADATA_KEY: persona.id}
+    return msg
+
+
+async def _route(pm, message):
+    """Route one message through the real manager and await the dispatched work."""
+    pm.on_chat_message(pm.room_id, message)
+    await asyncio.gather(*pm.event_loop.tasks)
+    pm.event_loop.tasks.clear()
+
+
+class TestPrepareLifecycleIntegration:
+    """
+    Integration tests for the prepare() lifecycle: messages routed through
+    PersonaManager.on_chat_message to a _LifecyclePersona, exercising
+    the _safe_process / _ensure_prepared / prepare() path end to end.
+    """
+
+    @pytest.mark.asyncio
+    async def test_prepare_runs_once_before_processing(self):
+        pm, p = _make_manager_and_persona()
+        await _route(pm, _message_to(p))
+        assert p.prepare_calls == 1
+        assert p.process_calls == 1
+        assert p.preparation_state == PreparationState.PREPARED
+
+    @pytest.mark.asyncio
+    async def test_prepare_runs_once_across_messages(self):
+        pm, p = _make_manager_and_persona()
+        await _route(pm, _message_to(p))
+        await _route(pm, _message_to(p))
+        await _route(pm, _message_to(p))
+        assert p.prepare_calls == 1
+        assert p.process_calls == 3
+
+    @pytest.mark.asyncio
+    async def test_concurrent_messages_await_single_prepare(self):
+        """While prepare() is in flight, a second message awaits it (dlqqq #1)."""
+        pm, p = _make_manager_and_persona()
+        p.prepare_gate = asyncio.Event()
+
+        # Two messages routed by the manager before prepare() finishes.
+        pm.on_chat_message(pm.room_id, _message_to(p))
+        pm.on_chat_message(pm.room_id, _message_to(p))
+        await asyncio.sleep(0.05)  # let both dispatched tasks reach gated prepare()
+
+        assert p.prepare_calls == 1  # started once
+        assert p.process_calls == 0  # neither processed while prepare blocks
+        assert p.preparation_state == PreparationState.PREPARING
+
+        p.prepare_gate.set()
+        await asyncio.gather(*pm.event_loop.tasks)
+
+        assert p.prepare_calls == 1  # one shared run
+        assert p.process_calls == 2  # both messages processed after it
+
+    @pytest.mark.asyncio
+    async def test_prepare_failure_delivered_and_skips_processing(self):
+        pm, p = _make_manager_and_persona()
+        p.prepare_should_fail = True
+
+        await _route(pm, _message_to(p))
+
+        assert p.prepare_calls == 1
+        assert p.process_calls == 0  # processing skipped on prepare failure
+        assert p.preparation_state == PreparationState.FAILED
+        p.chat.add_message.assert_called()  # error delivered to chat
+
+    @pytest.mark.asyncio
+    async def test_prepare_retried_after_failure(self):
+        pm, p = _make_manager_and_persona()
+        p.prepare_should_fail = True
+        await _route(pm, _message_to(p))  # fails
+        assert p.preparation_state == PreparationState.FAILED
+
+        p.prepare_should_fail = False
+        await _route(pm, _message_to(p))  # retried
+
+        assert p.prepare_calls == 2
+        assert p.process_calls == 1
+        assert p.preparation_state == PreparationState.PREPARED
+
+    @pytest.mark.asyncio
+    async def test_processing_failure_does_not_reset_prepare(self):
+        """A process_message() failure must not re-trigger prepare() (dlqqq #2)."""
+        pm, p = _make_manager_and_persona()
+        await _route(pm, _message_to(p))  # prepares + processes ok
+        assert p.prepare_calls == 1
+
+        p.process_should_fail = True
+        await _route(pm, _message_to(p))  # processing fails
+        assert p.prepare_calls == 1  # NOT re-run
+        assert p.preparation_state == PreparationState.PREPARED
+        p.chat.add_message.assert_called()  # error still delivered
+
+        # A later successful message still does not re-prepare.
+        p.process_should_fail = False
+        await _route(pm, _message_to(p))
+        assert p.prepare_calls == 1
 
 
 PERSONA_SENDER = "jupyter-ai-personas::pkg::Bot"
