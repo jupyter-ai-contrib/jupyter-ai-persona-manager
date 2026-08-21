@@ -479,3 +479,89 @@ class TestOnChatMessageRouting:
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
             routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
             assert routed == [target]
+
+
+# ---------------------------------------------------------------------------
+# TestShutdownPersonas  (issue #127: drop the YChat background-task workaround)
+# ---------------------------------------------------------------------------
+
+
+class TestShutdownPersonas:
+    """`shutdown_personas` shuts down each persona and no longer reaches into
+    the private `YChat._background_tasks` set. jupyter-chat#509 was fixed
+    upstream in #521 (create_id/_set_timestamp are no longer async), and this
+    package floors `jupyterlab_chat>=0.25.0a2` which includes the fix, so the
+    workaround is gone."""
+
+    @pytest.mark.asyncio
+    async def test_shuts_down_each_persona_with_real_ychat(self):
+        from jupyterlab_chat.ychat import YChat
+
+        pm = PersonaManager.__new__(PersonaManager)
+        p1 = Mock()
+        p1.shutdown = AsyncMock()
+        p2 = Mock()
+        p2.shutdown = AsyncMock()
+        pm._personas = {"a": p1, "b": p2}
+        pm.chat = YChat()
+        pm.log = Mock()
+
+        await pm.shutdown_personas()
+
+        p1.shutdown.assert_awaited_once()
+        p2.shutdown.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_require_background_tasks_attribute(self):
+        """A chat backend with no `_background_tasks` attribute shuts down fine
+        (the removed workaround used to gate on `hasattr(chat,
+        '_background_tasks')`)."""
+
+        class _MinimalChat:
+            pass
+
+        pm = PersonaManager.__new__(PersonaManager)
+        persona = Mock()
+        persona.shutdown = AsyncMock()
+        pm._personas = {"a": persona}
+        pm.chat = _MinimalChat()
+        pm.log = Mock()
+
+        await pm.shutdown_personas()
+
+        persona.shutdown.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# TestSendSystemMessage  (issue #124: system messages)
+# ---------------------------------------------------------------------------
+
+
+class TestSendSystemMessage:
+    """Regression coverage documenting that system messages work today. The
+    funky `_ydoc.transaction()` / `_yusers.pop()` code in #124 cannot be
+    simplified to `add_message(user=...)` until jupyter-chat#508/#513 ships, so
+    this locks in the current behavior rather than changing it."""
+
+    @pytest.mark.asyncio
+    async def test_posts_system_message_and_scrubs_system_user(self):
+        import asyncio
+
+        from jupyterlab_chat.ychat import YChat
+
+        pm = PersonaManager.__new__(PersonaManager)
+        pm.chat = YChat()
+        pm.log = Mock()
+
+        pm.send_system_message("hello world")
+
+        # The message is posted immediately, attributed to the System user.
+        msgs = pm.chat.get_messages()
+        assert any(
+            m.body == "hello world" and m.sender == SYSTEM_USERNAME for m in msgs
+        )
+
+        # The System user is removed shortly after (1s delay in the task) so it
+        # does not appear in the @-mention menu.
+        await asyncio.sleep(1.2)
+        assert SYSTEM_USERNAME not in (pm.chat._yusers or {})

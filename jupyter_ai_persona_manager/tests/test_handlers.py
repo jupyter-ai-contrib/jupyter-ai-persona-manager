@@ -251,3 +251,121 @@ async def test_cancel_handler_resolves_manager_by_path_rtc_free(jp_fetch, jp_ser
     body = json.loads(response.body)
     assert persona.id in body["cancelled"]
     persona.cancel_response.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# MessageHandler  (issue #125: keep the temporary-chat REST endpoint working)
+# ---------------------------------------------------------------------------
+
+from jupyterlab_chat.models import Message as ChatMessage
+from jupyterlab_chat.models import NewMessage
+
+from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
+from jupyter_ai_persona_manager.persona_manager import PersonaManager
+
+
+class _EchoPersona(BasePersona):
+    """Minimal persona that echoes the incoming message back into the chat."""
+
+    @property
+    def defaults(self):
+        return PersonaDefaults(
+            name="EchoPersona",
+            description="echoes messages",
+            avatar_path="/tmp/echo.svg",
+            system_prompt="echo",
+        )
+
+    async def process_message(self, message: ChatMessage) -> None:
+        self.chat.add_message(
+            NewMessage(body="echo: " + message.body, sender=self.id)
+        )
+
+    async def shutdown(self) -> None:
+        # Keep teardown trivial; the base awareness cleanup isn't needed here.
+        pass
+
+
+@pytest.fixture
+def jp_server_config(jp_server_config):
+    """Enable jupyter_server_fileid so `file_id_manager` is present in settings,
+    mirroring a real deployment (it is a declared dependency of this package).
+    Overrides the root-conftest fixture for this module."""
+    cfg = dict(jp_server_config)
+    server = dict(cfg.get("ServerApp", {}))
+    exts = dict(server.get("jpserver_extensions", {}))
+    exts["jupyter_server_fileid"] = True
+    server["jpserver_extensions"] = exts
+    cfg["ServerApp"] = server
+    return cfg
+
+
+@pytest.fixture
+def inject_echo_persona(monkeypatch):
+    """Make the temporary PersonaManager created by MessageHandler load the echo
+    persona (personas normally come from installed entry points)."""
+    monkeypatch.setattr(
+        PersonaManager,
+        "_ep_persona_classes",
+        [{"module": "echo", "persona_class": _EchoPersona, "traceback": None}],
+    )
+
+
+class TestMessageHandler:
+    """The `/api/ai/message/<persona>` endpoint spins up a throwaway chat,
+    routes a single message to the named persona, and returns its output."""
+
+    async def test_returns_persona_response(
+        self, jp_fetch, jp_serverapp, inject_echo_persona
+    ):
+        """Happy path: the endpoint returns the persona's chat output (#125)."""
+        body = json.dumps({"message": "hello"})
+        response = await jp_fetch(
+            "api", "ai", "message", "EchoPersona", method="POST", body=body
+        )
+        assert response.code == 200
+        data = json.loads(response.body)
+        assert "echo: hello" in data["response"]
+
+    async def test_404_for_unknown_persona(
+        self, jp_fetch, jp_serverapp, inject_echo_persona
+    ):
+        """An unknown persona name is a clean 404, not a 500."""
+        from tornado.httpclient import HTTPClientError
+
+        body = json.dumps({"message": "hi"})
+        with pytest.raises(HTTPClientError) as exc:
+            await jp_fetch(
+                "api", "ai", "message", "NoSuchPersona", method="POST", body=body
+            )
+        assert exc.value.code == 404
+
+    async def test_400_for_missing_message_field(
+        self, jp_fetch, jp_serverapp, inject_echo_persona
+    ):
+        """A body with no `message` field is a 400."""
+        from tornado.httpclient import HTTPClientError
+
+        with pytest.raises(HTTPClientError) as exc:
+            await jp_fetch(
+                "api", "ai", "message", "EchoPersona",
+                method="POST", body=json.dumps({}),
+            )
+        assert exc.value.code == 400
+
+    async def test_500_when_fileid_manager_missing(
+        self, jp_fetch, jp_serverapp, inject_echo_persona
+    ):
+        """Without `file_id_manager` the handler fails cleanly with a 500 rather
+        than an uncaught `AttributeError` on `None.index` (the pre-fix behavior
+        for #125). We remove the manager after startup to simulate its
+        absence."""
+        from tornado.httpclient import HTTPClientError
+
+        jp_serverapp.web_app.settings.pop("file_id_manager", None)
+        with pytest.raises(HTTPClientError) as exc:
+            await jp_fetch(
+                "api", "ai", "message", "EchoPersona",
+                method="POST", body=json.dumps({"message": "hi"}),
+            )
+        assert exc.value.code == 500

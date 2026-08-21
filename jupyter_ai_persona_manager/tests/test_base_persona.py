@@ -235,3 +235,34 @@ class TestProcessing:
             with persona.track_processing():
                 raise ValueError("boom")
         assert persona.processing is False
+
+
+# ---------------------------------------------------------------------------
+# TestSetWritingStatus  (issue #128: refine set_writing_status)
+# ---------------------------------------------------------------------------
+
+class TestSetWritingStatus:
+    """`set_writing_status` maps its input onto `broadcast_writing_status`:
+    `False` stops, `True` shows a generic indicator, and a message-ID string is
+    carried through so the frontend can attach the indicator to that message."""
+
+    def test_false_stops_writing(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        persona.set_writing_status(False)
+        persona.chat.broadcast_writing_status.assert_called_once_with(
+            persona.as_user(), None
+        )
+
+    def test_true_shows_generic_indicator(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        persona.set_writing_status(True)
+        persona.chat.broadcast_writing_status.assert_called_once_with(
+            persona.as_user(), {"typingIndicator": "Writing..."}
+        )
+
+    def test_message_id_is_carried(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        persona.set_writing_status("msg-42")
+        persona.chat.broadcast_writing_status.assert_called_once_with(
+            persona.as_user(), {"messageID": "msg-42"}
+        )

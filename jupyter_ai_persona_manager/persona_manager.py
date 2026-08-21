@@ -690,16 +690,14 @@ class PersonaManager(LoggingConfigurable):
         called when the server is shutting down or when a chat session is
         closed.
         """
-        # TODO: RTC decoupling gap directly accesses ychat._background_tasks.
-        
-        # Without this, `/refresh-personas` causes a runtime error.
-        if hasattr(self.chat, '_background_tasks'):
-            while self.chat._background_tasks:
-                task = next(iter(self.chat._background_tasks))
-                await task
-                self.chat._background_tasks.discard(task)
-
-        # Then, shut down each persona
+        # Shut down each persona.
+        #
+        # Note: previous versions awaited `YChat._background_tasks` here to work
+        # around jupyterlab/jupyter-chat#509, where `create_id`/`_set_timestamp`
+        # were spawned as background tasks that had to be drained on shutdown.
+        # That was fixed upstream in jupyter-chat#521 (those methods are no
+        # longer async), and this package now floors `jupyterlab_chat>=0.25.0a2`
+        # which includes the fix, so the private-attribute workaround is gone.
         for persona in self.personas.values():
             await persona.shutdown()
 

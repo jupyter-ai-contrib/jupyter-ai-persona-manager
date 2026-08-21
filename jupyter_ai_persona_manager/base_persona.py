@@ -528,26 +528,31 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self.state.slash_commands
 
     @mark_subclass_api
-    def set_writing_status(self, value: "bool | str") -> None:
+    def set_writing_status(self, value: bool | str) -> None:
         """Set this persona's writing status in a transport-neutral way.
 
-        `value` is `True` (writing started), `False` (writing stopped), or the
-        ID of the message being written into.
+        `value` is `False` (writing stopped), `True` (writing started, before a
+        message exists), or the ID of the message being written into.
 
         This drives the chat's typing indicator via ``broadcast_writing_status()``
         (Jupyter Chat's writers mechanism), which works in both RTC and non-RTC
         mode. Writing status is intentionally not part of the persona-state
         events; the chat already owns it.
         """
-        if value is False:
+        if not value:
+            # `value` is False: writing stopped.
             self.chat.broadcast_writing_status(self.as_user(), None)
-        elif value is True:
-            self.chat.broadcast_writing_status(
-                self.as_user(), {"typingIndicator": "Writing..."}
-            )
-        else:
-            # value is the message ID being written into
-            self.chat.broadcast_writing_status(self.as_user(), {"messageID": value})
+            return
+
+        # `value` is truthy: writing is in progress. When it is the stream's
+        # message ID, carry it so the frontend can attach the indicator to that
+        # message; otherwise advertise a generic "writing" indicator.
+        status = (
+            {"messageID": value}
+            if isinstance(value, str)
+            else {"typingIndicator": "Writing..."}
+        )
+        self.chat.broadcast_writing_status(self.as_user(), status)
 
     ################################################
     # reporting session information (called by the persona itself)
