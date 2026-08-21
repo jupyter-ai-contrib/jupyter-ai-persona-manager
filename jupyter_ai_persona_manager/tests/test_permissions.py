@@ -126,7 +126,9 @@ class TestRequestPermission:
         # A message was created and pending metadata written.
         persona.chat.add_message.assert_called_once()
         first_msg = persona.chat.update_message.call_args_list[0][0][0]
-        block = first_msg.metadata[PERMISSION_METADATA_KEY]
+        requests = first_msg.metadata[PERMISSION_METADATA_KEY]
+        assert isinstance(requests, list) and len(requests) == 1
+        block = requests[0]
         assert block["status"] == "pending"
         assert block["persona_id"] == persona.id
         assert len(persona._pending_permissions) == 1
@@ -188,7 +190,7 @@ class TestRequestPermission:
         await task
         # Last metadata write reflects the resolution.
         last_msg = persona.chat.update_message.call_args_list[-1][0][0]
-        block = last_msg.metadata[PERMISSION_METADATA_KEY]
+        block = last_msg.metadata[PERMISSION_METADATA_KEY][0]
         assert block["status"] == "resolved"
         assert block["selected_option_id"] == "a"
 
@@ -222,6 +224,47 @@ class TestRequestPermission:
         # Second resolve is a no-op (already resolved).
         assert persona.resolve_permission(request_id, "b") is False
         await task
+
+    @pytest.mark.asyncio
+    async def test_multiple_requests_same_message_do_not_clobber(self):
+        # Two requests attached to the SAME message_id must coexist as separate
+        # entries (keyed by request_id), not overwrite each other — this is the
+        # ACP grouped-tool-calls scenario.
+        persona = _make_persona()
+        # Stateful message whose metadata persists across get/update, so we can
+        # observe both requests accumulating in the one message.
+        msg = SimpleNamespace(metadata={})
+        persona.chat.get_message = MagicMock(return_value=msg)
+
+        req1 = PermissionRequest(
+            title="one",
+            message_id="m1",
+            options=[PermissionOption(option_id="a", name="A")],
+        )
+        req2 = PermissionRequest(
+            title="two",
+            message_id="m1",
+            options=[PermissionOption(option_id="b", name="B")],
+        )
+        t1 = asyncio.create_task(persona.request_permission(req1))
+        t2 = asyncio.create_task(persona.request_permission(req2))
+        await asyncio.sleep(0)
+
+        # Both pending requests live in the same message, distinct entries.
+        reqs = msg.metadata[PERMISSION_METADATA_KEY]
+        assert len(reqs) == 2
+        assert {r["title"] for r in reqs} == {"one", "two"}
+        assert len(persona._pending_permissions) == 2
+
+        # Resolve each independently; each updates only its own entry.
+        for rid in list(persona._pending_permissions):
+            persona.resolve_permission(rid, "a")
+        await asyncio.gather(t1, t2)
+
+        reqs = msg.metadata[PERMISSION_METADATA_KEY]
+        assert len(reqs) == 2
+        assert all(r["status"] == "resolved" for r in reqs)
+        assert {r["title"] for r in reqs} == {"one", "two"}
 
 
 # ---------------------------------------------------------------------------

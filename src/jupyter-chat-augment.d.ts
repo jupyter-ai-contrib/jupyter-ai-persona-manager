@@ -25,11 +25,13 @@ declare module '@jupyter/chat' {
      */
     settings?: { [id: string]: string | null };
     /**
-     * A permission request raised by a persona, awaiting the user's decision.
-     * Written by the server (`BasePersona.request_permission`); the frontend
-     * renders buttons from it and emits a `permission_response` event on click.
+     * Permission requests raised by a persona, awaiting the user's decision.
+     * Written by the server (`BasePersona.request_permission`) as a list keyed
+     * by `request_id`, so one message can host several without clobbering. The
+     * frontend renders each block and emits a `permission_response` event on
+     * click.
      */
-    permission_request?: {
+    permission_requests?: {
       request_id: string;
       persona_id: string;
       chat_id: string;
@@ -39,6 +41,6 @@ declare module '@jupyter/chat' {
       options: { option_id: string; name: string; kind?: string | null }[];
       status: 'pending' | 'resolved';
       selected_option_id?: string | null;
-    };
+    }[];
   }
 }

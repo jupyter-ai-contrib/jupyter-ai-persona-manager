@@ -26,9 +26,12 @@ if TYPE_CHECKING:
     from jupyter_events import EventLogger
 
 
-# Metadata key holding a message's pending/resolved permission request. The
-# frontend renders buttons from this block and emits the decision back.
-PERMISSION_METADATA_KEY = "permission_request"
+# Metadata key holding a message's pending/resolved permission requests. The
+# value is a LIST of request blocks (keyed by request_id), so a single message
+# can host several permission requests without them clobbering each other —
+# mirroring how ACP groups multiple tool calls (each with its own permission)
+# into one message. The frontend renders each block; each resolves independently.
+PERMISSION_METADATA_KEY = "permission_requests"
 
 
 class PermissionOption(BaseModel):

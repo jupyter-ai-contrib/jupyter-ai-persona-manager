@@ -16,6 +16,13 @@ import { Event } from '@jupyterlab/services';
 export const PERMISSION_RESPONSE_EVENT_SCHEMA_ID =
   'https://schema.jupyter.org/jupyter_ai_persona_manager/permission_response/v1';
 
+/** One permission request block, as carried in a message's metadata list. */
+type PermissionBlock = NonNullable<
+  NonNullable<
+    MessagePreambleProps['message']['metadata']
+  >['permission_requests']
+>[number];
+
 /**
  * Emit the user's permission decision back to the server over the events plane.
  * `optionId === null` cancels/denies without a selection.
@@ -51,11 +58,21 @@ export function createPermissionPreamble(
   return function PermissionPreamble(
     props: MessagePreambleProps
   ): JSX.Element | null {
-    const block = props.message.metadata?.permission_request;
-    if (!block) {
+    const blocks = props.message.metadata?.permission_requests;
+    if (!blocks || blocks.length === 0) {
       return null;
     }
-    return <PermissionRequestView events={events} block={block} />;
+    return (
+      <>
+        {blocks.map(block => (
+          <PermissionRequestView
+            key={block.request_id}
+            events={events}
+            block={block}
+          />
+        ))}
+      </>
+    );
   };
 }
 
@@ -64,9 +81,7 @@ function PermissionRequestView({
   block
 }: {
   events: Event.IManager;
-  block: NonNullable<
-    MessagePreambleProps['message']['metadata']
-  >['permission_request'];
+  block: PermissionBlock;
 }): JSX.Element | null {
   const [submitting, setSubmitting] = React.useState(false);
   if (!block) {

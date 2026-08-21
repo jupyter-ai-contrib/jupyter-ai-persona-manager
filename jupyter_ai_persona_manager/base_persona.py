@@ -368,7 +368,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     def _write_permission_metadata(
         self, message_id: str, block: dict[str, Any]
     ) -> None:
-        """Merge a ``permission_request`` block into a chat message's metadata."""
+        """Upsert a permission request block into a chat message's metadata.
+
+        Permission requests live in a list under ``PERMISSION_METADATA_KEY``,
+        keyed by ``request_id``: an existing entry with the same ``request_id``
+        is replaced (e.g. pending -> resolved), otherwise the block is appended.
+        This lets a single message host multiple concurrent requests without one
+        clobbering another (mirroring ACP's grouped tool calls).
+        """
         msg = self.chat.get_message(message_id)
         if msg is None:
             self.log.warning(
@@ -377,7 +384,16 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             )
             return
         metadata = dict(msg.metadata or {})
-        metadata[PERMISSION_METADATA_KEY] = block
+        existing = metadata.get(PERMISSION_METADATA_KEY)
+        requests = list(existing) if isinstance(existing, list) else []
+        request_id = block.get("request_id")
+        for i, entry in enumerate(requests):
+            if entry.get("request_id") == request_id:
+                requests[i] = block
+                break
+        else:
+            requests.append(block)
+        metadata[PERMISSION_METADATA_KEY] = requests
         msg.metadata = metadata
         self.chat.update_message(msg, trigger_actions=[])
 
