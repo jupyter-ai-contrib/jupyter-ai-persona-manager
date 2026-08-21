@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from jupyter_server.extension.application import ExtensionApp
 from jupyter_server.serverapp import ServerApp
-from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
@@ -211,11 +210,13 @@ class PersonaManagerExtension(ExtensionApp):
             assert self.serverapp
             assert self.serverapp.web_app
             assert self.serverapp.web_app.settings
+            # The File ID service is only present when an RTC provider supplies
+            # it; it is absent (None) in RTC-free deployments, where the room_id
+            # is already the chat path.
             fileid_manager = self.serverapp.web_app.settings.get(
                 "file_id_manager", None
             )
-            assert isinstance(fileid_manager, BaseFileIdManager)
-            
+
             contents_manager = self.serverapp.contents_manager
             root_dir = getattr(contents_manager, "root_dir", None)
             assert isinstance(root_dir, str)

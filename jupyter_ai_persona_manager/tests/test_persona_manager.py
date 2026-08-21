@@ -479,3 +479,55 @@ class TestOnChatMessageRouting:
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
             routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
             assert routed == [target]
+
+
+class TestOptionalFileIdManager:
+    """The File ID service is optional. In RTC-free deployments it is absent
+    (``None``) and the room_id is already the chat path, so path-derived
+    features resolve directly from the room_id without a File ID manager."""
+
+    @pytest.mark.asyncio
+    async def test_no_fileid_manager_uses_room_id_as_path(
+        self, monkeypatch, tmp_dir, mock_ychat
+    ):
+        import os
+
+        # Skip entry-point scanning; focus on path/file-id resolution.
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+
+        room_id = "chat.chat"
+        manager = PersonaManager(
+            room_id=room_id,
+            chat=mock_ychat,
+            fileid_manager=None,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        # No File ID service -> no file id; the room_id is the chat identity.
+        assert manager.fileid_manager is None
+        assert manager.file_id == ""
+        assert manager.chat_path == room_id
+        assert manager.get_chat_path(relative=True) == room_id
+        assert manager.get_chat_path() == os.path.join(str(tmp_dir), room_id)
+
+    @pytest.mark.asyncio
+    async def test_fileid_manager_present_resolves_via_service(
+        self, monkeypatch, tmp_dir, mock_ychat, mock_fileid_manager
+    ):
+        """When a File ID service is present (e.g. under RTC) the live path is
+        resolved from the stable file id, preserving move/rename resilience."""
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+        mock_fileid_manager.get_path.return_value = "renamed.chat"
+
+        manager = PersonaManager(
+            room_id="text:chat:file-42",
+            chat=mock_ychat,
+            fileid_manager=mock_fileid_manager,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        assert manager.file_id == "file-42"
+        # Path follows the file id, not the (stale) room_id.
+        assert manager.get_chat_path(relative=True) == "renamed.chat"

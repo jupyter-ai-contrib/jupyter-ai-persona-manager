@@ -141,7 +141,7 @@ class PersonaManager(LoggingConfigurable):
 
     # instance attrs
     chat: "BaseChatModel"
-    fileid_manager: "BaseFileIdManager"
+    fileid_manager: "Optional[BaseFileIdManager]"
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
@@ -171,7 +171,7 @@ class PersonaManager(LoggingConfigurable):
         *args,
         room_id: str,
         chat: "BaseChatModel",
-        fileid_manager: "BaseFileIdManager",
+        fileid_manager: "Optional[BaseFileIdManager]" = None,
         root_dir: str,
         event_loop: "AbstractEventLoop",
         base_url: str = "/",
@@ -190,19 +190,26 @@ class PersonaManager(LoggingConfigurable):
         self.base_url = base_url
         self.event_logger = event_logger
 
-        # Store file ID. In RTC mode room_id is "text:chat:{file_id}";
-        # in non-RTC mode it is the file path, which needs to be resolved
-        # through the FileIdManager.
+        # Store file ID. In RTC mode room_id is "text:chat:{file_id}"; in
+        # non-RTC mode it is the file path.
+        #
+        # The File ID service is only present when an RTC provider supplies it
+        # (jupyter-server-ydoc / jupyter-server-documents). When it is
+        # available we index the path to a stable file id so that path-derived
+        # features (`.jupyter` discovery, MCP settings) survive file
+        # moves/renames. When it is absent (RTC-free), the room_id is already
+        # the chat path and is used directly as the chat's identity.
         parts = room_id.split(":")
         if len(parts) >= 3:
             self.file_id = parts[2]
-        else:
-            # Non-RTC: room_id is a file path. Look up or index its file ID.
+        elif self.fileid_manager is not None:
             self.file_id = self.fileid_manager.get_id(
                 os.path.join(self.root_dir, room_id)
             ) or self.fileid_manager.index(
                 os.path.join(self.root_dir, room_id)
             )
+        else:
+            self.file_id = ""
 
         # The chat's server-root-relative path, used to scope events to a chat
         # on the frontend. In non-RTC room_id is already the path; under RTC we
@@ -565,9 +572,18 @@ class PersonaManager(LoggingConfigurable):
         To get a path relative to the `ContentsManager` root directory, call
         this method with `relative=True`.
         """
-        relpath = self.fileid_manager.get_path(self.file_id)
-        if not relpath:
-            raise Exception(f"Unable to locate chat with file ID: '{self.file_id}'.")
+        if self.fileid_manager is not None and self.file_id:
+            # RTC (or any deployment with a File ID service): resolve the live
+            # path from the stable file id so path-derived features follow the
+            # file across moves/renames.
+            relpath = self.fileid_manager.get_path(self.file_id)
+            if not relpath:
+                raise Exception(
+                    f"Unable to locate chat with file ID: '{self.file_id}'."
+                )
+        else:
+            # No File ID service (RTC-free): the room_id is the chat path.
+            relpath = self.room_id
         if relative:
             return relpath
 

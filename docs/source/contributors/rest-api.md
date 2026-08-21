@@ -102,7 +102,6 @@ skipped, not surfaced as an error.
 | ------ | ---------------------------------------------------------------------------------- |
 | `400`  | `chat_path` query parameter is missing                                             |
 | `404`  | No chat/room found for `chat_path`, or the chat has no initialized persona manager |
-| `500`  | The server's `file_id_manager` is unavailable                                      |
 
 ## `GET /api/ai/avatars/<persona_id>`
 

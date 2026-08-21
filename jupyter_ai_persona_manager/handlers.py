@@ -74,8 +74,12 @@ class MessageHandler(JupyterHandler):
         root_dir = getattr(contents_manager, "root_dir", "")
         base_url = serverapp.web_app.settings.get("base_url", "/")
         uid = uuid.uuid4()
-        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
-        temp_room_id = f"text:chat:{room_uid}"
+        if fileid_manager is not None:
+            room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
+            temp_room_id = f"text:chat:{room_uid}"
+        else:
+            # No File ID service (RTC-free): use the path as the room id.
+            temp_room_id = str(uid)
 
         # Obtain or create a PersonaManager for this temporary room
         # Reuse existing if present, otherwise instantiate a minimal manager
@@ -149,10 +153,13 @@ class CancelHandler(JupyterHandler):
 
     @property
     def file_id_manager(self):
-        manager = self.serverapp.web_app.settings.get("file_id_manager")
-        if manager is None:
-            raise tornado.web.HTTPError(500, "file_id_manager is not available")
-        return manager
+        """The server's File ID manager, or ``None`` if unavailable.
+
+        The File ID service is only present when an RTC provider supplies it;
+        in RTC-free deployments it is absent, and personas are registered under
+        the chat path directly.
+        """
+        return self.serverapp.web_app.settings.get("file_id_manager")
 
     @tornado.web.authenticated
     async def post(self):
@@ -171,7 +178,8 @@ class CancelHandler(JupyterHandler):
         # under RTC. Resolve the path first (RTC-free), then fall back to the RTC
         # room_id, so cancellation works regardless of transport.
         persona_manager = persona_managers.get(chat_path)
-        if persona_manager is None:
+        if persona_manager is None and self.file_id_manager is not None:
+            # RTC: the manager may be registered under `text:chat:{file_id}`.
             file_id = self.file_id_manager.get_id(chat_path)
             if file_id:
                 persona_manager = persona_managers.get(f"text:chat:{file_id}")
