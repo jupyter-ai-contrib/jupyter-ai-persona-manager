@@ -224,6 +224,101 @@ class TestRequestPermission:
 
 
 # ---------------------------------------------------------------------------
+# Transport independence: request_permission's contract does not depend on how
+# the decision is delivered back — any caller of resolve_permission works, and
+# how the request is surfaced is an overridable, separate concern.
+# ---------------------------------------------------------------------------
+class TestTransportIndependence:
+    @pytest.mark.asyncio
+    async def test_resolves_via_arbitrary_transport(self):
+        # A REST handler and an event listener are both just callers of the
+        # resolve_permission seam. Simulate one as a plain callable.
+        persona = _make_persona()
+
+        def some_transport(request_id, option_id):
+            return persona.resolve_permission(request_id, option_id)
+
+        req = PermissionRequest(
+            title="t", options=[PermissionOption(option_id="ok", name="OK")]
+        )
+        task = asyncio.create_task(persona.request_permission(req))
+        await asyncio.sleep(0)
+        rid = next(iter(persona._pending_permissions))
+        assert some_transport(rid, "ok") is True
+        outcome = await task
+        assert outcome.option_id == "ok"
+
+    @pytest.mark.asyncio
+    async def test_decision_during_publish_is_not_lost(self):
+        # The future must be registered BEFORE the request is surfaced. An
+        # "instantaneous transport" that resolves from within publish only
+        # succeeds if that ordering holds — this guards against the race.
+        persona = _make_persona()
+        seen = {}
+
+        def instant_publish(request_id, request):
+            seen["resolved"] = persona.resolve_permission(request_id, "a")
+            return None  # not surfaced in chat
+
+        persona._publish_permission_request = instant_publish
+        req = PermissionRequest(
+            title="t", options=[PermissionOption(option_id="a", name="Allow")]
+        )
+        outcome = await persona.request_permission(req)
+        assert seen["resolved"] is True
+        assert outcome.option_id == "a"
+        # publish returned None -> no chat message was written to on resolve.
+        persona.chat.update_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_publish_hook_is_overridable(self):
+        # A subclass can surface the request however it likes (or not at all)
+        # without changing the request/await/resolve lifecycle.
+        persona = _make_persona()
+        persona._publish_permission_request = MagicMock(return_value=None)
+        req = PermissionRequest(
+            title="t", options=[PermissionOption(option_id="a", name="Allow")]
+        )
+        task = asyncio.create_task(persona.request_permission(req))
+        await asyncio.sleep(0)
+        persona._publish_permission_request.assert_called_once()
+        rid = next(iter(persona._pending_permissions))
+        persona.resolve_permission(rid, "a")
+        outcome = await task
+        assert outcome.option_id == "a"
+        persona.chat.add_message.assert_not_called()
+        persona.chat.update_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_resolve_independently(self):
+        persona = _make_persona()
+        req1 = PermissionRequest(
+            title="1", options=[PermissionOption(option_id="a", name="A")]
+        )
+        req2 = PermissionRequest(
+            title="2", options=[PermissionOption(option_id="b", name="B")]
+        )
+        t1 = asyncio.create_task(persona.request_permission(req1))
+        t2 = asyncio.create_task(persona.request_permission(req2))
+        await asyncio.sleep(0)
+        assert len(persona._pending_permissions) == 2
+
+        # Resolve exactly one: the other stays pending and unfinished.
+        first_id = next(iter(persona._pending_permissions))
+        assert persona.resolve_permission(first_id, "x") is True
+        await asyncio.sleep(0)
+        assert len(persona._pending_permissions) == 1
+        assert sum(t.done() for t in (t1, t2)) == 1
+
+        # Resolve the remaining one.
+        second_id = next(iter(persona._pending_permissions))
+        assert persona.resolve_permission(second_id, "y") is True
+        outcomes = await asyncio.gather(t1, t2)
+        assert {o.option_id for o in outcomes} == {"x", "y"}
+        assert persona._pending_permissions == {}
+
+
+# ---------------------------------------------------------------------------
 # PersonaManager routing of permission_response events
 # ---------------------------------------------------------------------------
 class TestManagerRouting:

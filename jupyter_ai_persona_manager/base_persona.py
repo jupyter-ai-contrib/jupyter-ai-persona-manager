@@ -246,11 +246,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """Ask the user to approve (or reject) an action, and suspend until they
         decide.
 
-        This is the general, backend-agnostic permission API. The request is
-        reflected in the chat by writing a ``permission_request`` block into a
-        chat message's metadata (a new message, or ``request.message_id`` if
-        given), which the frontend renders as buttons. The user's decision
-        arrives back over the Jupyter Events plane and resolves this call.
+        This is the general, backend-agnostic permission API. Its contract is
+        **independent of how the decision travels back to the server**: the
+        method mints a request id, surfaces the request (by default, as a
+        ``permission_request`` block on a chat message the frontend renders as
+        buttons — see :meth:`_publish_permission_request`), and suspends on a
+        Future. Any transport delivers the user's decision by calling
+        :meth:`resolve_permission` with the same ``request_id`` — the default
+        frontend emits a Jupyter Event, but this method does not depend on that
+        choice, and swapping the transport requires no change here.
 
         ACP-specific identifiers (``session_id`` etc.) belong in
         ``request.context``; they are echoed back verbatim in
@@ -260,11 +264,57 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         ``cancelled`` is ``True`` if the request was cancelled rather than
         answered.
         """
-        manager = self.parent
-        room_id = getattr(manager, "room_id", "")
         request_id = uuid.uuid4().hex
+        loop = asyncio.get_event_loop()
+        future: "asyncio.Future[Optional[str]]" = loop.create_future()
 
-        # Reflect the request in the chat so the frontend can render buttons.
+        # Register the pending request BEFORE surfacing it, so a decision that
+        # arrives immediately (any transport) cannot race ahead of the entry it
+        # needs to resolve.
+        self._pending_permissions[request_id] = future
+        message_id: Optional[str] = None
+        try:
+            message_id = self._publish_permission_request(request_id, request)
+            option_id = await future
+        finally:
+            self._pending_permissions.pop(request_id, None)
+
+        # Reflect the resolution wherever the request was surfaced.
+        if message_id is not None:
+            self._write_permission_metadata(
+                message_id,
+                build_permission_metadata(
+                    request_id=request_id,
+                    persona_id=self.id,
+                    room_id=getattr(self.parent, "room_id", ""),
+                    request=request,
+                    status="resolved",
+                    selected_option_id=option_id,
+                ),
+            )
+
+        return PermissionOutcome(
+            option_id=option_id,
+            request=request,
+            cancelled=option_id is None,
+        )
+
+    @mark_subclass_api
+    def _publish_permission_request(
+        self, request_id: str, request: PermissionRequest
+    ) -> Optional[str]:
+        """Surface a pending permission request to the user, returning the id of
+        the chat message it was attached to (or ``None`` if not surfaced in the
+        chat).
+
+        The default implementation reflects the request in the chat by writing a
+        ``permission_request`` metadata block onto a message (a new one, or
+        ``request.message_id`` if given), which the frontend renders as buttons.
+        This is the only presentation-specific step; the request/await/resolve
+        lifecycle in :meth:`request_permission` is identical regardless of how
+        the request is surfaced or how the decision returns, so a subclass may
+        override this without touching that lifecycle.
+        """
         message_id = request.message_id
         if message_id is None:
             message_id = self.chat.add_message(
@@ -275,47 +325,25 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             build_permission_metadata(
                 request_id=request_id,
                 persona_id=self.id,
-                room_id=room_id,
+                room_id=getattr(self.parent, "room_id", ""),
                 request=request,
                 status="pending",
             ),
         )
-
-        # Suspend until the decision arrives (via `resolve_permission`).
-        loop = asyncio.get_event_loop()
-        future: "asyncio.Future[Optional[str]]" = loop.create_future()
-        self._pending_permissions[request_id] = future
-        try:
-            option_id = await future
-        finally:
-            self._pending_permissions.pop(request_id, None)
-
-        # Reflect the resolution in the chat message.
-        self._write_permission_metadata(
-            message_id,
-            build_permission_metadata(
-                request_id=request_id,
-                persona_id=self.id,
-                room_id=room_id,
-                request=request,
-                status="resolved",
-                selected_option_id=option_id,
-            ),
-        )
-
-        return PermissionOutcome(
-            option_id=option_id,
-            request=request,
-            cancelled=option_id is None,
-        )
+        return message_id
 
     @mark_consumer_api
     def resolve_permission(self, request_id: str, option_id: Optional[str]) -> bool:
         """Resolve a pending permission request with the user's decision.
 
-        Called by the :class:`PersonaManager`'s event listener when a
-        ``permission_response`` event arrives. Returns ``True`` if a matching
-        pending request was found and resolved, ``False`` otherwise.
+        This is the transport seam: whatever channel carries the user's decision
+        back to the server (the default frontend emits a ``permission_response``
+        Jupyter Event, routed by the :class:`PersonaManager`; a REST endpoint or
+        a shared-document write would work identically) resolves the request by
+        calling this with the ``request_id`` from :meth:`request_permission`.
+
+        Returns ``True`` if a matching pending request was found and resolved,
+        ``False`` otherwise (unknown id or already resolved).
         """
         future = self._pending_permissions.get(request_id)
         if future is None or future.done():
