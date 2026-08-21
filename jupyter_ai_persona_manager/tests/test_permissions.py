@@ -43,6 +43,7 @@ def _make_persona():
         side_effect=lambda _id: SimpleNamespace(metadata=None)
     )
     persona.chat.update_message = MagicMock()
+    persona.chat.get_id = MagicMock(return_value="chat-1")
     persona.log = MagicMock()
     persona._pending_permissions = {}
     return persona
@@ -62,13 +63,13 @@ class TestPermissionModels:
         block = build_permission_metadata(
             request_id="r1",
             persona_id="p1",
-            room_id="room-1",
+            chat_id="chat-1",
             request=req,
             status="pending",
         )
         assert block["request_id"] == "r1"
         assert block["persona_id"] == "p1"
-        assert block["room_id"] == "room-1"
+        assert block["chat_id"] == "chat-1"
         assert block["title"] == "Run cmd"
         assert block["detail"] == "$ ls"
         assert block["correlation_id"] == "tc-1"
@@ -86,7 +87,7 @@ class TestPermissionModels:
             context={"session_id": "s1", "tool_call_id": "tc-1"},
         )
         block = build_permission_metadata(
-            request_id="r1", persona_id="p1", room_id="room-1", request=req
+            request_id="r1", persona_id="p1", chat_id="chat-1", request=req
         )
         assert "context" not in block
 
@@ -103,7 +104,7 @@ class TestPermissionModels:
     def test_schema_required_fields(self):
         assert PERMISSION_RESPONSE_EVENT_SCHEMA["$id"] == PERMISSION_RESPONSE_EVENT_SCHEMA_ID
         assert set(PERMISSION_RESPONSE_EVENT_SCHEMA["required"]) == {
-            "room_id",
+            "chat_id",
             "persona_id",
             "request_id",
         }
@@ -327,10 +328,12 @@ class TestManagerRouting:
         persona = _make_persona()
         persona.resolve_permission = MagicMock(return_value=True)
         mgr = SimpleNamespace(
-            room_id="room-1", _personas={persona.id: persona}, log=MagicMock()
+            chat=MagicMock(get_id=MagicMock(return_value="chat-1")),
+            _personas={persona.id: persona},
+            log=MagicMock(),
         )
         data = {
-            "room_id": "room-1",
+            "chat_id": "chat-1",
             "persona_id": persona.id,
             "request_id": "r1",
             "option_id": "a",
@@ -341,14 +344,16 @@ class TestManagerRouting:
         persona.resolve_permission.assert_called_once_with("r1", "a")
 
     @pytest.mark.asyncio
-    async def test_ignores_other_rooms(self):
+    async def test_ignores_other_chats(self):
         persona = _make_persona()
         persona.resolve_permission = MagicMock(return_value=True)
         mgr = SimpleNamespace(
-            room_id="room-1", _personas={persona.id: persona}, log=MagicMock()
+            chat=MagicMock(get_id=MagicMock(return_value="chat-1")),
+            _personas={persona.id: persona},
+            log=MagicMock(),
         )
         data = {
-            "room_id": "OTHER-room",
+            "chat_id": "OTHER-chat",
             "persona_id": persona.id,
             "request_id": "r1",
             "option_id": "a",
@@ -360,9 +365,13 @@ class TestManagerRouting:
 
     @pytest.mark.asyncio
     async def test_unknown_persona_logs_warning(self):
-        mgr = SimpleNamespace(room_id="room-1", _personas={}, log=MagicMock())
+        mgr = SimpleNamespace(
+            chat=MagicMock(get_id=MagicMock(return_value="chat-1")),
+            _personas={},
+            log=MagicMock(),
+        )
         data = {
-            "room_id": "room-1",
+            "chat_id": "chat-1",
             "persona_id": "ghost",
             "request_id": "r1",
             "option_id": "a",

@@ -23,7 +23,7 @@ export const PERMISSION_RESPONSE_EVENT_SCHEMA_ID =
 export async function submitPermissionDecision(
   events: Event.IManager,
   block: {
-    room_id: string;
+    chat_id: string;
     persona_id: string;
     request_id: string;
   },
@@ -33,7 +33,7 @@ export async function submitPermissionDecision(
     schema_id: PERMISSION_RESPONSE_EVENT_SCHEMA_ID,
     version: '1',
     data: {
-      room_id: block.room_id,
+      chat_id: block.chat_id,
       persona_id: block.persona_id,
       request_id: block.request_id,
       option_id: optionId

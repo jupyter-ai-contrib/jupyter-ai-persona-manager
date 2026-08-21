@@ -286,7 +286,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                 build_permission_metadata(
                     request_id=request_id,
                     persona_id=self.id,
-                    room_id=getattr(self.parent, "room_id", ""),
+                    chat_id=self.chat.get_id(),
                     request=request,
                     status="resolved",
                     selected_option_id=option_id,
@@ -325,7 +325,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             build_permission_metadata(
                 request_id=request_id,
                 persona_id=self.id,
-                room_id=getattr(self.parent, "room_id", ""),
+                chat_id=self.chat.get_id(),
                 request=request,
                 status="pending",
             ),

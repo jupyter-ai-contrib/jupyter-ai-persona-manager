@@ -7,8 +7,9 @@ same mechanism the frontend already reads to render UI). The user's decision
 travels back to the server over the **Jupyter Events** plane: the frontend emits
 a ``permission_response/v1`` event (``POST /api/events``), which a server-side
 listener on the :class:`PersonaManager` routes directly to the target persona by
-``(room_id, persona_id, request_id)`` — no endpoint-side search, no
-backend-specific identifiers.
+``(chat_id, persona_id, request_id)`` — where ``chat_id`` is the chat's stable
+unique id (``chat.get_id()``, stable across file moves) — so there is no
+endpoint-side search and no backend-specific identifiers.
 
 Nothing here is ACP-specific. ACP concepts such as ``session_id`` /
 ``tool_call_id`` are carried by the persona inside the opaque
@@ -109,11 +110,14 @@ PERMISSION_RESPONSE_EVENT_SCHEMA = {
         "frontend and routed to the requesting persona."
     ),
     "type": "object",
-    "required": ["room_id", "persona_id", "request_id"],
+    "required": ["chat_id", "persona_id", "request_id"],
     "properties": {
-        "room_id": {
+        "chat_id": {
             "type": "string",
-            "description": "The chat's room id (routes to the PersonaManager).",
+            "description": (
+                "The chat's stable unique id (chat.get_id()); routes to the "
+                "PersonaManager. Stable across file moves, unlike a path."
+            ),
         },
         "persona_id": {
             "type": "string",
@@ -147,7 +151,7 @@ def build_permission_metadata(
     *,
     request_id: str,
     persona_id: str,
-    room_id: str,
+    chat_id: str,
     request: PermissionRequest,
     status: str = "pending",
     selected_option_id: Optional[str] = None,
@@ -160,7 +164,7 @@ def build_permission_metadata(
     return {
         "request_id": request_id,
         "persona_id": persona_id,
-        "room_id": room_id,
+        "chat_id": chat_id,
         "title": request.title,
         "detail": request.detail,
         "correlation_id": request.correlation_id,

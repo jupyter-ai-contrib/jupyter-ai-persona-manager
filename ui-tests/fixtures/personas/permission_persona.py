@@ -14,6 +14,7 @@ Not part of the shipped package; see AGENTS.md.
 """
 
 import os
+import uuid
 
 from jupyter_ai_persona_manager import (
     BasePersona,
@@ -24,6 +25,26 @@ from jupyter_ai_persona_manager import (
 from jupyterlab_chat.models import Message
 
 _AVATAR_PATH = os.path.join(os.environ["JAI_TEST_ASSETS_DIR"], "persona.svg")
+
+
+def _ensure_chat_id(chat) -> None:
+    """Bridging shim: guarantee ``chat.get_id()`` returns a stable unique id.
+
+    Permission routing keys on ``chat.get_id()``. A separate effort makes that
+    always return a unique id; until it lands, freshly-created ``.chat`` files
+    have no id, so seed one here (RTC: ``set_id``; RTC-free: ``_metadata``).
+    Test-only — real personas rely on the platform providing the id.
+    """
+    if chat.get_id():
+        return
+    new_id = uuid.uuid4().hex
+    if hasattr(chat, "set_id"):
+        chat.set_id(new_id)
+    else:
+        try:
+            chat._metadata["id"] = new_id
+        except Exception:
+            pass
 
 
 class PermissionPersona(BasePersona):
@@ -39,6 +60,7 @@ class PermissionPersona(BasePersona):
         )
 
     async def process_message(self, message: Message) -> None:
+        _ensure_chat_id(self.chat)
         outcome = await self.request_permission(
             PermissionRequest(
                 title="Approve action?",

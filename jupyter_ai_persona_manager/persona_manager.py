@@ -500,11 +500,12 @@ class PersonaManager(LoggingConfigurable):
         """Route a ``permission_response`` event to the requesting persona.
 
         The frontend emits this event (client -> server) when the user answers a
-        permission request. Addressing is direct: ``room_id`` selects this
-        manager, ``persona_id`` selects the persona, and ``request_id`` selects
-        the pending request — no search over personas/clients.
+        permission request. Addressing is direct: ``chat_id`` (the chat's stable
+        ``get_id()``) selects this manager, ``persona_id`` selects the persona,
+        and ``request_id`` selects the pending request — no search over
+        personas/clients, and stable across file moves.
         """
-        if data.get("room_id") != self.room_id:
+        if data.get("chat_id") != self.chat.get_id():
             return
         persona_id = data.get("persona_id")
         request_id = data.get("request_id")
@@ -514,7 +515,7 @@ class PersonaManager(LoggingConfigurable):
         if persona is None:
             self.log.warning(
                 f"permission_response for unknown persona '{persona_id}' "
-                f"in room '{self.room_id}'."
+                f"in chat '{self.chat.get_id()}'."
             )
             return
         resolved = persona.resolve_permission(request_id, data.get("option_id"))

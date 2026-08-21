@@ -32,7 +32,7 @@ declare module '@jupyter/chat' {
     permission_request?: {
       request_id: string;
       persona_id: string;
-      room_id: string;
+      chat_id: string;
       title: string;
       detail?: string | null;
       correlation_id?: string | null;
