@@ -157,8 +157,8 @@ class TestStreamMessageReRaise:
         with pytest.raises(RuntimeError):
             await persona.stream_message(_failing_stream())
 
-        # The `finally` clears the writing status via clear_writing_status(),
-        # which drives the chat's writers indicator (broadcast_writing_status).
+        # The `finally` clears the status via clear_status(), which drives the
+        # chat's writers indicator (broadcast_writing_status).
         persona.chat.broadcast_writing_status.assert_called_with(
             persona.as_user(), None
         )
@@ -238,33 +238,31 @@ class TestProcessing:
 
 
 # ---------------------------------------------------------------------------
-# TestSetWritingStatus  (issue #128: refine set_writing_status)
+# TestStatus  (issue #128: set_status / clear_status)
 # ---------------------------------------------------------------------------
 
-class TestSetWritingStatus:
-    """`set_writing_status(message_id, action)` shows a typing indicator on a
-    message, with a caller-settable `action` label (default "is typing...").
-    `clear_writing_status()` removes it."""
+class TestStatus:
+    """`set_status(status)` shows a status indicator with a caller-settable
+    label (default "is typing..."); `clear_status()` removes it. Both drive the
+    chat's writers mechanism via `broadcast_writing_status`."""
 
-    def test_default_action(self, mock_ychat):
+    def test_default_status(self, mock_ychat):
         persona = _make_persona(mock_ychat)
-        persona.set_writing_status("msg-42")
+        persona.set_status()
         persona.chat.broadcast_writing_status.assert_called_once_with(
-            persona.as_user(),
-            {"messageID": "msg-42", "typingIndicator": "is typing..."},
+            persona.as_user(), {"typingIndicator": "is typing..."}
         )
 
-    def test_action_is_settable_by_caller(self, mock_ychat):
+    def test_status_is_settable_by_caller(self, mock_ychat):
         persona = _make_persona(mock_ychat)
-        persona.set_writing_status("msg-42", action="is thinking...")
+        persona.set_status("is thinking...")
         persona.chat.broadcast_writing_status.assert_called_once_with(
-            persona.as_user(),
-            {"messageID": "msg-42", "typingIndicator": "is thinking..."},
+            persona.as_user(), {"typingIndicator": "is thinking..."}
         )
 
-    def test_clear_writing_status_stops(self, mock_ychat):
+    def test_clear_status_stops(self, mock_ychat):
         persona = _make_persona(mock_ychat)
-        persona.clear_writing_status()
+        persona.clear_status()
         persona.chat.broadcast_writing_status.assert_called_once_with(
             persona.as_user(), None
         )

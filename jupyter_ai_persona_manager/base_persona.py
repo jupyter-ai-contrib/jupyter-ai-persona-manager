@@ -350,6 +350,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
+            # Show a status indicator from the start of the reply, before the
+            # first chunk lands.
+            self.set_status()
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -364,8 +367,6 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     stream_id = self.chat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
-                    # Show a typing indicator on the message being streamed.
-                    self.set_writing_status(stream_id)
 
                 assert stream_id
                 self.chat.update_message(
@@ -395,7 +396,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            self.clear_writing_status()
+            self.clear_status()
 
     @mark_subclass_api
     def send_message(self, body: str) -> None:
@@ -528,28 +529,27 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self.state.slash_commands
 
     @mark_subclass_api
-    def set_writing_status(self, message_id: str, action: str = "is typing...") -> None:
-        """Show a typing indicator from this persona on ``message_id``.
+    def set_status(self, status: str = "is typing...") -> None:
+        """Show a status indicator from this persona in the chat.
 
-        ``action`` is the label shown in the chat's typing indicator and is set
+        ``status`` is the label shown in the chat's typing indicator and is set
         by the caller to describe what the persona is currently doing, e.g.
         ``"is typing..."`` (default), ``"is thinking..."``, or ``"is running
         tools..."``.
 
         This drives the chat's writers mechanism via ``broadcast_writing_status()``,
-        which works in both RTC and non-RTC mode. Call ``clear_writing_status()``
-        to remove the indicator when the persona is done. Writing status is
-        intentionally not part of the persona-state events; the chat already
-        owns it.
+        which works in both RTC and non-RTC mode. Call ``clear_status()`` to
+        remove the indicator when the persona is done. Status is intentionally
+        not part of the persona-state events; the chat already owns it.
         """
         self.chat.broadcast_writing_status(
-            self.as_user(), {"messageID": message_id, "typingIndicator": action}
+            self.as_user(), {"typingIndicator": status}
         )
 
     @mark_subclass_api
-    def clear_writing_status(self) -> None:
-        """Remove this persona's typing indicator. Counterpart to
-        ``set_writing_status()``."""
+    def clear_status(self) -> None:
+        """Remove this persona's status indicator. Counterpart to
+        ``set_status()``."""
         self.chat.broadcast_writing_status(self.as_user(), None)
 
     ################################################
