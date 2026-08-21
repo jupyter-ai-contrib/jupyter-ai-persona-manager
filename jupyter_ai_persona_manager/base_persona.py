@@ -350,7 +350,6 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         stream_id: str | None = None
         try:
-            self.set_writing_status(True)
             async for chunk in reply_stream:
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
@@ -365,6 +364,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
                     stream_id = self.chat.add_message(
                         NewMessage(body="", sender=self.id)
                     )
+                    # Show a typing indicator on the message being streamed.
                     self.set_writing_status(stream_id)
 
                 assert stream_id
@@ -395,7 +395,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             self.log.exception(e)
             raise
         finally:
-            self.set_writing_status(False)
+            self.clear_writing_status()
 
     @mark_subclass_api
     def send_message(self, body: str) -> None:
@@ -528,31 +528,29 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self.state.slash_commands
 
     @mark_subclass_api
-    def set_writing_status(self, value: bool | str) -> None:
-        """Set this persona's writing status in a transport-neutral way.
+    def set_writing_status(self, message_id: str, action: str = "is typing...") -> None:
+        """Show a typing indicator from this persona on ``message_id``.
 
-        `value` is `False` (writing stopped), `True` (writing started, before a
-        message exists), or the ID of the message being written into.
+        ``action`` is the label shown in the chat's typing indicator and is set
+        by the caller to describe what the persona is currently doing, e.g.
+        ``"is typing..."`` (default), ``"is thinking..."``, or ``"is running
+        tools..."``.
 
-        This drives the chat's typing indicator via ``broadcast_writing_status()``
-        (Jupyter Chat's writers mechanism), which works in both RTC and non-RTC
-        mode. Writing status is intentionally not part of the persona-state
-        events; the chat already owns it.
+        This drives the chat's writers mechanism via ``broadcast_writing_status()``,
+        which works in both RTC and non-RTC mode. Call ``clear_writing_status()``
+        to remove the indicator when the persona is done. Writing status is
+        intentionally not part of the persona-state events; the chat already
+        owns it.
         """
-        if not value:
-            # `value` is False: writing stopped.
-            self.chat.broadcast_writing_status(self.as_user(), None)
-            return
-
-        # `value` is truthy: writing is in progress. When it is the stream's
-        # message ID, carry it so the frontend can attach the indicator to that
-        # message; otherwise advertise a generic "writing" indicator.
-        status = (
-            {"messageID": value}
-            if isinstance(value, str)
-            else {"typingIndicator": "Writing..."}
+        self.chat.broadcast_writing_status(
+            self.as_user(), {"messageID": message_id, "typingIndicator": action}
         )
-        self.chat.broadcast_writing_status(self.as_user(), status)
+
+    @mark_subclass_api
+    def clear_writing_status(self) -> None:
+        """Remove this persona's typing indicator. Counterpart to
+        ``set_writing_status()``."""
+        self.chat.broadcast_writing_status(self.as_user(), None)
 
     ################################################
     # reporting session information (called by the persona itself)
