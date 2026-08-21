@@ -69,27 +69,40 @@ class MessageHandler(JupyterHandler):
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
         serverapp = self.serverapp
-        fileid_manager = serverapp.web_app.settings.get("file_id_manager")
-        if fileid_manager is None:
-            raise tornado.web.HTTPError(500, "file_id_manager is not available")
+        settings = serverapp.web_app.settings
         contents_manager = serverapp.contents_manager
         root_dir = getattr(contents_manager, "root_dir", "")
-        base_url = serverapp.web_app.settings.get("base_url", "/")
-        uid = uuid.uuid4()
-        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
-        temp_room_id = f"text:chat:{room_uid}"
+        base_url = settings.get("base_url", "/")
 
-        # Create a throwaway PersonaManager backed by an in-memory YChat for
-        # this one request. It is torn down in the `finally` below so its
-        # personas (and any event listeners they register) do not leak.
-        ychat = YChat()
+        # Mint a unique, throwaway chat for this one request. We do NOT depend on
+        # a file_id_manager here: the room id is a plain uuid and the chat model
+        # is obtained from the ChatManager (transport-neutral) when available,
+        # falling back to an in-memory YChat otherwise.
+        uid = uuid.uuid4()
+        temp_path = f"{uid}.chat"
+        temp_room_id = f"text:chat:{uid}"
+
+        chat_manager = settings.get("chat_manager")
+        ychat = None
+        if chat_manager is not None:
+            try:
+                ychat = await chat_manager.create(temp_path)
+            except Exception:
+                self.log.warning(
+                    "ChatManager.create failed for temporary chat; "
+                    "falling back to an in-memory YChat.",
+                    exc_info=True,
+                )
+        if ychat is None:
+            ychat = YChat()
+
         from .persona_manager import PersonaManager
 
         loop = asyncio.get_running_loop()
         persona_manager = PersonaManager(
             room_id=temp_room_id,
             chat=ychat,
-            fileid_manager=fileid_manager,
+            fileid_manager=settings.get("file_id_manager"),
             root_dir=root_dir,
             event_loop=loop,
             base_url=base_url,

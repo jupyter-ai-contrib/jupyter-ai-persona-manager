@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import html
 import importlib.util
 import inspect
@@ -212,6 +211,11 @@ class PersonaManager(LoggingConfigurable):
             self.chat_path = self.get_chat_path(relative=True)
         except Exception:
             self.chat_path = room_id
+
+        # Register the 'System' user once, up front. `send_system_message` is
+        # called during persona initialization below (e.g. on load errors), so
+        # the user must exist before that.
+        self._register_system_user()
 
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
@@ -430,41 +434,30 @@ class PersonaManager(LoggingConfigurable):
 
         return personas
 
+    def _register_system_user(self) -> None:
+        """Register the 'System' user used for system messages.
+
+        Marked ``bot=True`` so Jupyter Chat's mention-autocomplete provider
+        excludes it from the ``@``-mention menu (it skips bots). Registering it
+        once at initialization lets `send_system_message` simply attribute a
+        message to it, replacing the previous per-message add-user /
+        transaction / remove-user-after-a-delay workaround.
+        """
+        self.chat.set_user(
+            User(
+                username=SYSTEM_USERNAME,
+                name="System",
+                display_name="System",
+                bot=True,
+            )
+        )
+
     def send_system_message(self, body: str) -> None:
         """
-        Sends a system message to the chat.
+        Sends a system message to the chat, attributed to the 'System' user
+        (registered at initialization; see `_register_system_user`).
         """
-        # Set a 'System' user use it to send the message
-        # TODO: RTC decoupling gap uses _ydoc.transaction() and _yusers.pop().
-        
-        
-        # In RTC mode, group the operations
-        # In non-RTC mode, just call the methods directly.
-        if hasattr(self.chat, '_ydoc'):
-            with self.chat._ydoc.transaction():
-                self.chat.set_user(
-                    user=User(
-                        username=SYSTEM_USERNAME, name="System", display_name="System"
-                    )
-                )
-                self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
-
-            # Hide 'System' user from `@`-mention menu by removing the user.
-            async def _remove_system_user():
-                await asyncio.sleep(1)
-                try:
-                    self.chat._yusers.pop(SYSTEM_USERNAME)
-                except KeyError:
-                    pass
-
-            asyncio.create_task(_remove_system_user())
-        else:
-            self.chat.set_user(
-                user=User(
-                    username=SYSTEM_USERNAME, name="System", display_name="System"
-                )
-            )
-            self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
+        self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
 
     @property
     def personas(self) -> dict[str, BasePersona]:
@@ -588,9 +581,16 @@ class PersonaManager(LoggingConfigurable):
         To get a path relative to the `ContentsManager` root directory, call
         this method with `relative=True`.
         """
-        relpath = self.fileid_manager.get_path(self.file_id)
-        if not relpath:
-            raise Exception(f"Unable to locate chat with file ID: '{self.file_id}'.")
+        if self.fileid_manager is None:
+            # No file_id_manager (e.g. a throwaway chat minted by the message
+            # endpoint): fall back to treating room_id as the chat path.
+            relpath = self.room_id
+        else:
+            relpath = self.fileid_manager.get_path(self.file_id)
+            if not relpath:
+                raise Exception(
+                    f"Unable to locate chat with file ID: '{self.file_id}'."
+                )
         if relative:
             return relpath
 
