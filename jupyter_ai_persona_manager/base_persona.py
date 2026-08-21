@@ -174,6 +174,17 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
 
     @mark_recommended
+    async def prepare(self) -> None:
+        """
+        One-time startup hook, called by the manager before the persona handles
+        its first message (see `_safe_process`). Called before every message, so
+        implementations MUST be idempotent.
+
+        Default is a no-op.
+        """
+        return
+
+    @mark_recommended
     async def cancel_response(self) -> None:
         """
         Stops this persona's in-progress response, if any. Called when the user

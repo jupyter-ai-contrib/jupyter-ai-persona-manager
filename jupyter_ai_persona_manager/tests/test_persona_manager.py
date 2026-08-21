@@ -334,6 +334,7 @@ def _make_mock_persona():
     persona = MagicMock()
     persona.name = "TestPersona"
     persona.log = MagicMock()
+    persona.prepare = AsyncMock()
     persona.process_message = AsyncMock()
     persona.apply_specs_in_message = AsyncMock()
     persona.handle_uncaught_exception = AsyncMock()
@@ -352,6 +353,35 @@ class TestSafeProcess:
         message = _make_mock_message()
         await _safe_process(persona, message)
         persona.process_message.assert_awaited_once_with(message)
+
+    @pytest.mark.asyncio
+    async def test_calls_prepare_before_process_message(self):
+        """The one-time prepare() hook runs before the message is processed."""
+        order = []
+        persona = _make_mock_persona()
+        persona.prepare = AsyncMock(side_effect=lambda: order.append("prepare"))
+        persona.apply_specs_in_message = AsyncMock(
+            side_effect=lambda m: order.append("apply")
+        )
+        persona.process_message = AsyncMock(
+            side_effect=lambda m: order.append("process")
+        )
+
+        await _safe_process(persona, _make_mock_message())
+
+        assert order == ["prepare", "apply", "process"]
+
+    @pytest.mark.asyncio
+    async def test_prepare_failure_routed_to_handler(self):
+        """A prepare() exception is delivered to the user and skips processing."""
+        persona = _make_mock_persona()
+        exc = RuntimeError("prepare boom")
+        persona.prepare = AsyncMock(side_effect=exc)
+
+        await _safe_process(persona, _make_mock_message())
+
+        persona.process_message.assert_not_awaited()
+        persona.handle_uncaught_exception.assert_awaited_once_with(exc)
 
     @pytest.mark.asyncio
     async def test_calls_handle_uncaught_exception_on_failure(self):

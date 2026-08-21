@@ -70,6 +70,8 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     `process_message()` implementation having to apply them itself.
     """
     try:
+        # per-persona startup hook
+        await persona.prepare()
         await persona.apply_specs_in_message(message)
         with persona.track_processing():
             await persona.process_message(message)
