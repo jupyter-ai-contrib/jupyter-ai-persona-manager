@@ -349,6 +349,36 @@ class TestTransportIndependence:
         persona.chat.update_message.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_async_publish_and_finalize_hooks(self):
+        # A backend whose renderer is behind an async accessor (e.g. ACP's
+        # client) can override the hooks as coroutines.
+        persona = _make_persona()
+        calls = []
+
+        async def async_publish(request_id, request):
+            calls.append(("publish", request_id))
+            return "acp-msg"
+
+        async def async_finalize(request_id, request, message_id, option_id):
+            calls.append(("finalize", message_id, option_id))
+
+        persona._publish_permission_request = async_publish
+        persona._finalize_permission_request = async_finalize
+        req = PermissionRequest(
+            title="t", options=[PermissionOption(option_id="a", name="A")]
+        )
+        task = asyncio.create_task(persona.request_permission(req))
+        await asyncio.sleep(0)
+        rid = next(iter(persona._pending_permissions))
+        persona.resolve_permission(rid, "a")
+        outcome = await task
+        assert outcome.option_id == "a"
+        assert ("publish", rid) in calls
+        assert ("finalize", "acp-msg", "a") in calls
+        # The backend owns rendering: no generic metadata writes happened.
+        persona.chat.update_message.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_publish_hook_is_overridable(self):
         # A subclass can surface the request however it likes (or not at all)
         # without changing the request/await/resolve lifecycle.

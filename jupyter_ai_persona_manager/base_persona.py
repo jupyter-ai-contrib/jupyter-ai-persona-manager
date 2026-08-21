@@ -2,6 +2,7 @@ import asyncio
 import asyncio
 import contextlib
 import html
+import inspect
 import os
 import traceback
 import uuid
@@ -274,16 +275,24 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self._pending_permissions[request_id] = future
         message_id: Optional[str] = None
         try:
-            message_id = self._publish_permission_request(request_id, request)
+            # The render hooks may be sync (default) or async (a backend whose
+            # renderer is behind an async accessor, e.g. ACP's client) — support
+            # both by awaiting an awaitable result.
+            published = self._publish_permission_request(request_id, request)
+            if inspect.isawaitable(published):
+                published = await published
+            message_id = published
             option_id = await future
         finally:
             self._pending_permissions.pop(request_id, None)
 
         # Reflect the resolution wherever the request was surfaced.
         if message_id is not None:
-            self._finalize_permission_request(
+            finalized = self._finalize_permission_request(
                 request_id, request, message_id, option_id
             )
+            if inspect.isawaitable(finalized):
+                await finalized
 
         return PermissionOutcome(
             option_id=option_id,
