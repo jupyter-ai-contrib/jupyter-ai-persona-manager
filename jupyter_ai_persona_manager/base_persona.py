@@ -67,8 +67,7 @@ class PersonaDefaults(BaseModel):
 class ABCLoggingConfigurableMeta(ABCMeta, MetaHasTraits):
     """
     Metaclass required for `BasePersona` to inherit from both `ABC` and
-    `LoggingConfigurable`. This pattern is also followed by `BaseFileIdManager`
-    from `jupyter_server_fileid`.
+    `LoggingConfigurable`.
     """
 
 
@@ -131,16 +130,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self._processing_count = 0
 
         # Publish this persona's session state over Jupyter Events. Works in
-        # both RTC and non-RTC mode. The event logger and room id come from the
-        # PersonaManager (this persona's ``parent``); when constructed without a
-        # manager (e.g. some unit tests) the state simply does not emit.
+        # both RTC and non-RTC mode. The event logger and chat path come from
+        # the PersonaManager (this persona's ``parent``); when constructed
+        # without a manager (e.g. some unit tests) the state simply does not emit.
         manager = self.parent
         self.state = PersonaSessionState(
             event_logger=getattr(manager, "event_logger", None),
-            room_id=getattr(manager, "room_id", None),
             persona_id=self.id,
+            path=getattr(manager, "chat_path", None) or "",
             log=self.log,
-            path=getattr(manager, "chat_path", None),
         )
 
         # Register this persona as a user in the chat

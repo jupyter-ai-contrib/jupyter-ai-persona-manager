@@ -34,6 +34,7 @@ def mock_ychat():
     from jupyterlab_chat.ychat import YChat
     mock = Mock(spec=YChat)
     mock.get_id.return_value = "test-chat-id"
+    mock.get_path.return_value = "chat.chat"
     mock.set_user = Mock()
     mock.add_message = Mock(return_value="msg-123")
     mock.update_message = Mock()
