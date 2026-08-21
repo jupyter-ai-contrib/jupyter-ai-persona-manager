@@ -484,3 +484,153 @@
   background-color: var(--jp-border-color2);
 }
 /* stylelint-enable selector-class-pattern */
+
+/* Persona permission requests (BasePersona.request_permission) */
+.jp-jupyter-ai-permission-request {
+  margin: 4px 0;
+  font-size: var(--jp-ui-font-size1);
+}
+
+.jp-jupyter-ai-permission-title {
+  font-style: italic;
+}
+
+.jp-jupyter-ai-permission-detail {
+  white-space: pre-wrap;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  color: var(--jp-ui-font-color2);
+  margin: 2px 0;
+}
+
+.jp-jupyter-ai-permission-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.jp-jupyter-ai-permission-btn {
+  cursor: pointer;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: var(--jp-border-radius);
+  background: var(--jp-layout-color1);
+  color: var(--jp-ui-font-color1);
+  padding: 2px 8px;
+}
+
+.jp-jupyter-ai-permission-btn:hover {
+  background: var(--jp-layout-color2);
+}
+
+.jp-jupyter-ai-permission-resolved {
+  color: var(--jp-ui-font-color2);
+  margin-top: 2px;
+}
+
+/* Permission request diffs */
+.jp-jupyter-ai-permission-diffs {
+  margin-top: 4px;
+}
+
+.jp-jupyter-ai-permission-diff-block {
+  border: 1px solid var(--jp-border-color2);
+  border-radius: var(--jp-border-radius);
+  margin: 4px 0;
+  overflow: hidden;
+}
+
+.jp-jupyter-ai-permission-diff-header {
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+}
+
+.jp-jupyter-ai-permission-diff-content {
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  white-space: pre-wrap;
+}
+
+.jp-jupyter-ai-permission-diff-line {
+  padding: 0 6px;
+}
+
+.jp-jupyter-ai-permission-diff-added {
+  background: var(--jp-diff-added-color, rgb(0 255 0 / 10%));
+}
+
+.jp-jupyter-ai-permission-diff-removed {
+  background: var(--jp-diff-deleted-color, rgb(255 0 0 / 10%));
+}
+
+/* Persona tool calls (BasePersona.report_tool_call) */
+.jp-jai-tool-calls {
+  margin: 4px 0;
+  font-size: var(--jp-ui-font-size1);
+}
+.jp-jai-tool-call {
+  margin: 2px 0;
+}
+.jp-jai-tool-call-icon {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+.jp-jai-tool-call-failed {
+  color: var(--jp-error-color1);
+}
+.jp-jai-tool-call-completed .jp-jai-tool-call-icon {
+  color: var(--jp-success-color1);
+}
+.jp-jai-tool-call-detail {
+  white-space: pre-wrap;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  color: var(--jp-ui-font-color2);
+  margin: 2px 0 2px 1em;
+}
+.jp-jai-permission-label {
+  color: var(--jp-ui-font-color2);
+}
+
+/* Diff view (ported from acp-client) */
+.jp-jai-diff-container {
+  margin: 4px 0;
+}
+.jp-jai-diff-block {
+  border: 1px solid var(--jp-border-color2);
+  border-radius: var(--jp-border-radius);
+  margin: 4px 0;
+  overflow: hidden;
+}
+.jp-jai-diff-header {
+  background: var(--jp-layout-color2);
+  padding: 2px 6px;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+}
+.jp-jai-diff-header-clickable {
+  cursor: pointer;
+  text-decoration: underline;
+}
+.jp-jai-diff-content {
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+  white-space: pre-wrap;
+}
+.jp-jai-diff-line {
+  padding: 0 6px;
+}
+.jp-jai-diff-added {
+  background: var(--jp-diff-added-color, rgba(0, 255, 0, 0.1));
+}
+.jp-jai-diff-removed {
+  background: var(--jp-diff-deleted-color, rgba(255, 0, 0, 0.1));
+}
+.jp-jai-diff-toggle {
+  cursor: pointer;
+  color: var(--jp-content-link-color);
+  padding: 0 6px;
+}

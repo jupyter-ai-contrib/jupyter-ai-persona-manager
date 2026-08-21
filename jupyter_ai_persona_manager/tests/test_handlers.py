@@ -141,6 +141,7 @@ async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
     persona.id = "jupyter-ai-personas::test::TestPersona"
     persona.processing = True
     persona.cancel_response = AsyncMock()
+    persona.cancel_permissions = Mock(return_value=1)
 
     _install_cancel_fixtures(
         jp_serverapp, "notebooks/chat.chat", "text:chat:file-1", {"p": persona}
@@ -157,6 +158,8 @@ async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
     assert body["status"] == "cancelled"
     assert persona.id in body["cancelled"]
     persona.cancel_response.assert_awaited_once()
+    # Pending permission requests are cancelled as part of the stop flow.
+    persona.cancel_permissions.assert_called_once()
 
 
 async def test_cancel_handler_skips_idle_personas(jp_fetch, jp_serverapp):

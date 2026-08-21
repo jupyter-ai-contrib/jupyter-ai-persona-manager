@@ -47,7 +47,12 @@ export enum FixturePersona {
   BrokenInit = 'broken-init',
   SlowLoad = 'slow-load',
   SystemMessage = 'system-message',
-  Status = 'status'
+  Status = 'status',
+  Permission = 'permission',
+  QuietPermission = 'quiet-permission',
+  VerbosePermission = 'verbose-permission',
+  StopPermission = 'stop-permission',
+  ToolCall = 'tool-call'
 }
 
 interface FixturePersonaInfo {
@@ -72,7 +77,12 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
   [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
   [FixturePersona.SystemMessage]: { name: 'System Message Persona' },
-  [FixturePersona.Status]: { name: 'Status Persona' }
+  [FixturePersona.Status]: { name: 'Status Persona' },
+  [FixturePersona.Permission]: { name: 'Permission Persona' },
+  [FixturePersona.QuietPermission]: { name: 'Quiet Requester Persona' },
+  [FixturePersona.VerbosePermission]: { name: 'Verbose Requester Persona' },
+  [FixturePersona.StopPermission]: { name: 'Stop Requester Persona' },
+  [FixturePersona.ToolCall]: { name: 'Tool Call Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -94,6 +104,16 @@ const COMMAND_NAME = '.jp-chat-command-name';
 // The toolbar's stop button: enabled only while an AI persona is writing, so its
 // disabled state doubles as a "is the persona still streaming?" signal.
 const STOP_BUTTON = '.jp-jai-stopButton';
+
+// Permission request UI (rendered by the persona-manager permissions preamble):
+// a container with Allow?/buttons while pending, and a resolved label after.
+const PERMISSION_REQUEST = '.jp-jupyter-ai-permission-request';
+// Permission buttons appear both as standalone requests and attached to a tool
+// call row, so match either class.
+const PERMISSION_BTN = '.jp-jupyter-ai-permission-btn, .jp-jai-permission-btn';
+// Tool-call rows and diff blocks (report_tool_call UI).
+const TOOL_CALL = '.jp-jai-tool-call';
+const DIFF_BLOCK = '.jp-jai-diff-block';
 
 // The usage chip and the parts that distinguish which usage a persona reported:
 // a context ring + percent, and/or a session-token breakdown in the popover
@@ -417,5 +437,61 @@ export class TestHelpers {
     const message = this.chat.locator(MESSAGE, { hasText: text });
     await expect(message.first()).toBeVisible({ timeout: TIMEOUT });
     return (await message.first().textContent()) ?? '';
+  }
+
+  /** The pending permission request container (buttons visible while pending). */
+  get permissionRequest(): Locator {
+    return this.chat.locator(PERMISSION_REQUEST);
+  }
+
+  /** Wait for a persona's permission request buttons to render. */
+  async waitForPermissionButtons(): Promise<void> {
+    await expect(this.chat.locator(PERMISSION_BTN).first()).toBeVisible({
+      timeout: TIMEOUT
+    });
+  }
+
+  /** Click a permission button by its label (e.g. "Allow" / "Deny"). */
+  async clickPermission(label: string): Promise<void> {
+    await this.chat.locator(PERMISSION_BTN, { hasText: label }).first().click();
+  }
+
+  /** How many permission-request blocks are currently rendered. */
+  async permissionRequestCount(): Promise<number> {
+    return this.permissionRequest.count();
+  }
+
+  /** How many permission decision buttons are currently rendered. */
+  async permissionButtonCount(): Promise<number> {
+    return this.chat.locator(PERMISSION_BTN).count();
+  }
+
+  /** All rendered tool-call rows. */
+  get toolCalls(): Locator {
+    return this.chat.locator(TOOL_CALL);
+  }
+
+  /** All rendered diff blocks. */
+  get diffBlocks(): Locator {
+    return this.chat.locator(DIFF_BLOCK);
+  }
+
+  /**
+   * Approve every pending permission request by clicking its `label` button
+   * (default "Allow"), one at a time, until none remain. Each click resolves
+   * one request and re-renders, so we re-query between clicks.
+   */
+  async approveAll(label = 'Allow'): Promise<void> {
+    for (let i = 0; i < 8; i++) {
+      const btns = this.chat.locator(PERMISSION_BTN, { hasText: label });
+      const before = await btns.count();
+      if (before === 0) {
+        return;
+      }
+      await btns.first().click();
+      await expect
+        .poll(async () => btns.count(), { timeout: TIMEOUT })
+        .toBeLessThan(before);
+    }
   }
 }

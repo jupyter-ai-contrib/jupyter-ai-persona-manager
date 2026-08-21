@@ -1,13 +1,16 @@
 import asyncio
+import asyncio
 import contextlib
 import html
+import inspect
 import os
 import traceback
+import uuid
 from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import asdict
 from logging import Logger
 from time import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
@@ -30,6 +33,16 @@ from .doc_markers import (
     mark_subclass_api,
 )
 from .persona_events import PersonaSessionState
+from .permissions import (
+    PERMISSION_METADATA_KEY,
+    PermissionOutcome,
+    PermissionRequest,
+    build_permission_metadata,
+)
+from .tool_calls import (
+    TOOL_CALLS_METADATA_KEY,
+    ToolCall,
+)
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -130,6 +143,16 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.chat = chat
         self._processing_count = 0
 
+        # Pending permission requests, keyed by request_id. Each maps to a
+        # Future resolved when the user's decision arrives over the events plane
+        # (see `request_permission` / `resolve_permission`).
+        self._pending_permissions: dict[str, "asyncio.Future[Optional[str]]"] = {}
+
+        # Reported tool calls, keyed by tool_call_id, and the chat message each
+        # was written to (so `update_tool_call` can re-render the right message).
+        self._tool_calls: dict[str, ToolCall] = {}
+        self._tool_call_message: dict[str, str] = {}
+
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and room id come from the
         # PersonaManager (this persona's ``parent``); when constructed without a
@@ -226,6 +249,366 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     ################################################
     # base class methods, available to subclasses.
     ################################################
+    @mark_consumer_api
+    async def request_permission(
+        self, request: PermissionRequest
+    ) -> PermissionOutcome:
+        """Ask the user to approve (or reject) an action, and suspend until they
+        decide.
+
+        This is the general, backend-agnostic permission API. Its contract is
+        **independent of how the decision travels back to the server**: the
+        method mints a request id, surfaces the request (by default, as a
+        ``permission_request`` block on a chat message the frontend renders as
+        buttons — see :meth:`_publish_permission_request`), and suspends on a
+        Future. Any transport delivers the user's decision by calling
+        :meth:`resolve_permission` with the same ``request_id`` — the default
+        frontend emits a Jupyter Event, but this method does not depend on that
+        choice, and swapping the transport requires no change here.
+
+        ACP-specific identifiers (``session_id`` etc.) belong in
+        ``request.context``; they are echoed back verbatim in
+        ``PermissionOutcome.request`` and never leave the server.
+
+        Returns a :class:`PermissionOutcome`. ``option_id`` is ``None`` and
+        ``cancelled`` is ``True`` if the request was cancelled rather than
+        answered.
+        """
+        request_id = uuid.uuid4().hex
+        loop = asyncio.get_event_loop()
+        future: "asyncio.Future[Optional[str]]" = loop.create_future()
+
+        # Register the pending request BEFORE surfacing it, so a decision that
+        # arrives immediately (any transport) cannot race ahead of the entry it
+        # needs to resolve.
+        self._pending_permissions[request_id] = future
+        message_id: Optional[str] = None
+        try:
+            # The render hooks may be sync (default) or async (a backend whose
+            # renderer is behind an async accessor, e.g. ACP's client) — support
+            # both by awaiting an awaitable result.
+            published = self._publish_permission_request(request_id, request)
+            if inspect.isawaitable(published):
+                published = await published
+            message_id = published
+            option_id = await future
+        finally:
+            self._pending_permissions.pop(request_id, None)
+
+        # Reflect the resolution wherever the request was surfaced.
+        if message_id is not None:
+            finalized = self._finalize_permission_request(
+                request_id, request, message_id, option_id
+            )
+            if inspect.isawaitable(finalized):
+                await finalized
+
+        return PermissionOutcome(
+            option_id=option_id,
+            request=request,
+            cancelled=option_id is None,
+        )
+
+    @mark_subclass_api
+    def _publish_permission_request(
+        self, request_id: str, request: PermissionRequest
+    ) -> Optional[str]:
+        """Surface a pending permission request to the user, returning the id of
+        the chat message it was attached to (or ``None`` if not surfaced in the
+        chat).
+
+        The default implementation reflects the request in the chat by writing a
+        ``permission_request`` metadata block onto a message (a new one, or
+        ``request.message_id`` if given), which the frontend renders as buttons.
+        This is the only presentation-specific step; the request/await/resolve
+        lifecycle in :meth:`request_permission` is identical regardless of how
+        the request is surfaced or how the decision returns, so a subclass may
+        override this without touching that lifecycle.
+        """
+        message_id = request.message_id
+        if request.tool_call_id is not None:
+            # Attach the request to an existing tool call: render the buttons on
+            # its row rather than as a standalone block.
+            return self._attach_permission_to_tool_call(
+                request_id, request, status="pending", option_id=None
+            )
+        if message_id is None:
+            message_id = self.chat.add_message(
+                NewMessage(body="", sender=self.id), trigger_actions=[]
+            )
+        self._write_permission_metadata(
+            message_id,
+            build_permission_metadata(
+                request_id=request_id,
+                persona_id=self.id,
+                chat_id=self.chat.get_id(),
+                request=request,
+                status="pending",
+            ),
+        )
+        return message_id
+
+    @mark_subclass_api
+    def _finalize_permission_request(
+        self,
+        request_id: str,
+        request: PermissionRequest,
+        message_id: str,
+        option_id: Optional[str],
+    ) -> None:
+        """Reflect a resolved permission request wherever it was surfaced.
+
+        The default implementation updates the ``permission_request`` metadata
+        block to ``resolved`` with the chosen ``option_id`` (``None`` when
+        cancelled). Paired with :meth:`_publish_permission_request`: a subclass
+        that overrides how a request is surfaced (e.g. ACP rendering it in a
+        tool-call row, with a diff) should override this too, so the resolved
+        state is reflected the same way.
+        """
+        if request.tool_call_id is not None:
+            self._attach_permission_to_tool_call(
+                request_id, request, status="resolved", option_id=option_id
+            )
+            return
+        self._write_permission_metadata(
+            message_id,
+            build_permission_metadata(
+                request_id=request_id,
+                persona_id=self.id,
+                chat_id=self.chat.get_id(),
+                request=request,
+                status="resolved",
+                selected_option_id=option_id,
+            ),
+        )
+
+    @mark_consumer_api
+    def resolve_permission(self, request_id: str, option_id: Optional[str]) -> bool:
+        """Resolve a pending permission request with the user's decision.
+
+        This is the transport seam: whatever channel carries the user's decision
+        back to the server (the default frontend emits a ``permission_response``
+        Jupyter Event, routed by the :class:`PersonaManager`; a REST endpoint or
+        a shared-document write would work identically) resolves the request by
+        calling this with the ``request_id`` from :meth:`request_permission`.
+
+        Returns ``True`` if a matching pending request was found and resolved,
+        ``False`` otherwise (unknown id or already resolved).
+        """
+        future = self._pending_permissions.get(request_id)
+        if future is None or future.done():
+            return False
+        future.set_result(option_id)
+        return True
+
+    @mark_consumer_api
+    def cancel_permissions(self) -> int:
+        """Cancel all pending permission requests (e.g. on interrupt/shutdown).
+
+        Each pending request resolves as cancelled (``option_id=None``). Returns
+        the number of requests cancelled.
+        """
+        cancelled = 0
+        for request_id, future in list(self._pending_permissions.items()):
+            if not future.done():
+                future.set_result(None)
+                cancelled += 1
+        return cancelled
+
+    def _write_permission_metadata(
+        self, message_id: str, block: dict[str, Any]
+    ) -> None:
+        """Upsert a permission request block into a chat message's metadata.
+
+        Permission requests live in a list under ``PERMISSION_METADATA_KEY``,
+        keyed by ``request_id``: an existing entry with the same ``request_id``
+        is replaced (e.g. pending -> resolved), otherwise the block is appended.
+        This lets a single message host multiple concurrent requests without one
+        clobbering another (mirroring ACP's grouped tool calls).
+        """
+        msg = self.chat.get_message(message_id)
+        if msg is None:
+            self.log.warning(
+                f"request_permission: chat message {message_id} not found; "
+                "cannot render permission request."
+            )
+            return
+        metadata = dict(msg.metadata or {})
+        existing = metadata.get(PERMISSION_METADATA_KEY)
+        requests = list(existing) if isinstance(existing, list) else []
+        request_id = block.get("request_id")
+        for i, entry in enumerate(requests):
+            if entry.get("request_id") == request_id:
+                requests[i] = block
+                break
+        else:
+            requests.append(block)
+        metadata[PERMISSION_METADATA_KEY] = requests
+        msg.metadata = metadata
+        self.chat.update_message(msg, trigger_actions=[])
+
+    ################################################
+    # tool calls
+    ################################################
+    @mark_consumer_api
+    def report_tool_call(
+        self,
+        title: str,
+        *,
+        kind: Optional[str] = None,
+        status: str = "in_progress",
+        locations: Optional[list] = None,
+        raw_input: Optional[Any] = None,
+        diffs: Optional[list] = None,
+        message_id: Optional[str] = None,
+    ) -> str:
+        """Report a tool call (an action the persona is taking) to the chat.
+
+        Returns the new ``tool_call_id``. Pass that id to
+        :meth:`update_tool_call` to update status/output, or to
+        :meth:`request_permission` (via ``PermissionRequest.tool_call_id``) to
+        render approve/deny buttons on this tool call's row.
+
+        Grouping: pass ``message_id`` (from a prior tool call's
+        :meth:`tool_call_message_id`) to render several tool calls in one
+        message; omit it to start a new message.
+        """
+        tool_call_id = uuid.uuid4().hex
+        if message_id is None:
+            message_id = self.chat.add_message(
+                NewMessage(body="", sender=self.id), trigger_actions=[]
+            )
+        self._tool_calls[tool_call_id] = ToolCall(
+            tool_call_id=tool_call_id,
+            title=title,
+            kind=kind,
+            status=status,
+            locations=locations,
+            raw_input=raw_input,
+            diffs=diffs,
+        )
+        self._tool_call_message[tool_call_id] = message_id
+        self._flush_tool_call(tool_call_id)
+        return tool_call_id
+
+    @mark_consumer_api
+    def update_tool_call(
+        self,
+        tool_call_id: str,
+        *,
+        title: Optional[str] = None,
+        kind: Optional[str] = None,
+        status: Optional[str] = None,
+        locations: Optional[list] = None,
+        raw_input: Optional[Any] = None,
+        raw_output: Optional[Any] = None,
+        diffs: Optional[list] = None,
+    ) -> None:
+        """Update a previously-reported tool call and re-render its message.
+
+        Only provided fields are changed. ``failed`` is terminal: once a tool
+        call is failed, a later ``status`` update does not overwrite it.
+        """
+        tc = self._tool_calls.get(tool_call_id)
+        if tc is None:
+            self.log.warning(f"update_tool_call: unknown tool call {tool_call_id}")
+            return
+        if title is not None:
+            tc.title = title
+        if kind is not None:
+            tc.kind = kind
+        if status is not None and tc.status != "failed":
+            tc.status = status
+        if locations is not None:
+            tc.locations = locations
+        if raw_input is not None:
+            tc.raw_input = raw_input
+        if raw_output is not None:
+            tc.raw_output = raw_output
+        if diffs is not None:
+            tc.diffs = diffs
+        self._flush_tool_call(tool_call_id)
+
+    @mark_consumer_api
+    def tool_call_message_id(self, tool_call_id: str) -> Optional[str]:
+        """The chat message a tool call was written to (for grouping)."""
+        return self._tool_call_message.get(tool_call_id)
+
+    @mark_consumer_api
+    def cancel_tool_calls(self) -> int:
+        """Mark all non-terminal tool calls as ``failed`` and re-render them.
+
+        Companion to :meth:`cancel_permissions` on interrupt/shutdown. Returns
+        the number of tool calls marked failed.
+        """
+        cancelled = 0
+        for tool_call_id, tc in self._tool_calls.items():
+            if tc.status not in ("completed", "failed"):
+                tc.status = "failed"
+                self._flush_tool_call(tool_call_id)
+                cancelled += 1
+        return cancelled
+
+    def _attach_permission_to_tool_call(
+        self,
+        request_id: str,
+        request: PermissionRequest,
+        *,
+        status: str,
+        option_id: Optional[str],
+    ) -> Optional[str]:
+        """Set/clear permission fields on a tool call and re-render it.
+
+        Used by the permission hooks when ``PermissionRequest.tool_call_id`` is
+        set. Returns the tool call's message id (or ``None`` if unknown).
+        """
+        tool_call_id = request.tool_call_id
+        tc = self._tool_calls.get(tool_call_id) if tool_call_id else None
+        if tc is None:
+            self.log.warning(
+                f"request_permission: unknown tool_call_id {tool_call_id!r}; "
+                "cannot attach permission."
+            )
+            return None
+        if status == "pending":
+            tc.permission_options = list(request.options)
+            tc.permission_status = "pending"
+            tc.selected_option_id = None
+            tc.request_id = request_id
+            tc.chat_id = self.chat.get_id()
+            tc.persona_id = self.id
+            if request.diffs is not None:
+                tc.diffs = list(request.diffs)
+        else:
+            tc.permission_status = "resolved"
+            tc.selected_option_id = option_id
+        self._flush_tool_call(tool_call_id)
+        return self._tool_call_message.get(tool_call_id)
+
+    def _flush_tool_call(self, tool_call_id: str) -> None:
+        """Re-render the message hosting ``tool_call_id`` with all its tool calls."""
+        message_id = self._tool_call_message.get(tool_call_id)
+        if message_id is None:
+            return
+        msg = self.chat.get_message(message_id)
+        if msg is None:
+            self.log.warning(
+                f"tool call {tool_call_id}: chat message {message_id} not found."
+            )
+            return
+        # Rebuild this message's tool-call list in creation order.
+        ordered = [
+            self._tool_calls[tid]
+            for tid in self._tool_calls
+            if self._tool_call_message.get(tid) == message_id
+        ]
+        metadata = dict(msg.metadata or {})
+        metadata[TOOL_CALLS_METADATA_KEY] = [
+            tc.model_dump(exclude_none=True) for tc in ordered
+        ]
+        msg.metadata = metadata
+        self.chat.update_message(msg, trigger_actions=[])
+
     @mark_consumer_api
     @property
     def id(self) -> str:
@@ -821,6 +1204,13 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         logic. The override should generally call `super().shutdown()` first
         before running custom shutdown logic.
         """
+        # Cancel any pending permission requests so awaiting `request_permission`
+        # calls unwind (resolve as cancelled) instead of hanging on shutdown.
+        self.cancel_permissions()
+        # Mark any in-progress tool calls as failed so they don't render as
+        # perpetually running after the persona is gone.
+        self.cancel_tool_calls()
+
         # Stop awareness heartbeat task & remove self from chat awareness
         if self.state is not None:
             self.state.shutdown()

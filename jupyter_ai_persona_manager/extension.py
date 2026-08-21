@@ -20,6 +20,7 @@ from jupyter_ai_persona_manager.handlers import (
 
 from .persona_manager import PersonaManager
 from .persona_events import register_persona_event_schemas
+from .permissions import register_permission_event_schemas
 
 if TYPE_CHECKING:
     from typing import Any
@@ -79,6 +80,7 @@ class PersonaManagerExtension(ExtensionApp):
         event_logger = self.serverapp.web_app.settings.get("event_logger")
         if event_logger is not None:
             register_persona_event_schemas(event_logger)
+            register_permission_event_schemas(event_logger)
 
         # Advertise the default persona ID to the frontend via PageConfig, so a
         # chat with no prior persona selection can pre-select it without a
