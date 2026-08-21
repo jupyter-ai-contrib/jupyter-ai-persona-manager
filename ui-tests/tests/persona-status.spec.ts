@@ -45,7 +45,9 @@ test.describe('persona-status', () => {
     // Caller-set status.
     await expect(writers).toContainText('is thinking...', { timeout: 30000 });
     // Cleared: the indicator no longer shows a status.
-    await expect(writers).not.toContainText('is thinking...', { timeout: 30000 });
+    await expect(writers).not.toContainText('is thinking...', {
+      timeout: 30000
+    });
     await expect(writers).not.toContainText('is typing...');
   });
 });
