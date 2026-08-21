@@ -69,19 +69,9 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     per-message user selections take effect for every persona without each
     `process_message()` implementation having to apply them itself.
     """
-    try:
-        # Run the one-time startup hook before the persona's first message.
-        if not persona._prepare_started:
-            persona._prepare_started = True
-            await persona.prepare()
-        await persona.apply_specs_in_message(message)
-        with persona.track_processing():
-            await persona.process_message(message)
-    except Exception as exc:
-        persona._prepare_started = False
-        persona.log.error(
-            f"Persona '{persona.name}' raised an unhandled exception in process_message()."
-        )
+
+    async def _deliver_error(exc: Exception, where: str) -> None:
+        persona.log.error(f"Persona '{persona.name}' raised an exception {where}.")
         persona.log.exception(exc)
         try:
             await persona.handle_uncaught_exception(exc)
@@ -90,6 +80,23 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
                 f"Persona '{persona.name}' raised a secondary exception in "
                 f"handle_uncaught_exception(); error message not delivered to user."
             )
+
+    # Run the one-time `prepare()` hook in its own error boundary. If it fails,
+    # surface the error and skip processing. Keeping this separate from the
+    # processing block below ensures a *processing* failure never resets or
+    # re-triggers preparation.
+    try:
+        await persona._ensure_prepared()
+    except Exception as exc:
+        await _deliver_error(exc, "while preparing")
+        return
+
+    try:
+        await persona.apply_specs_in_message(message)
+        with persona.track_processing():
+            await persona.process_message(message)
+    except Exception as exc:
+        await _deliver_error(exc, "while processing the message")
 
 
 class PersonaManager(LoggingConfigurable):

@@ -134,8 +134,7 @@ class TestSafeProcessAppliesSpecsFirst:
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
-        persona._prepare_started = False
-        persona.prepare = AsyncMock(side_effect=lambda: order.append("prepare"))
+        persona._ensure_prepared = AsyncMock()
         persona.apply_specs_in_message = AsyncMock(
             side_effect=lambda m: order.append("apply")
         )
@@ -146,15 +145,14 @@ class TestSafeProcessAppliesSpecsFirst:
 
         await _safe_process(persona, MagicMock(spec=Message))
 
-        assert order == ["prepare", "apply", "process"]
+        assert order == ["apply", "process"]
 
     @pytest.mark.asyncio
     async def test_processing_error_routed_to_handler(self):
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
-        persona._prepare_started = False
-        persona.prepare = AsyncMock()
+        persona._ensure_prepared = AsyncMock()
         persona.apply_specs_in_message = AsyncMock()
         exc = RuntimeError("boom")
         persona.process_message = AsyncMock(side_effect=exc)
@@ -171,8 +169,7 @@ class TestSafeProcessAppliesSpecsFirst:
         persona = MagicMock()
         persona.name = "P"
         persona.log = MagicMock()
-        persona._prepare_started = False
-        persona.prepare = AsyncMock()
+        persona._ensure_prepared = AsyncMock()
         exc = RuntimeError("bad spec")
         persona.apply_specs_in_message = AsyncMock(side_effect=exc)
         persona.process_message = AsyncMock()
