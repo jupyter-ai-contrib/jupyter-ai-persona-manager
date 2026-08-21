@@ -37,9 +37,6 @@ if TYPE_CHECKING:
 
     from jupyter_events import EventLogger
 
-    from jupyter_server_fileid.manager import (  # type: ignore[import-untyped]
-        BaseFileIdManager,
-    )
     from jupyterlab_chat.models import BaseChatModel
 
 # EPG := entry point group
@@ -153,7 +150,6 @@ class PersonaManager(LoggingConfigurable):
 
     # instance attrs
     chat: "BaseChatModel"
-    fileid_manager: "Optional[BaseFileIdManager]"
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
@@ -168,7 +164,6 @@ class PersonaManager(LoggingConfigurable):
     # Local persona classes are instance attributes to support frequent reloading
     _local_persona_classes: list[dict] | None = None
     _personas: dict[str, BasePersona]
-    file_id: str
 
     state: PersonaManagerSessionState
     """
@@ -181,9 +176,7 @@ class PersonaManager(LoggingConfigurable):
     def __init__(
         self,
         *args,
-        room_id: str,
         chat: "BaseChatModel",
-        fileid_manager: "Optional[BaseFileIdManager]" = None,
         root_dir: str,
         event_loop: "AbstractEventLoop",
         base_url: str = "/",
@@ -194,42 +187,16 @@ class PersonaManager(LoggingConfigurable):
         super().__init__(*args, **kwargs)
 
         # Bind instance attributes
-        self.room_id = room_id
         self.chat = chat
-        self.fileid_manager = fileid_manager
         self.root_dir = root_dir
         self.event_loop = event_loop
         self.base_url = base_url
         self.event_logger = event_logger
 
-        # Store file ID. In RTC mode room_id is "text:chat:{file_id}"; in
-        # non-RTC mode it is the file path.
-        #
-        # The File ID service is only present when an RTC provider supplies it
-        # (jupyter-server-ydoc / jupyter-server-documents). When it is
-        # available we index the path to a stable file id so that path-derived
-        # features (`.jupyter` discovery, MCP settings) survive file
-        # moves/renames. When it is absent (RTC-free), the room_id is already
-        # the chat path and is used directly as the chat's identity.
-        parts = room_id.split(":")
-        if len(parts) >= 3:
-            self.file_id = parts[2]
-        elif self.fileid_manager is not None:
-            self.file_id = self.fileid_manager.get_id(
-                os.path.join(self.root_dir, room_id)
-            ) or self.fileid_manager.index(
-                os.path.join(self.root_dir, room_id)
-            )
-        else:
-            self.file_id = ""
-
-        # The chat's server-root-relative path, used to scope events to a chat
-        # on the frontend. In non-RTC room_id is already the path; under RTC we
-        # resolve it from the file id (falling back to room_id if unavailable).
-        try:
-            self.chat_path = self.get_chat_path(relative=True)
-        except Exception:
-            self.chat_path = room_id
+        # The chat's server-root-relative path, obtained from the chat model.
+        # Used to scope persona events to a chat on the frontend and to locate
+        # `.jupyter`/workspace/MCP config relative to the chat file.
+        self.chat_path = self.chat.get_path()
 
         # register system user for sending system msgs
         self.chat.set_user(
@@ -239,22 +206,19 @@ class PersonaManager(LoggingConfigurable):
         )
 
         self._init_persona_classes()
-        self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
+        self.log.info(f"Persona classes loaded in chat '{self.chat_path}'.")
         self._personas = self._init_personas()
-        self.log.info(f"Personas initialized in chat '{self.room_id}'.")
+        self.log.info(f"Personas initialized in chat '{self.chat_path}'.")
 
         # Publish the persona list and per-persona state over Jupyter Events.
         # This is the source of truth the browser reads for the persona selector,
         # and it works in both RTC and non-RTC mode (no Yjs awareness required).
-        # The event schemas are registered once at server-extension init.
-        # The chat's server-root-relative path, used to scope events to a chat
-        # on the frontend. In non-RTC room_id is already the path; under RTC we
-        # resolve it from the file id (falling back to room_id if unavailable).
+        # The event schemas are registered once at server-extension init. Events
+        # are scoped to the chat by its server-root-relative path.
         self.state = PersonaManagerSessionState(
             event_logger=self.event_logger,
-            room_id=self.room_id,
-            log=self.log,
             path=self.chat_path,
+            log=self.log,
         )
         # Re-publish current state whenever a client connects to this chat, so a
         # client that joins an already-live chat catches up. This rides
@@ -267,10 +231,10 @@ class PersonaManager(LoggingConfigurable):
 
         if self.default_persona:
             self.log.info(
-                f"Default persona set to '{self.default_persona.name}' in chat '{self.room_id}'."
+                f"Default persona set to '{self.default_persona.name}' in chat '{self.chat_path}'."
             )
         else:
-            self.log.warning(f"No default persona is set in chat '{self.room_id}'.")
+            self.log.warning(f"No default persona is set in chat '{self.chat_path}'.")
 
     def _init_persona_classes(self) -> None:
         """Read entry-point and local persona classes."""
@@ -488,14 +452,9 @@ class PersonaManager(LoggingConfigurable):
         ]
 
     def _matches_this_chat(self, data: dict) -> bool:
-        """Whether a chat event refers to this manager's chat. Matches on the
-        RTC room id or the server-root-relative path (the two identifiers the
-        room/v1 client events may carry)."""
-        return (
-            data.get("room_id") == self.room_id
-            or data.get("path") == self.room_id
-            or data.get("path") == self.chat_path
-        )
+        """Whether a chat event refers to this manager's chat, matched by the
+        chat's server-root-relative path."""
+        return data.get("path") == self.chat_path
 
     async def _on_chat_event(self, logger, schema_id, data) -> None:
         """Re-publish the full persona state when a client connects to this chat,
@@ -574,7 +533,7 @@ class PersonaManager(LoggingConfigurable):
 
         # Write success message to chat & logs
         self.send_system_message("Refreshed all AI personas in this chat.")
-        self.log.info(f"Refreshed all AI personas in chat '{self.room_id}'.")
+        self.log.info(f"Refreshed all AI personas in chat '{self.chat_path}'.")
 
     def get_chat_path(self, relative: bool = False) -> str:
         """
@@ -584,18 +543,7 @@ class PersonaManager(LoggingConfigurable):
         To get a path relative to the `ContentsManager` root directory, call
         this method with `relative=True`.
         """
-        if self.fileid_manager is not None and self.file_id:
-            # RTC (or any deployment with a File ID service): resolve the live
-            # path from the stable file id so path-derived features follow the
-            # file across moves/renames.
-            relpath = self.fileid_manager.get_path(self.file_id)
-            if not relpath:
-                raise Exception(
-                    f"Unable to locate chat with file ID: '{self.file_id}'."
-                )
-        else:
-            # No File ID service (RTC-free): the room_id is the chat path.
-            relpath = self.room_id
+        relpath = self.chat.get_path()
         if relative:
             return relpath
 

@@ -33,7 +33,7 @@ def build_avatar_cache(persona_managers: dict) -> None:
     global _avatar_cache
     _avatar_cache = {}
 
-    for room_id, persona_manager in persona_managers.items():
+    for persona_manager in persona_managers.values():
         for persona in persona_manager.personas.values():
             try:
                 avatar_path = persona.defaults.avatar_path
@@ -69,29 +69,21 @@ class MessageHandler(JupyterHandler):
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
         serverapp = self.serverapp
-        fileid_manager = serverapp.web_app.settings.get("file_id_manager")
         contents_manager = serverapp.contents_manager
         root_dir = getattr(contents_manager, "root_dir", "")
         base_url = serverapp.web_app.settings.get("base_url", "/")
-        uid = uuid.uuid4()
-        if fileid_manager is not None:
-            room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
-            temp_room_id = f"text:chat:{room_uid}"
-        else:
-            # No File ID service (RTC-free): use the path as the room id.
-            temp_room_id = str(uid)
 
-        # Obtain or create a PersonaManager for this temporary room
-        # Reuse existing if present, otherwise instantiate a minimal manager
+        # Ephemeral chat backing this one-shot request. It has no real file;
+        # give it a unique root-level path so path-derived features (`.jupyter`
+        # / MCP discovery) resolve from the server root.
         ychat = YChat()
-        # Retrieve required managers from server settings
-        # Instantiate PersonaManager
+        ychat.initial_path = f"{uuid.uuid4()}.chat"
+
+        # Instantiate a temporary PersonaManager for this ephemeral chat.
         from .persona_manager import PersonaManager
 
         persona_manager = PersonaManager(
-            room_id=temp_room_id,
             chat=ychat,
-            fileid_manager=fileid_manager,
             root_dir=root_dir,
             event_loop=asyncio.get_event_loop(),
             base_url=base_url,
@@ -151,16 +143,6 @@ class CancelHandler(JupyterHandler):
     persona with nothing cancellable inherits the base no-op.
     """
 
-    @property
-    def file_id_manager(self):
-        """The server's File ID manager, or ``None`` if unavailable.
-
-        The File ID service is only present when an RTC provider supplies it;
-        in RTC-free deployments it is absent, and personas are registered under
-        the chat path directly.
-        """
-        return self.serverapp.web_app.settings.get("file_id_manager")
-
     @tornado.web.authenticated
     async def post(self):
         chat_path = self.get_argument("chat_path", None)
@@ -173,16 +155,18 @@ class CancelHandler(JupyterHandler):
             "jupyter-ai", {}
         ).get("persona-managers", {})
 
-        # The router registers each PersonaManager under the room_id it supplies,
-        # which is the chat's path in RTC-free mode and `text:chat:{file_id}`
-        # under RTC. Resolve the path first (RTC-free), then fall back to the RTC
-        # room_id, so cancellation works regardless of transport.
-        persona_manager = persona_managers.get(chat_path)
-        if persona_manager is None and self.file_id_manager is not None:
-            # RTC: the manager may be registered under `text:chat:{file_id}`.
-            file_id = self.file_id_manager.get_id(chat_path)
-            if file_id:
-                persona_manager = persona_managers.get(f"text:chat:{file_id}")
+        # Persona managers are registered under the router's room id, which is
+        # not necessarily the chat path. Resolve by matching each manager's own
+        # path (obtained from its chat model via `get_path()`), so cancellation
+        # works regardless of transport.
+        persona_manager = next(
+            (
+                pm
+                for pm in persona_managers.values()
+                if pm.get_chat_path(relative=True) == chat_path
+            ),
+            None,
+        )
 
         if not persona_manager:
             raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
