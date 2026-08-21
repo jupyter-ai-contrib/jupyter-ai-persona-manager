@@ -9,7 +9,6 @@ from unittest.mock import Mock
 
 import pytest
 from jupyter_server.serverapp import ServerApp
-from jupyter_server_fileid.manager import BaseFileIdManager
 
 if TYPE_CHECKING:
     from jupyterlab_chat.ychat import YChat
@@ -47,8 +46,12 @@ def mock_ychat():
 
 @pytest.fixture
 def mock_fileid_manager():
-    """Create a mock BaseFileIdManager."""
-    mock = Mock(spec=BaseFileIdManager)
+    """Create a mock File ID manager.
+
+    Not spec'd against `BaseFileIdManager` so the tests do not import
+    `jupyter_server_fileid` at runtime (it is no longer a runtime dependency).
+    """
+    mock = Mock()
     mock.get_path.return_value = "test/path/chat.ipynb"
     return mock
 
