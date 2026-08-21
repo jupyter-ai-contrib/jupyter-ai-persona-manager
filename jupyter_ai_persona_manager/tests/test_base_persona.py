@@ -235,34 +235,3 @@ class TestProcessing:
             with persona.track_processing():
                 raise ValueError("boom")
         assert persona.processing is False
-
-
-# ---------------------------------------------------------------------------
-# TestStatus  (issue #128: set_status / clear_status)
-# ---------------------------------------------------------------------------
-
-class TestStatus:
-    """`set_status(status)` shows a status indicator with a caller-settable
-    label (default "is typing..."); `clear_status()` removes it. Both drive the
-    chat's writers mechanism via `broadcast_writing_status`."""
-
-    def test_default_status(self, mock_ychat):
-        persona = _make_persona(mock_ychat)
-        persona.set_status()
-        persona.chat.broadcast_writing_status.assert_called_once_with(
-            persona.as_user(), {"typingIndicator": "is typing..."}
-        )
-
-    def test_status_is_settable_by_caller(self, mock_ychat):
-        persona = _make_persona(mock_ychat)
-        persona.set_status("is thinking...")
-        persona.chat.broadcast_writing_status.assert_called_once_with(
-            persona.as_user(), {"typingIndicator": "is thinking..."}
-        )
-
-    def test_clear_status_stops(self, mock_ychat):
-        persona = _make_persona(mock_ychat)
-        persona.clear_status()
-        persona.chat.broadcast_writing_status.assert_called_once_with(
-            persona.as_user(), None
-        )

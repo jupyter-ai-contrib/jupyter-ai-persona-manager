@@ -212,10 +212,12 @@ class PersonaManager(LoggingConfigurable):
         except Exception:
             self.chat_path = room_id
 
-        # Register the 'System' user once, up front. `send_system_message` is
-        # called during persona initialization below (e.g. on load errors), so
-        # the user must exist before that.
-        self._register_system_user()
+        # register system user for sending system msgs
+        self.chat.set_user(
+            User(
+                username=SYSTEM_USERNAME, name="System", display_name="System", bot=True
+            )
+        )
 
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
@@ -433,24 +435,6 @@ class PersonaManager(LoggingConfigurable):
         )
 
         return personas
-
-    def _register_system_user(self) -> None:
-        """Register the 'System' user used for system messages.
-
-        Marked ``bot=True`` so Jupyter Chat's mention-autocomplete provider
-        excludes it from the ``@``-mention menu (it skips bots). Registering it
-        once at initialization lets `send_system_message` simply attribute a
-        message to it, replacing the previous per-message add-user /
-        transaction / remove-user-after-a-delay workaround.
-        """
-        self.chat.set_user(
-            User(
-                username=SYSTEM_USERNAME,
-                name="System",
-                display_name="System",
-                bot=True,
-            )
-        )
 
     def send_system_message(self, body: str) -> None:
         """
@@ -683,14 +667,6 @@ class PersonaManager(LoggingConfigurable):
         called when the server is shutting down or when a chat session is
         closed.
         """
-        # Shut down each persona.
-        #
-        # Note: previous versions awaited `YChat._background_tasks` here to work
-        # around jupyterlab/jupyter-chat#509, where `create_id`/`_set_timestamp`
-        # were spawned as background tasks that had to be drained on shutdown.
-        # That was fixed upstream in jupyter-chat#521 (those methods are no
-        # longer async), and this package now floors `jupyterlab_chat>=0.25.0a2`
-        # which includes the fix, so the private-attribute workaround is gone.
         for persona in self.personas.values():
             await persona.shutdown()
 
