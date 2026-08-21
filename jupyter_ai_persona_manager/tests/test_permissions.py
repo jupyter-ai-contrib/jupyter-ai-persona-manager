@@ -45,6 +45,7 @@ def _make_persona():
     persona.chat.update_message = MagicMock()
     persona.chat.get_id = MagicMock(return_value="chat-1")
     persona.log = MagicMock()
+    persona.state = MagicMock()
     persona._pending_permissions = {}
     return persona
 
@@ -206,6 +207,25 @@ class TestRequestPermission:
         outcome = await task
         assert outcome.option_id is None
         assert outcome.cancelled is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_pending(self):
+        # On shutdown, an awaiting request_permission must unwind (cancelled)
+        # rather than hang.
+        persona = _make_persona()
+        req = PermissionRequest(
+            title="t", options=[PermissionOption(option_id="a", name="Allow")]
+        )
+        task = asyncio.create_task(persona.request_permission(req))
+        await asyncio.sleep(0)
+        assert len(persona._pending_permissions) == 1
+
+        await persona.shutdown()
+
+        outcome = await task
+        assert outcome.cancelled is True
+        assert outcome.option_id is None
+        assert persona._pending_permissions == {}
 
     def test_resolve_unknown_request(self):
         persona = _make_persona()

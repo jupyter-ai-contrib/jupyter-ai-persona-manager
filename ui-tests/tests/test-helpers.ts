@@ -50,7 +50,8 @@ export enum FixturePersona {
   Status = 'status',
   Permission = 'permission',
   QuietPermission = 'quiet-permission',
-  VerbosePermission = 'verbose-permission'
+  VerbosePermission = 'verbose-permission',
+  StopPermission = 'stop-permission'
 }
 
 interface FixturePersonaInfo {
@@ -78,7 +79,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.Status]: { name: 'Status Persona' },
   [FixturePersona.Permission]: { name: 'Permission Persona' },
   [FixturePersona.QuietPermission]: { name: 'Quiet Requester Persona' },
-  [FixturePersona.VerbosePermission]: { name: 'Verbose Requester Persona' }
+  [FixturePersona.VerbosePermission]: { name: 'Verbose Requester Persona' },
+  [FixturePersona.StopPermission]: { name: 'Stop Requester Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -450,6 +452,11 @@ export class TestHelpers {
   /** How many permission-request blocks are currently rendered. */
   async permissionRequestCount(): Promise<number> {
     return this.permissionRequest.count();
+  }
+
+  /** How many permission decision buttons are currently rendered. */
+  async permissionButtonCount(): Promise<number> {
+    return this.chat.locator(PERMISSION_BTN).count();
   }
 
   /**

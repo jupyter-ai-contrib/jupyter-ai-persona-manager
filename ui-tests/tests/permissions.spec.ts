@@ -11,7 +11,8 @@ const TEST_DIR = 'permissions';
 const PERSONAS = [
   FixturePersona.Permission,
   FixturePersona.QuietPermission,
-  FixturePersona.VerbosePermission
+  FixturePersona.VerbosePermission,
+  FixturePersona.StopPermission
 ];
 
 /**
@@ -115,5 +116,28 @@ test.describe('permissions', () => {
     await helpers.approveAll('Allow');
 
     await helpers.waitForMessageContaining('verbose decisions: allow, allow');
+  });
+
+  test('clicking stop cancels a pending permission request', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.StopPermission);
+
+    await helpers.send('go');
+
+    // The request is pending and the persona is writing, so stop is enabled.
+    await helpers.waitForPermissionButtons();
+    await helpers.waitForWriting();
+
+    // Stop: the persona-manager cancel flow cancels the pending request.
+    await helpers.clickStop();
+
+    await helpers.waitForMessageContaining('stop decision: cancelled');
+    // The pending buttons are gone once the request resolves as cancelled.
+    await expect
+      .poll(async () => helpers.permissionButtonCount(), { timeout: 30000 })
+      .toBe(0);
   });
 });

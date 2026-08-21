@@ -992,6 +992,10 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         logic. The override should generally call `super().shutdown()` first
         before running custom shutdown logic.
         """
+        # Cancel any pending permission requests so awaiting `request_permission`
+        # calls unwind (resolve as cancelled) instead of hanging on shutdown.
+        self.cancel_permissions()
+
         # Stop awareness heartbeat task & remove self from chat awareness
         if self.state is not None:
             self.state.shutdown()

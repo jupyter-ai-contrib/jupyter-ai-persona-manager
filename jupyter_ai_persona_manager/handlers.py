@@ -184,8 +184,20 @@ class CancelHandler(JupyterHandler):
             # Only interrupt personas that are actually processing a response;
             # cancelling an idle persona may be out of spec for some backends
             # (e.g. ACP's session/cancel is defined only for an ongoing turn).
+            # A persona awaiting a permission decision is `processing` (the
+            # awaiting `request_permission` holds the processing count), so this
+            # gate also covers pending-permission cancellation.
             if not persona.processing:
                 continue
+            # Cancel any pending permission requests first: the base
+            # `cancel_response` is a no-op, so without this an awaiting
+            # `request_permission` would never unwind. No-op when none pending.
+            cancelled_perms = persona.cancel_permissions()
+            if cancelled_perms:
+                self.log.info(
+                    f"Cancelled {cancelled_perms} pending permission request(s) "
+                    f"for persona '{persona.id}'."
+                )
             try:
                 await persona.cancel_response()
                 cancelled.append(persona.id)
