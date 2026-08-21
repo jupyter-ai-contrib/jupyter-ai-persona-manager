@@ -581,16 +581,9 @@ class PersonaManager(LoggingConfigurable):
         To get a path relative to the `ContentsManager` root directory, call
         this method with `relative=True`.
         """
-        if self.fileid_manager is None:
-            # No file_id_manager (e.g. a throwaway chat minted by the message
-            # endpoint): fall back to treating room_id as the chat path.
-            relpath = self.room_id
-        else:
-            relpath = self.fileid_manager.get_path(self.file_id)
-            if not relpath:
-                raise Exception(
-                    f"Unable to locate chat with file ID: '{self.file_id}'."
-                )
+        relpath = self.fileid_manager.get_path(self.file_id)
+        if not relpath:
+            raise Exception(f"Unable to locate chat with file ID: '{self.file_id}'.")
         if relative:
             return relpath
 

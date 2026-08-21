@@ -69,92 +69,69 @@ class MessageHandler(JupyterHandler):
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
         serverapp = self.serverapp
-        settings = serverapp.web_app.settings
+        fileid_manager = serverapp.web_app.settings.get("file_id_manager")
         contents_manager = serverapp.contents_manager
         root_dir = getattr(contents_manager, "root_dir", "")
-        base_url = settings.get("base_url", "/")
-
-        # Mint a unique, throwaway chat for this one request. We do NOT depend on
-        # a file_id_manager here: the room id is a plain uuid and the chat model
-        # is obtained from the ChatManager (transport-neutral) when available,
-        # falling back to an in-memory YChat otherwise.
+        base_url = serverapp.web_app.settings.get("base_url", "/")
         uid = uuid.uuid4()
-        temp_path = f"{uid}.chat"
-        temp_room_id = f"text:chat:{uid}"
+        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
+        temp_room_id = f"text:chat:{room_uid}"
 
-        chat_manager = settings.get("chat_manager")
-        ychat = None
-        if chat_manager is not None:
-            try:
-                ychat = await chat_manager.create(temp_path)
-            except Exception:
-                self.log.warning(
-                    "ChatManager.create failed for temporary chat; "
-                    "falling back to an in-memory YChat.",
-                    exc_info=True,
-                )
-        if ychat is None:
-            ychat = YChat()
-
+        # Obtain or create a PersonaManager for this temporary room
+        # Reuse existing if present, otherwise instantiate a minimal manager
+        ychat = YChat()
+        # Retrieve required managers from server settings
+        # Instantiate PersonaManager
         from .persona_manager import PersonaManager
 
-        loop = asyncio.get_running_loop()
         persona_manager = PersonaManager(
             room_id=temp_room_id,
             chat=ychat,
-            fileid_manager=settings.get("file_id_manager"),
+            fileid_manager=fileid_manager,
             root_dir=root_dir,
-            event_loop=loop,
+            event_loop=asyncio.get_event_loop(),
             base_url=base_url,
         )
-        try:
-            target_persona = next(
-                (
-                    p
-                    for p in persona_manager.personas.values()
-                    if getattr(p, "name", None) == persona_name
-                ),
-                None,
-            )
-            if not target_persona:
-                raise tornado.web.HTTPError(404, f"Persona '{persona_name}' not found")
+        # Capture output by temporarily overriding send_message of the target persona
+        target_persona = next(
+            (
+                p
+                for p in persona_manager.personas.values()
+                if getattr(p, "name", None) == persona_name
+            ),
+            None,
+        )
+        if not target_persona:
+            raise tornado.web.HTTPError(404, f"Persona '{persona_name}' not found")
 
-            msg = Message(
-                id="msgid",
-                body=message_text,
-                time=time.time(),
-                sender=User(username=DEFAULT_SENDER,
-                            name=DEFAULT_SENDER_NAME,
-                            display_name=DEFAULT_SENDER_NAME).username,
-                raw_time=False,
-                metadata=metadata
-            )
+        msg = Message(
+            id="msgid",
+            body=message_text,
+            time=time.time(),
+            sender=User(username=DEFAULT_SENDER,
+                        name=DEFAULT_SENDER_NAME,
+                        display_name=DEFAULT_SENDER_NAME).username,
+            raw_time=False,
+            metadata=metadata
+        )
 
-            await target_persona.process_message(msg)
-            # Streaming personas may still be working after process_message
-            # returns. Wait until the persona is no longer processing, up to the
-            # response timeout.
-            deadline = loop.time() + DEFAULT_RESPONSE_TIMEOUT
-            while target_persona.processing:
-                if loop.time() > deadline:
-                    self.log.warning("Timeout waiting for persona to finish")
-                    break
-                await asyncio.sleep(0.05)
+        await target_persona.process_message(msg)
+        # Streaming personas may still be working after process_message returns.
+        # Wait until the persona is no longer processing, up to the response
+        # timeout.
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + DEFAULT_RESPONSE_TIMEOUT
+        while target_persona.processing:
+            if loop.time() > deadline:
+                self.log.warning("Timeout waiting for persona to finish")
+                break
+            await asyncio.sleep(0.05)
 
-            # Return the captured response
-            response = "".join(
-                m.body if getattr(m, "body", None) is not None else str(m)
-                for m in ychat.get_messages()
-            )
-        finally:
-            # Always tear down the throwaway manager, even on error/timeout.
-            try:
-                await persona_manager.shutdown_personas()
-            except Exception:
-                self.log.warning(
-                    "Failed to shut down temporary PersonaManager", exc_info=True
-                )
-
+        # Return the captured response
+        response = "".join(
+            msg.body if getattr(msg, "body", None) is not None else str(msg)
+            for msg in ychat.get_messages()
+        )
         self.set_header("Content-Type", "application/json")
         self.finish(json.dumps({"response": response}))
 

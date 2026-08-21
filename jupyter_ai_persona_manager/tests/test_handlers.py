@@ -251,4 +251,3 @@ async def test_cancel_handler_resolves_manager_by_path_rtc_free(jp_fetch, jp_ser
     body = json.loads(response.body)
     assert persona.id in body["cancelled"]
     persona.cancel_response.assert_awaited_once()
-

@@ -45,7 +45,8 @@ export enum FixturePersona {
   SwitchA = 'switch-a',
   SwitchB = 'switch-b',
   BrokenInit = 'broken-init',
-  SlowLoad = 'slow-load'
+  SlowLoad = 'slow-load',
+  SystemMessage = 'system-message'
 }
 
 interface FixturePersonaInfo {
@@ -68,7 +69,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SwitchA]: { name: 'Switch A Persona' },
   [FixturePersona.SwitchB]: { name: 'Switch B Persona' },
   [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
-  [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' }
+  [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
+  [FixturePersona.SystemMessage]: { name: 'System Message Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
