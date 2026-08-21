@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import html
 import importlib.util
 import inspect
@@ -212,6 +211,13 @@ class PersonaManager(LoggingConfigurable):
             self.chat_path = self.get_chat_path(relative=True)
         except Exception:
             self.chat_path = room_id
+
+        # register system user for sending system msgs
+        self.chat.set_user(
+            User(
+                username=SYSTEM_USERNAME, name="System", display_name="System", bot=True
+            )
+        )
 
         self._init_persona_classes()
         self.log.info(f"Persona classes loaded in chat '{self.room_id}'.")
@@ -432,39 +438,10 @@ class PersonaManager(LoggingConfigurable):
 
     def send_system_message(self, body: str) -> None:
         """
-        Sends a system message to the chat.
+        Sends a system message to the chat, attributed to the 'System' user
+        (registered at initialization; see `_register_system_user`).
         """
-        # Set a 'System' user use it to send the message
-        # TODO: RTC decoupling gap uses _ydoc.transaction() and _yusers.pop().
-        
-        
-        # In RTC mode, group the operations
-        # In non-RTC mode, just call the methods directly.
-        if hasattr(self.chat, '_ydoc'):
-            with self.chat._ydoc.transaction():
-                self.chat.set_user(
-                    user=User(
-                        username=SYSTEM_USERNAME, name="System", display_name="System"
-                    )
-                )
-                self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
-
-            # Hide 'System' user from `@`-mention menu by removing the user.
-            async def _remove_system_user():
-                await asyncio.sleep(1)
-                try:
-                    self.chat._yusers.pop(SYSTEM_USERNAME)
-                except KeyError:
-                    pass
-
-            asyncio.create_task(_remove_system_user())
-        else:
-            self.chat.set_user(
-                user=User(
-                    username=SYSTEM_USERNAME, name="System", display_name="System"
-                )
-            )
-            self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
+        self.chat.add_message(NewMessage(body=body, sender=SYSTEM_USERNAME))
 
     @property
     def personas(self) -> dict[str, BasePersona]:
@@ -690,16 +667,6 @@ class PersonaManager(LoggingConfigurable):
         called when the server is shutting down or when a chat session is
         closed.
         """
-        # TODO: RTC decoupling gap directly accesses ychat._background_tasks.
-        
-        # Without this, `/refresh-personas` causes a runtime error.
-        if hasattr(self.chat, '_background_tasks'):
-            while self.chat._background_tasks:
-                task = next(iter(self.chat._background_tasks))
-                await task
-                self.chat._background_tasks.discard(task)
-
-        # Then, shut down each persona
         for persona in self.personas.values():
             await persona.shutdown()
 
