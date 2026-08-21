@@ -334,6 +334,7 @@ def _make_mock_persona():
     persona = MagicMock()
     persona.name = "TestPersona"
     persona.log = MagicMock()
+    persona._prepare_started = False
     persona.prepare = AsyncMock()
     persona.process_message = AsyncMock()
     persona.apply_specs_in_message = AsyncMock()
@@ -370,6 +371,31 @@ class TestSafeProcess:
         await _safe_process(persona, _make_mock_message())
 
         assert order == ["prepare", "apply", "process"]
+
+    @pytest.mark.asyncio
+    async def test_prepare_called_once_across_messages(self):
+        """prepare() runs once (before the first message), not on every message."""
+        persona = _make_mock_persona()
+
+        await _safe_process(persona, _make_mock_message())
+        await _safe_process(persona, _make_mock_message())
+        await _safe_process(persona, _make_mock_message())
+
+        persona.prepare.assert_awaited_once()
+        assert persona.process_message.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_prepare_retried_after_failed_dispatch(self):
+        """A failed dispatch resets the guard so the next message re-runs prepare()."""
+        persona = _make_mock_persona()
+        # First dispatch fails during processing, second succeeds.
+        persona.process_message = AsyncMock(side_effect=[RuntimeError("boom"), None])
+
+        await _safe_process(persona, _make_mock_message())  # fails -> reset
+        await _safe_process(persona, _make_mock_message())  # retries prepare
+
+        assert persona.prepare.await_count == 2
+        persona.handle_uncaught_exception.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_prepare_failure_routed_to_handler(self):

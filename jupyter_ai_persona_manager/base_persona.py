@@ -130,6 +130,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.chat = chat
         self._processing_count = 0
 
+        # Whether the manager has already run persona's `prepare()` hook.
+        self._prepare_started = False
+
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and room id come from the
         # PersonaManager (this persona's ``parent``); when constructed without a
@@ -177,8 +180,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     async def prepare(self) -> None:
         """
         One-time startup hook, called by the manager before the persona handles
-        its first message (see `_safe_process`). Called before every message, so
-        implementations MUST be idempotent.
+        its first message (see `_safe_process`).
 
         Default is a no-op.
         """

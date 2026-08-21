@@ -70,12 +70,15 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     `process_message()` implementation having to apply them itself.
     """
     try:
-        # per-persona startup hook
-        await persona.prepare()
+        # Run the one-time startup hook before the persona's first message.
+        if not persona._prepare_started:
+            persona._prepare_started = True
+            await persona.prepare()
         await persona.apply_specs_in_message(message)
         with persona.track_processing():
             await persona.process_message(message)
     except Exception as exc:
+        persona._prepare_started = False
         persona.log.error(
             f"Persona '{persona.name}' raised an unhandled exception in process_message()."
         )
