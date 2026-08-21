@@ -48,7 +48,9 @@ export enum FixturePersona {
   SlowLoad = 'slow-load',
   SystemMessage = 'system-message',
   Status = 'status',
-  Permission = 'permission'
+  Permission = 'permission',
+  QuietPermission = 'quiet-permission',
+  VerbosePermission = 'verbose-permission'
 }
 
 interface FixturePersonaInfo {
@@ -74,7 +76,9 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
   [FixturePersona.SystemMessage]: { name: 'System Message Persona' },
   [FixturePersona.Status]: { name: 'Status Persona' },
-  [FixturePersona.Permission]: { name: 'Permission Persona' }
+  [FixturePersona.Permission]: { name: 'Permission Persona' },
+  [FixturePersona.QuietPermission]: { name: 'Quiet Requester Persona' },
+  [FixturePersona.VerbosePermission]: { name: 'Verbose Requester Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -441,5 +445,29 @@ export class TestHelpers {
   /** Click a permission button by its label (e.g. "Allow" / "Deny"). */
   async clickPermission(label: string): Promise<void> {
     await this.chat.locator(PERMISSION_BTN, { hasText: label }).first().click();
+  }
+
+  /** How many permission-request blocks are currently rendered. */
+  async permissionRequestCount(): Promise<number> {
+    return this.permissionRequest.count();
+  }
+
+  /**
+   * Approve every pending permission request by clicking its `label` button
+   * (default "Allow"), one at a time, until none remain. Each click resolves
+   * one request and re-renders, so we re-query between clicks.
+   */
+  async approveAll(label = 'Allow'): Promise<void> {
+    for (let i = 0; i < 8; i++) {
+      const btns = this.chat.locator(PERMISSION_BTN, { hasText: label });
+      const before = await btns.count();
+      if (before === 0) {
+        return;
+      }
+      await btns.first().click();
+      await expect
+        .poll(async () => btns.count(), { timeout: TIMEOUT })
+        .toBeLessThan(before);
+    }
   }
 }

@@ -6,9 +6,13 @@
 import { expect, test } from '@jupyterlab/galata';
 import { FixturePersona, installPersonas, TestHelpers } from './test-helpers';
 
-// This suite's working directory and the fixture persona installed into it.
+// This suite's working directory and the fixture personas installed into it.
 const TEST_DIR = 'permissions';
-const PERSONAS = [FixturePersona.Permission];
+const PERSONAS = [
+  FixturePersona.Permission,
+  FixturePersona.QuietPermission,
+  FixturePersona.VerbosePermission
+];
 
 /**
  * Verifies the general permission API end-to-end.
@@ -66,5 +70,50 @@ test.describe('permissions', () => {
     await helpers.clickPermission('Deny');
 
     await helpers.waitForMessageContaining('decision: deny');
+  });
+
+  test('a persona can raise two permission requests at once (no preamble)', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.QuietPermission);
+
+    await helpers.send('go');
+
+    // Both requests render (each in its own auto-created message).
+    await helpers.waitForPermissionButtons();
+    await expect
+      .poll(async () => helpers.permissionRequestCount(), { timeout: 30000 })
+      .toBe(2);
+
+    // Approve both; the persona resumes once both resolve.
+    await helpers.approveAll('Allow');
+
+    await helpers.waitForMessageContaining('quiet decisions: allow, allow');
+  });
+
+  test('two permission requests can share one message without clobbering', async ({
+    page
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.VerbosePermission);
+
+    await helpers.send('go');
+
+    // The persona writes "Sure", then attaches both requests to that message.
+    await helpers.waitForMessageContaining('Sure');
+    await helpers.waitForPermissionButtons();
+    await expect
+      .poll(async () => helpers.permissionRequestCount(), { timeout: 30000 })
+      .toBe(2);
+
+    // Both requests coexist (not clobbered); approve both and the persona
+    // resumes with both decisions. (The same-message, no-clobber guarantee is
+    // pinned precisely by the unit test test_multiple_requests_same_message.)
+    await helpers.approveAll('Allow');
+
+    await helpers.waitForMessageContaining('verbose decisions: allow, allow');
   });
 });
