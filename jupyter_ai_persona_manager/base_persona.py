@@ -39,6 +39,10 @@ from .permissions import (
     PermissionRequest,
     build_permission_metadata,
 )
+from .tool_calls import (
+    TOOL_CALLS_METADATA_KEY,
+    ToolCall,
+)
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -143,6 +147,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # Future resolved when the user's decision arrives over the events plane
         # (see `request_permission` / `resolve_permission`).
         self._pending_permissions: dict[str, "asyncio.Future[Optional[str]]"] = {}
+
+        # Reported tool calls, keyed by tool_call_id, and the chat message each
+        # was written to (so `update_tool_call` can re-render the right message).
+        self._tool_calls: dict[str, ToolCall] = {}
+        self._tool_call_message: dict[str, str] = {}
 
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and room id come from the
@@ -317,6 +326,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         override this without touching that lifecycle.
         """
         message_id = request.message_id
+        if request.tool_call_id is not None:
+            # Attach the request to an existing tool call: render the buttons on
+            # its row rather than as a standalone block.
+            return self._attach_permission_to_tool_call(
+                request_id, request, status="pending", option_id=None
+            )
         if message_id is None:
             message_id = self.chat.add_message(
                 NewMessage(body="", sender=self.id), trigger_actions=[]
@@ -350,6 +365,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         tool-call row, with a diff) should override this too, so the resolved
         state is reflected the same way.
         """
+        if request.tool_call_id is not None:
+            self._attach_permission_to_tool_call(
+                request_id, request, status="resolved", option_id=option_id
+            )
+            return
         self._write_permission_metadata(
             message_id,
             build_permission_metadata(
@@ -424,6 +444,168 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         else:
             requests.append(block)
         metadata[PERMISSION_METADATA_KEY] = requests
+        msg.metadata = metadata
+        self.chat.update_message(msg, trigger_actions=[])
+
+    ################################################
+    # tool calls
+    ################################################
+    @mark_consumer_api
+    def report_tool_call(
+        self,
+        title: str,
+        *,
+        kind: Optional[str] = None,
+        status: str = "in_progress",
+        locations: Optional[list] = None,
+        raw_input: Optional[Any] = None,
+        diffs: Optional[list] = None,
+        message_id: Optional[str] = None,
+    ) -> str:
+        """Report a tool call (an action the persona is taking) to the chat.
+
+        Returns the new ``tool_call_id``. Pass that id to
+        :meth:`update_tool_call` to update status/output, or to
+        :meth:`request_permission` (via ``PermissionRequest.tool_call_id``) to
+        render approve/deny buttons on this tool call's row.
+
+        Grouping: pass ``message_id`` (from a prior tool call's
+        :meth:`tool_call_message_id`) to render several tool calls in one
+        message; omit it to start a new message.
+        """
+        tool_call_id = uuid.uuid4().hex
+        if message_id is None:
+            message_id = self.chat.add_message(
+                NewMessage(body="", sender=self.id), trigger_actions=[]
+            )
+        self._tool_calls[tool_call_id] = ToolCall(
+            tool_call_id=tool_call_id,
+            title=title,
+            kind=kind,
+            status=status,
+            locations=locations,
+            raw_input=raw_input,
+            diffs=diffs,
+        )
+        self._tool_call_message[tool_call_id] = message_id
+        self._flush_tool_call(tool_call_id)
+        return tool_call_id
+
+    @mark_consumer_api
+    def update_tool_call(
+        self,
+        tool_call_id: str,
+        *,
+        title: Optional[str] = None,
+        kind: Optional[str] = None,
+        status: Optional[str] = None,
+        locations: Optional[list] = None,
+        raw_input: Optional[Any] = None,
+        raw_output: Optional[Any] = None,
+        diffs: Optional[list] = None,
+    ) -> None:
+        """Update a previously-reported tool call and re-render its message.
+
+        Only provided fields are changed. ``failed`` is terminal: once a tool
+        call is failed, a later ``status`` update does not overwrite it.
+        """
+        tc = self._tool_calls.get(tool_call_id)
+        if tc is None:
+            self.log.warning(f"update_tool_call: unknown tool call {tool_call_id}")
+            return
+        if title is not None:
+            tc.title = title
+        if kind is not None:
+            tc.kind = kind
+        if status is not None and tc.status != "failed":
+            tc.status = status
+        if locations is not None:
+            tc.locations = locations
+        if raw_input is not None:
+            tc.raw_input = raw_input
+        if raw_output is not None:
+            tc.raw_output = raw_output
+        if diffs is not None:
+            tc.diffs = diffs
+        self._flush_tool_call(tool_call_id)
+
+    @mark_consumer_api
+    def tool_call_message_id(self, tool_call_id: str) -> Optional[str]:
+        """The chat message a tool call was written to (for grouping)."""
+        return self._tool_call_message.get(tool_call_id)
+
+    @mark_consumer_api
+    def cancel_tool_calls(self) -> int:
+        """Mark all non-terminal tool calls as ``failed`` and re-render them.
+
+        Companion to :meth:`cancel_permissions` on interrupt/shutdown. Returns
+        the number of tool calls marked failed.
+        """
+        cancelled = 0
+        for tool_call_id, tc in self._tool_calls.items():
+            if tc.status not in ("completed", "failed"):
+                tc.status = "failed"
+                self._flush_tool_call(tool_call_id)
+                cancelled += 1
+        return cancelled
+
+    def _attach_permission_to_tool_call(
+        self,
+        request_id: str,
+        request: PermissionRequest,
+        *,
+        status: str,
+        option_id: Optional[str],
+    ) -> Optional[str]:
+        """Set/clear permission fields on a tool call and re-render it.
+
+        Used by the permission hooks when ``PermissionRequest.tool_call_id`` is
+        set. Returns the tool call's message id (or ``None`` if unknown).
+        """
+        tool_call_id = request.tool_call_id
+        tc = self._tool_calls.get(tool_call_id) if tool_call_id else None
+        if tc is None:
+            self.log.warning(
+                f"request_permission: unknown tool_call_id {tool_call_id!r}; "
+                "cannot attach permission."
+            )
+            return None
+        if status == "pending":
+            tc.permission_options = list(request.options)
+            tc.permission_status = "pending"
+            tc.selected_option_id = None
+            tc.request_id = request_id
+            tc.chat_id = self.chat.get_id()
+            tc.persona_id = self.id
+            if request.diffs is not None:
+                tc.diffs = list(request.diffs)
+        else:
+            tc.permission_status = "resolved"
+            tc.selected_option_id = option_id
+        self._flush_tool_call(tool_call_id)
+        return self._tool_call_message.get(tool_call_id)
+
+    def _flush_tool_call(self, tool_call_id: str) -> None:
+        """Re-render the message hosting ``tool_call_id`` with all its tool calls."""
+        message_id = self._tool_call_message.get(tool_call_id)
+        if message_id is None:
+            return
+        msg = self.chat.get_message(message_id)
+        if msg is None:
+            self.log.warning(
+                f"tool call {tool_call_id}: chat message {message_id} not found."
+            )
+            return
+        # Rebuild this message's tool-call list in creation order.
+        ordered = [
+            self._tool_calls[tid]
+            for tid in self._tool_calls
+            if self._tool_call_message.get(tid) == message_id
+        ]
+        metadata = dict(msg.metadata or {})
+        metadata[TOOL_CALLS_METADATA_KEY] = [
+            tc.model_dump(exclude_none=True) for tc in ordered
+        ]
         msg.metadata = metadata
         self.chat.update_message(msg, trigger_actions=[])
 
@@ -1025,6 +1207,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # Cancel any pending permission requests so awaiting `request_permission`
         # calls unwind (resolve as cancelled) instead of hanging on shutdown.
         self.cancel_permissions()
+        # Mark any in-progress tool calls as failed so they don't render as
+        # perpetually running after the persona is gone.
+        self.cancel_tool_calls()
 
         # Stop awareness heartbeat task & remove self from chat awareness
         if self.state is not None:

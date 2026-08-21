@@ -81,7 +81,14 @@ class PermissionRequest(BaseModel):
 
     message_id: Optional[str] = None
     """When set, the request is attached to this existing chat message's
-    metadata. When ``None``, a new message is created to host the request."""
+    metadata. When ``None``, a new message is created to host the request.
+    Ignored when ``tool_call_id`` is set (the request attaches to the tool
+    call's message)."""
+
+    tool_call_id: Optional[str] = None
+    """When set to a tool call previously created via
+    :meth:`BasePersona.report_tool_call`, the approve/deny buttons render on that
+    tool-call row instead of as a standalone block."""
 
     correlation_id: Optional[str] = None
     """Optional grouping key the persona can use to correlate this request with

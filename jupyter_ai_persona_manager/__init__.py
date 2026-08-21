@@ -33,6 +33,10 @@ from .permissions import (
     PermissionRequest,
     register_permission_event_schemas,
 )
+from .tool_calls import (
+    TOOL_CALLS_METADATA_KEY,
+    ToolCall,
+)
 from .awareness_models import (
     CommandOption,
     ModelConfiguration,

@@ -48,6 +48,8 @@ def _make_persona():
     persona.log = MagicMock()
     persona.state = MagicMock()
     persona._pending_permissions = {}
+    persona._tool_calls = {}
+    persona._tool_call_message = {}
     return persona
 
 

@@ -198,6 +198,9 @@ class CancelHandler(JupyterHandler):
                     f"Cancelled {cancelled_perms} pending permission request(s) "
                     f"for persona '{persona.id}'."
                 )
+            # Mark in-progress tool calls as failed so they stop rendering as
+            # running once the response is interrupted.
+            persona.cancel_tool_calls()
             try:
                 await persona.cancel_response()
                 cancelled.append(persona.id)
