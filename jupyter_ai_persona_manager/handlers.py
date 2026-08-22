@@ -136,8 +136,8 @@ class CancelHandler(JupyterHandler):
     """
     Handler to cancel personas' in-progress responses in a chat.
 
-    The frontend POSTs here (with the chat's path as a query parameter) when the
-    user interrupts. Each persona in the chat is asked to stop via
+    The frontend POSTs here (with the chat's stable id as a query parameter)
+    when the user interrupts. Each persona in the chat is asked to stop via
     `BasePersona.cancel_response()`, which halts whatever its reply set in motion
     (a model stream, an agent turn, pending tool calls). Backend-agnostic: a
     persona with nothing cancellable inherits the base no-op.
@@ -145,10 +145,10 @@ class CancelHandler(JupyterHandler):
 
     @tornado.web.authenticated
     async def post(self):
-        chat_path = self.get_argument("chat_path", None)
-        if not chat_path:
+        chat_id = self.get_argument("chat_id", None)
+        if not chat_id:
             raise tornado.web.HTTPError(
-                400, "chat_path is required as a URL query parameter"
+                400, "chat_id is required as a URL query parameter"
             )
 
         persona_managers = self.serverapp.web_app.settings.get(
@@ -156,20 +156,20 @@ class CancelHandler(JupyterHandler):
         ).get("persona-managers", {})
 
         # Persona managers are registered under the router's room id, which is
-        # not necessarily the chat path. Resolve by matching each manager's own
-        # path (obtained from its chat model via `get_path()`), so cancellation
-        # works regardless of transport.
+        # not the chat's stable id. Resolve by matching each manager's chat id
+        # (from its chat model via `get_id()`), so cancellation works regardless
+        # of transport.
         persona_manager = next(
             (
                 pm
                 for pm in persona_managers.values()
-                if pm.get_chat_path(relative=True) == chat_path
+                if pm.chat.get_id() == chat_id
             ),
             None,
         )
 
         if not persona_manager:
-            raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
+            raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_id}")
 
         cancelled = []
         for persona in persona_manager.personas.values():

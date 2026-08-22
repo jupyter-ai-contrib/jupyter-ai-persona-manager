@@ -154,10 +154,11 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # the PersonaManager (this persona's ``parent``); when constructed
         # without a manager (e.g. some unit tests) the state simply does not emit.
         manager = self.parent
+        _chat = getattr(manager, "chat", None)
         self.state = PersonaSessionState(
             event_logger=getattr(manager, "event_logger", None),
             persona_id=self.id,
-            path=getattr(manager, "chat_path", None) or "",
+            chat_id=_chat.get_id() if _chat is not None else "",
             log=self.log,
         )
 

@@ -43,8 +43,8 @@ export class SlashCommandProvider implements IChatCommandProvider {
       return [];
     }
 
-    const path = inputModel.chatContext?.name ?? null;
-    if (!path) {
+    const chatId = inputModel.chatContext?.id ?? null;
+    if (!chatId) {
       return [];
     }
 
@@ -53,7 +53,7 @@ export class SlashCommandProvider implements IChatCommandProvider {
       return [];
     }
 
-    const persona = this._registry.get(path).getPersona(personaId);
+    const persona = this._registry.get(chatId).getPersona(personaId);
     if (!persona) {
       return [];
     }
