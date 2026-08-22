@@ -1075,8 +1075,27 @@ export function PersonaControls(
   }
 ): JSX.Element | null {
   const { chatModel, model, controlRegistry, sessionRegistry } = props;
-  // The chat's stable id scopes persona events to this chat.
-  const chatId = chatModel?.id ?? null;
+  // The chat's stable id scopes persona events to this chat. It is assigned
+  // asynchronously (once the model is `ready`: the WS connection frame arrives,
+  // or the RTC document syncs), so track it in state and update it when the
+  // model becomes ready. Reading it synchronously would capture `undefined`
+  // forever, since `id` is a plain accessor with no change signal.
+  const [chatId, setChatId] = useState<string | null>(chatModel?.id ?? null);
+  useEffect(() => {
+    if (!chatModel) {
+      setChatId(null);
+      return;
+    }
+    let cancelled = false;
+    void chatModel.ready.then(() => {
+      if (!cancelled) {
+        setChatId(chatModel.id ?? null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatModel]);
 
   // The per-chat persona session state, built from persona events and shared
   // via the registry. Created on demand; discarded when the chat closes.
