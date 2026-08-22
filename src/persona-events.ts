@@ -49,9 +49,11 @@ type PersonasPayload = {
 };
 
 /**
- * One persona's live session state, built from a `persona_state` event.
- * Immutable: each update produces a new instance, so React consumers see a new
- * reference and re-render.
+ * One persona's live session state, assembled from `persona_state` events.
+ * Immutable: each update produces a new instance (so React consumers see a new
+ * reference and re-render), built by merging a partial event onto the previous
+ * state via {@link withUpdate} -- an event that omits an attribute leaves the
+ * last known value in place rather than blanking it.
  */
 export class PersonaSessionState {
   constructor(
@@ -62,6 +64,19 @@ export class PersonaSessionState {
     this.settings = payload.settings ?? [];
     this.usage = { ...EMPTY_USAGE, ...(payload.usage ?? {}) };
     this.slash_commands = payload.slash_commands ?? [];
+  }
+
+  /**
+   * Return a new state with only the attributes present in `payload` replaced;
+   * attributes the event omits are carried over from this state.
+   */
+  withUpdate(payload: PersonaStatePayload): PersonaSessionState {
+    return new PersonaSessionState(this.id, {
+      model: payload.model ?? this.model,
+      settings: payload.settings ?? this.settings,
+      usage: payload.usage ?? this.usage,
+      slash_commands: payload.slash_commands ?? this.slash_commands
+    });
   }
 
   readonly model: ModelConfiguration;
@@ -105,9 +120,15 @@ export class PersonaManagerSessionState implements IDisposable {
     this._changed.emit();
   }
 
-  /** Apply a `persona_state` event payload for one persona. */
+  /**
+   * Apply a (possibly partial) `persona_state` event payload for one persona,
+   * merging it onto that persona's previous state so an event carrying only one
+   * attribute (e.g. usage) does not blank the others.
+   */
   updatePersonaState(personaId: string, payload: PersonaStatePayload): void {
-    this._states.set(personaId, new PersonaSessionState(personaId, payload));
+    const prev =
+      this._states.get(personaId) ?? new PersonaSessionState(personaId);
+    this._states.set(personaId, prev.withUpdate(payload));
     this._changed.emit();
   }
 

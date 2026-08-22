@@ -66,6 +66,30 @@ describe('PersonaSessionRegistry', () => {
     expect(state?.usage.input_tokens).toBe(5);
   });
 
+  it('merges a partial persona_state event onto the previous state', async () => {
+    // A later usage-only event must NOT blank out the model/slash_commands
+    // reported by an earlier event (each event carries only what changed).
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      model: { current: 'm1', options: [], settings: [] },
+      slash_commands: [{ name: '/compact', description: null }]
+    });
+    // A subsequent event carries ONLY usage (as happens on every streamed chunk).
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      usage: { input_tokens: 5 }
+    });
+    const state = registry.get('a.chat').getPersona('p1');
+    // usage applied...
+    expect(state?.usage.input_tokens).toBe(5);
+    // ...without dropping the previously reported model and slash commands.
+    expect(state?.model.current).toBe('m1');
+    expect(state?.slash_commands.map(c => c.name)).toEqual(['/compact']);
+  });
+
   it('fires the changed signal on updates', async () => {
     const { registry, events } = makeRegistry();
     const managerState = registry.get('a.chat');

@@ -29,7 +29,7 @@ def _logger_and_capture():
     return logger, captured
 
 
-def test_setting_fields_emits_state_events():
+def test_setting_a_field_emits_only_that_attribute():
     async def run():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
@@ -43,16 +43,25 @@ def test_setting_fields_emits_state_events():
         await asyncio.sleep(0.1)
 
         assert len(captured) == 2
-        last = captured[-1]
-        assert last["chat_id"] == "chat.chat"
-        assert last["persona_id"] == "jupyternaut"
-        assert last["model"]["current"] == "gpt-9"
-        assert last["usage"]["input_tokens"] == 42
+        # chat_id and persona_id ride every event.
+        for event in captured:
+            assert event["chat_id"] == "chat.chat"
+            assert event["persona_id"] == "jupyternaut"
+
+        # The model event carries only `model`; the usage event only `usage`.
+        model_event, usage_event = captured
+        assert model_event["model"]["current"] == "gpt-9"
+        assert "usage" not in model_event
+        assert "settings" not in model_event
+        assert "slash_commands" not in model_event
+
+        assert usage_event["usage"]["input_tokens"] == 42
+        assert "model" not in usage_event
 
     asyncio.run(run())
 
 
-def test_publish_reemits_current_state_for_catchup():
+def test_publish_reemits_full_state_for_catchup():
     async def run():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
@@ -62,16 +71,21 @@ def test_publish_reemits_current_state_for_catchup():
             log=logging.getLogger("t"),
         )
         state.model = ModelConfiguration(current="m1")
+        state.usage = Usage(input_tokens=7)
         await asyncio.sleep(0.1)
         captured.clear()
 
         # A bare publish() (used for catch-up on client_connected) re-emits the
-        # full current state without any change.
+        # full current state -- all attributes at once.
         state.publish()
         await asyncio.sleep(0.1)
 
         assert len(captured) == 1
-        assert captured[0]["model"]["current"] == "m1"
+        full = captured[0]
+        assert full["model"]["current"] == "m1"
+        assert full["usage"]["input_tokens"] == 7
+        assert "settings" in full
+        assert "slash_commands" in full
 
     asyncio.run(run())
 
