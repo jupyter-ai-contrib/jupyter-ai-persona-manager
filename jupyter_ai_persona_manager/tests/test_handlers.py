@@ -117,16 +117,16 @@ async def test_avatar_handler_serves_png(jp_fetch, jp_serverapp, tmp_path):
 
 
 def _install_cancel_fixtures(jp_serverapp, chat_id, personas):
-    """Register a persona manager (resolvable by its chat id) for a cancel
-    request. Managers are stored under the router's room id key, so the handler
-    must resolve by matching each manager's own chat ``get_id()``."""
+    """Register a persona manager under its chat id for a cancel request.
+    Managers are keyed by the chat's stable id (``chat.get_id()``), so the
+    handler resolves them by a direct lookup."""
     from unittest.mock import Mock
 
     mock_pm = Mock()
     mock_pm.personas = personas
     mock_pm.chat.get_id.return_value = chat_id
     settings = jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})
-    settings["persona-managers"] = {"text:chat:some-room": mock_pm}
+    settings["persona-managers"] = {chat_id: mock_pm}
 
 
 async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
@@ -211,30 +211,37 @@ async def test_cancel_handler_404_for_uninitialized_chat(jp_fetch, jp_serverapp)
 
 
 async def test_cancel_handler_resolves_manager_by_id(jp_fetch, jp_serverapp):
-    """Persona managers are stored under the router's room id, which is not the
-    chat's stable id. The handler must resolve the right manager by matching its
-    own chat ``get_id()`` against the requested chat_id."""
+    """Persona managers are keyed by the chat's stable id (``chat.get_id()``).
+    The handler resolves the manager for the requested chat_id by a direct
+    lookup and leaves other chats' managers untouched."""
     from unittest.mock import AsyncMock, Mock
 
-    persona = Mock()
-    persona.id = "jupyter-ai-personas::test::TestPersona"
-    persona.processing = True
-    persona.cancel_response = AsyncMock()
+    target = Mock()
+    target.id = "jupyter-ai-personas::test::TargetPersona"
+    target.processing = True
+    target.cancel_response = AsyncMock()
 
-    chat_id = "chat-abc"
-    mock_pm = Mock(personas={"p": persona})
-    mock_pm.chat.get_id.return_value = chat_id
+    other = Mock()
+    other.id = "jupyter-ai-personas::test::OtherPersona"
+    other.processing = True
+    other.cancel_response = AsyncMock()
+
+    target_pm = Mock(personas={"p": target})
+    target_pm.chat.get_id.return_value = "chat-abc"
+    other_pm = Mock(personas={"p": other})
+    other_pm.chat.get_id.return_value = "chat-xyz"
     settings = jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})
-    # Registered under a room-id key that is NOT the chat id.
-    settings["persona-managers"] = {"text:chat:file-99": mock_pm}
+    settings["persona-managers"] = {"chat-abc": target_pm, "chat-xyz": other_pm}
 
     response = await jp_fetch(
         "api", "ai", "personas", "cancel",
         method="POST", body="",
-        params={"chat_id": chat_id},
+        params={"chat_id": "chat-abc"},
     )
 
     assert response.code == 200
     body = json.loads(response.body)
-    assert persona.id in body["cancelled"]
-    persona.cancel_response.assert_awaited_once()
+    assert target.id in body["cancelled"]
+    target.cancel_response.assert_awaited_once()
+    # A different chat's persona must not be cancelled.
+    other.cancel_response.assert_not_awaited()

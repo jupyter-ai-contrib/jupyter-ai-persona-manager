@@ -155,18 +155,10 @@ class CancelHandler(JupyterHandler):
             "jupyter-ai", {}
         ).get("persona-managers", {})
 
-        # Persona managers are registered under the router's room id, which is
-        # not the chat's stable id. Resolve by matching each manager's chat id
-        # (from its chat model via `get_id()`), so cancellation works regardless
-        # of transport.
-        persona_manager = next(
-            (
-                pm
-                for pm in persona_managers.values()
-                if pm.chat.get_id() == chat_id
-            ),
-            None,
-        )
+        # Persona managers are registered under the chat's stable id
+        # (`chat.get_id()`), so cancellation resolves by a direct lookup
+        # regardless of transport.
+        persona_manager = persona_managers.get(chat_id)
 
         if not persona_manager:
             raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_id}")

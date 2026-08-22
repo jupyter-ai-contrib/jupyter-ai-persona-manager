@@ -476,7 +476,7 @@ class PersonaManager(LoggingConfigurable):
     outgoing message.
     """
 
-    def on_chat_message(self, room_id: str, message: Message):
+    def on_chat_message(self, chat_id: str, message: Message):
         """
         Routes an incoming message to the persona it is addressed to.
 
