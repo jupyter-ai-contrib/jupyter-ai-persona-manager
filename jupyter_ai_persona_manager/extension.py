@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from jupyter_server.extension.application import ExtensionApp
 from jupyter_server.serverapp import ServerApp
-from jupyter_server_fileid.manager import BaseFileIdManager
 from traitlets import Type
 from traitlets.config import Config
 
@@ -160,7 +159,7 @@ class PersonaManagerExtension(ExtensionApp):
         self.log.info(f"Router detected new chat room, initializing persona manager: {room_id}")
 
         # Initialize persona manager for this chat
-        persona_manager = self._init_persona_manager(room_id, chat)
+        persona_manager = self._init_persona_manager(chat)
         if not persona_manager:
             self.log.error(
                 "Jupyter AI was unable to initialize its AI personas. They are not available for use in chat until this error is resolved. "
@@ -197,7 +196,7 @@ class PersonaManagerExtension(ExtensionApp):
         self._stopping_rooms[room_id] = task
     
     def _init_persona_manager(
-        self, room_id: str, chat: "BaseChatModel"
+        self, chat: "BaseChatModel"
     ) -> PersonaManager | None:
         """
         Initializes a `PersonaManager` instance scoped to a chat model.
@@ -211,11 +210,7 @@ class PersonaManagerExtension(ExtensionApp):
             assert self.serverapp
             assert self.serverapp.web_app
             assert self.serverapp.web_app.settings
-            fileid_manager = self.serverapp.web_app.settings.get(
-                "file_id_manager", None
-            )
-            assert isinstance(fileid_manager, BaseFileIdManager)
-            
+
             contents_manager = self.serverapp.contents_manager
             root_dir = getattr(contents_manager, "root_dir", None)
             assert isinstance(root_dir, str)
@@ -225,9 +220,7 @@ class PersonaManagerExtension(ExtensionApp):
             PersonaManagerClass = self.persona_manager_class
             persona_manager = PersonaManagerClass(
                 parent=self,
-                room_id=room_id,
                 chat=chat,
-                fileid_manager=fileid_manager,
                 root_dir=root_dir,
                 event_loop=self.event_loop,
                 base_url=base_url,

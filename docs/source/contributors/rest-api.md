@@ -8,7 +8,7 @@ for its own API calls. Paths below are relative to the server's `base_url`.
 | Method | Path                                       | Purpose                                                |
 | ------ | ------------------------------------------ | ------------------------------------------------------ |
 | `POST` | `/api/ai/message/<persona_name>`           | Send a one-shot message to a persona and get its reply |
-| `POST` | `/api/ai/personas/cancel?chat_path=<path>` | Interrupt in-progress replies in a chat                |
+| `POST` | `/api/ai/personas/cancel?chat_id=<id>`     | Interrupt in-progress replies in a chat                |
 | `GET`  | `/api/ai/avatars/<persona_id>`             | Fetch a persona's avatar image                         |
 
 ```{note}
@@ -70,13 +70,13 @@ Interrupt in-progress replies in a specific chat. Implemented by
 
 **Query parameter**
 
-- `chat_path` (required) — the path of the chat file, resolved to a room via the
-  file-ID manager.
+- `chat_id` (required) — the chat's stable id (`chat.get_id()`), matched
+  against each persona manager's chat id.
 
 **Request:** no body needed.
 
 ```bash
-curl -X POST "$BASE_URL/api/ai/personas/cancel?chat_path=my-chat.chat" \
+curl -X POST "$BASE_URL/api/ai/personas/cancel?chat_id=abc123" \
   -H "Authorization: token $JUPYTER_TOKEN"
 ```
 
@@ -100,9 +100,8 @@ skipped, not surfaced as an error.
 
 | Status | When                                                                               |
 | ------ | ---------------------------------------------------------------------------------- |
-| `400`  | `chat_path` query parameter is missing                                             |
-| `404`  | No chat/room found for `chat_path`, or the chat has no initialized persona manager |
-| `500`  | The server's `file_id_manager` is unavailable                                      |
+| `400`  | `chat_id` query parameter is missing                                               |
+| `404`  | No chat has that `chat_id`, or the chat has no initialized persona manager         |
 
 ## `GET /api/ai/avatars/<persona_id>`
 

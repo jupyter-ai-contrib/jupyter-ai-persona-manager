@@ -3,8 +3,8 @@
  * `jupyterlab-eventlistener`), replacing the previous Yjs-awareness channel.
  *
  * Flow: the server emits `personas` / `persona_state` events (each carrying the
- * chat's `path`); the `PersonaSessionRegistry` routes them to the per-chat
- * `PersonaManagerSessionState`, which holds the persona list and a
+ * chat's stable `chat_id`); the `PersonaSessionRegistry` routes them to the
+ * per-chat `PersonaManagerSessionState`, which holds the persona list and a
  * `PersonaSessionState` per persona and fires a Lumino `changed` signal. React
  * components listen to that signal. When a chat closes, its state is discarded.
  *
@@ -34,7 +34,7 @@ export const PERSONA_STATE_EVENT_SCHEMA_ID =
 
 /** The wire shape of a `persona_state` event. */
 type PersonaStatePayload = {
-  path?: string;
+  chat_id?: string;
   persona_id?: string;
   model?: ModelConfiguration;
   settings?: SettingConfiguration[];
@@ -44,14 +44,16 @@ type PersonaStatePayload = {
 
 /** The wire shape of a `personas` event. */
 type PersonasPayload = {
-  path?: string;
+  chat_id?: string;
   personas?: PersonaOption[];
 };
 
 /**
- * One persona's live session state, built from a `persona_state` event.
- * Immutable: each update produces a new instance, so React consumers see a new
- * reference and re-render.
+ * One persona's live session state, assembled from `persona_state` events.
+ * Immutable: each update produces a new instance (so React consumers see a new
+ * reference and re-render), built by merging a partial event onto the previous
+ * state via {@link withUpdate} -- an event that omits an attribute leaves the
+ * last known value in place rather than blanking it.
  */
 export class PersonaSessionState {
   constructor(
@@ -62,6 +64,19 @@ export class PersonaSessionState {
     this.settings = payload.settings ?? [];
     this.usage = { ...EMPTY_USAGE, ...(payload.usage ?? {}) };
     this.slash_commands = payload.slash_commands ?? [];
+  }
+
+  /**
+   * Return a new state with only the attributes present in `payload` replaced;
+   * attributes the event omits are carried over from this state.
+   */
+  withUpdate(payload: PersonaStatePayload): PersonaSessionState {
+    return new PersonaSessionState(this.id, {
+      model: payload.model ?? this.model,
+      settings: payload.settings ?? this.settings,
+      usage: payload.usage ?? this.usage,
+      slash_commands: payload.slash_commands ?? this.slash_commands
+    });
   }
 
   readonly model: ModelConfiguration;
@@ -76,7 +91,7 @@ export class PersonaSessionState {
  * or any persona's state updates, so React components re-render.
  */
 export class PersonaManagerSessionState implements IDisposable {
-  constructor(public readonly path: string) {}
+  constructor(public readonly chatId: string) {}
 
   /** Emits whenever the persona list or a persona's state changes. */
   get changed(): ISignal<this, void> {
@@ -105,9 +120,15 @@ export class PersonaManagerSessionState implements IDisposable {
     this._changed.emit();
   }
 
-  /** Apply a `persona_state` event payload for one persona. */
+  /**
+   * Apply a (possibly partial) `persona_state` event payload for one persona,
+   * merging it onto that persona's previous state so an event carrying only one
+   * attribute (e.g. usage) does not blank the others.
+   */
   updatePersonaState(personaId: string, payload: PersonaStatePayload): void {
-    this._states.set(personaId, new PersonaSessionState(personaId, payload));
+    const prev =
+      this._states.get(personaId) ?? new PersonaSessionState(personaId);
+    this._states.set(personaId, prev.withUpdate(payload));
     this._changed.emit();
   }
 
@@ -151,32 +172,32 @@ export class PersonaSessionRegistry {
   }
 
   /**
-   * Get (or create) the manager session state for a chat path. Components call
-   * this with their chat's `IChatModel.name`.
+   * Get (or create) the manager session state for a chat. Components call this
+   * with their chat's stable id (`IChatModel.id` / `IChatContext.id`).
    */
-  get(path: string): PersonaManagerSessionState {
-    let state = this._byPath.get(path);
+  get(chatId: string): PersonaManagerSessionState {
+    let state = this._byChatId.get(chatId);
     if (!state) {
-      state = new PersonaManagerSessionState(path);
-      this._byPath.set(path, state);
+      state = new PersonaManagerSessionState(chatId);
+      this._byChatId.set(chatId, state);
     }
     return state;
   }
 
-  /** Whether a manager session state exists for `path` (without creating one). */
-  has(path: string): boolean {
-    return this._byPath.has(path);
+  /** Whether a manager session state exists for `chatId` (without creating one). */
+  has(chatId: string): boolean {
+    return this._byChatId.has(chatId);
   }
 
   /**
    * Discard a chat's session state and free its memory. Called when the client
    * closes the chat (wired to the chat model's `disposed` signal).
    */
-  discard(path: string): void {
-    const state = this._byPath.get(path);
+  discard(chatId: string): void {
+    const state = this._byChatId.get(chatId);
     if (state) {
       state.dispose();
-      this._byPath.delete(path);
+      this._byChatId.delete(chatId);
     }
   }
 
@@ -186,10 +207,10 @@ export class PersonaSessionRegistry {
     event: Event.Emission
   ): Promise<void> => {
     const data = event as PersonasPayload;
-    if (!data.path) {
+    if (!data.chat_id) {
       return;
     }
-    this.get(data.path).updatePersonas(
+    this.get(data.chat_id).updatePersonas(
       Array.isArray(data.personas) ? data.personas : []
     );
   };
@@ -200,13 +221,13 @@ export class PersonaSessionRegistry {
     event: Event.Emission
   ): Promise<void> => {
     const data = event as PersonaStatePayload;
-    if (!data.path || !data.persona_id) {
+    if (!data.chat_id || !data.persona_id) {
       return;
     }
-    this.get(data.path).updatePersonaState(data.persona_id, data);
+    this.get(data.chat_id).updatePersonaState(data.persona_id, data);
   };
 
-  private _byPath = new Map<string, PersonaManagerSessionState>();
+  private _byChatId = new Map<string, PersonaManagerSessionState>();
 }
 
 /**

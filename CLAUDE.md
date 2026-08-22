@@ -84,7 +84,7 @@ This is a JupyterLab extension that provides AI persona management for Jupyter A
 
 - Personas can access workspace directory and .jupyter directory
 - File attachment processing with multiple resolution strategies
-- Integration with `jupyter_server_fileid` for file ID management
+- Chat file paths are obtained from the chat model via `chat.get_path()` (no direct File ID service dependency)
 
 **Entry Point System**:
 

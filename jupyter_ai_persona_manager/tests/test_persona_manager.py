@@ -159,7 +159,7 @@ class RefreshedEntryPointPersona(BasePersona):
 class TestRefreshPersonas:
     @pytest.mark.asyncio
     async def test_refresh_personas_rescans_entry_points(
-        self, monkeypatch, tmp_dir, mock_ychat, mock_fileid_manager
+        self, monkeypatch, tmp_dir, mock_ychat
     ):
         """
         /refresh-personas must re-scan entry points, not just local files.
@@ -195,12 +195,10 @@ class TestRefreshPersonas:
         )
 
         # Keep local persona discovery out of this test; focus on entry points.
-        mock_fileid_manager.get_path.return_value = "chat.ipynb"
+        mock_ychat.get_path.return_value = "chat.chat"
 
         manager = PersonaManager(
-            room_id="room:chat:file-id",
             chat=mock_ychat,
-            fileid_manager=mock_fileid_manager,
             root_dir=str(tmp_dir),
             event_loop=Mock(),
         )
@@ -665,3 +663,46 @@ class TestOnChatMessageRouting:
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
             routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
             assert routed == [target]
+
+
+class TestChatPath:
+    """The PersonaManager derives the chat path from the chat model via
+    ``chat.get_path()`` -- no File ID service or room id involved."""
+
+    @pytest.mark.asyncio
+    async def test_chat_path_comes_from_chat_model(
+        self, monkeypatch, tmp_dir, mock_ychat
+    ):
+        import os
+
+        # Skip entry-point scanning; focus on path resolution.
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+        mock_ychat.get_path.return_value = "chat.chat"
+
+        manager = PersonaManager(
+            chat=mock_ychat,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        assert manager.chat_path == "chat.chat"
+        assert manager.get_chat_path(relative=True) == "chat.chat"
+        assert manager.get_chat_path() == os.path.join(str(tmp_dir), "chat.chat")
+
+    @pytest.mark.asyncio
+    async def test_chat_path_follows_the_model(
+        self, monkeypatch, tmp_dir, mock_ychat
+    ):
+        """``get_chat_path()`` reflects the model's current path each call, so a
+        moved file is tracked without the manager caching a stale path."""
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+        mock_ychat.get_path.return_value = "chat.chat"
+
+        manager = PersonaManager(
+            chat=mock_ychat,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        mock_ychat.get_path.return_value = "renamed.chat"
+        assert manager.get_chat_path(relative=True) == "renamed.chat"

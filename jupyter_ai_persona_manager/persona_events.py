@@ -10,11 +10,22 @@ Jupyter Events:
   state: model configuration, general settings, usage, and slash commands
   (published by each persona on change).
 
+A ``persona_state`` event carries the chat id, the persona id, and *only the
+attribute(s) that changed* -- setting ``usage`` emits an event with just
+``usage``, leaving ``model``/``settings``/``slash_commands`` absent so they are
+not needlessly re-broadcast (usage updates on every streamed chunk). Consumers
+merge each event into their view, replacing only the attributes present. A bare
+:meth:`PersonaSessionState.publish` (used for catch-up) is the one exception: it
+re-emits the full state at once.
+
 Events are fire-and-forget, so a client that connects after an event was emitted
 would miss it. Catch-up is handled by re-emitting the current state when a client
 connects to the chat (see ``PersonaManager`` and the ``client_connected`` action
 on jupyterlab_chat's ``room/v1`` event bus). The current values are kept in memory
 here so they can be re-emitted at any time.
+
+Each event carries the chat's stable id (``chat.get_id()``) so the frontend can
+route it to the right chat via its chat model/context ``id``.
 """
 from __future__ import annotations
 
@@ -47,10 +58,9 @@ PERSONAS_EVENT_SCHEMA = {
     "personal-data": True,
     "description": "The list of personas available in a chat.",
     "type": "object",
-    "required": ["room_id", "personas"],
+    "required": ["chat_id", "personas"],
     "properties": {
-        "room_id": {"type": "string", "description": "The chat's room id."},
-        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
+        "chat_id": {"type": "string", "description": "The chat's stable id (used by the frontend to scope events to a chat)."},
         "personas": {
             "type": "array",
             "items": {"type": "object"},
@@ -67,10 +77,9 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "personal-data": True,
     "description": "A single persona's model, settings, usage, and slash commands.",
     "type": "object",
-    "required": ["room_id", "persona_id"],
+    "required": ["chat_id", "persona_id"],
     "properties": {
-        "room_id": {"type": "string", "description": "The chat's room id."},
-        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
+        "chat_id": {"type": "string", "description": "The chat's stable id (used by the frontend to scope events to a chat)."},
         "persona_id": {"type": "string", "description": "The persona's stable id."},
         "model": {"type": "object"},
         "settings": {"type": "array", "items": {"type": "object"}},
@@ -102,13 +111,11 @@ class PersonaManagerSessionState:
         self,
         *,
         event_logger: Optional["EventLogger"],
-        room_id: str,
+        chat_id: str,
         log: Logger,
-        path: Optional[str] = None,
     ):
         self._event_logger = event_logger
-        self._room_id = room_id
-        self._path = path or room_id
+        self._chat_id = chat_id
         self._log = log
         self._personas: list[PersonaOption] = []
 
@@ -130,8 +137,7 @@ class PersonaManagerSessionState:
             self._event_logger.emit(
                 schema_id=PERSONAS_EVENT_SCHEMA_ID,
                 data={
-                    "room_id": self._room_id,
-                    "path": self._path,
+                    "chat_id": self._chat_id,
                     "personas": [p.model_dump() for p in self._personas],
                 },
             )
@@ -152,14 +158,12 @@ class PersonaSessionState:
         self,
         *,
         event_logger: Optional["EventLogger"],
-        room_id: Optional[str],
         persona_id: str,
+        chat_id: str,
         log: Logger,
-        path: Optional[str] = None,
     ):
         self._event_logger = event_logger
-        self._room_id = room_id or ""
-        self._path = path or (room_id or "")
+        self._chat_id = chat_id
         self._persona_id = persona_id
         self._log = log
         self._model = ModelConfiguration()
@@ -178,7 +182,7 @@ class PersonaSessionState:
     @model.setter
     def model(self, model: ModelConfiguration) -> None:
         self._model = model
-        self.publish()
+        self._emit(model=model.model_dump())
 
     @property
     def settings(self) -> list[SettingConfiguration]:
@@ -187,7 +191,7 @@ class PersonaSessionState:
     @settings.setter
     def settings(self, settings: list[SettingConfiguration]) -> None:
         self._settings = settings
-        self.publish()
+        self._emit(settings=[s.model_dump() for s in settings])
 
     @property
     def usage(self) -> Usage:
@@ -196,7 +200,7 @@ class PersonaSessionState:
     @usage.setter
     def usage(self, usage: Usage) -> None:
         self._usage = usage
-        self.publish()
+        self._emit(usage=usage.model_dump())
 
     @property
     def slash_commands(self) -> list[CommandOption]:
@@ -205,12 +209,11 @@ class PersonaSessionState:
     @slash_commands.setter
     def slash_commands(self, commands: list[CommandOption]) -> None:
         self._slash_commands = commands
-        self.publish()
+        self._emit(slash_commands=[c.model_dump() for c in commands])
 
     def to_data(self) -> dict[str, Any]:
         return {
-            "room_id": self._room_id,
-            "path": self._path,
+            "chat_id": self._chat_id,
             "persona_id": self._persona_id,
             "model": self._model.model_dump(),
             "settings": [s.model_dump() for s in self._settings],
@@ -218,8 +221,31 @@ class PersonaSessionState:
             "slash_commands": [c.model_dump() for c in self._slash_commands],
         }
 
+    def _emit(self, **attributes: Any) -> None:
+        """Emit a ``persona_state`` event carrying only the given attribute(s),
+        alongside the always-present ``chat_id`` and ``persona_id``.
+
+        Each attribute setter publishes only what changed, so updating one field
+        (e.g. usage, which changes on every streamed chunk) does not re-broadcast
+        the others. Consumers merge each event onto their existing view.
+        """
+        if self._event_logger is None:
+            return
+        try:
+            self._event_logger.emit(
+                schema_id=PERSONA_STATE_EVENT_SCHEMA_ID,
+                data={
+                    "chat_id": self._chat_id,
+                    "persona_id": self._persona_id,
+                    **attributes,
+                },
+            )
+        except Exception:  # pragma: no cover - defensive
+            self._log.exception("Failed to emit persona state event")
+
     def publish(self) -> None:
-        """(Re-)emit the persona's full current state."""
+        """(Re-)emit the persona's full current state, all attributes at once.
+        Used for catch-up when a client connects."""
         if self._event_logger is None:
             return
         try:

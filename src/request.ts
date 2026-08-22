@@ -48,11 +48,11 @@ export async function requestAPI<T>(
  * via the cancel endpoint. Backend-agnostic: each persona's
  * `cancel_response()` decides what stopping means.
  */
-export async function cancelResponse(chatPath: string): Promise<void> {
+export async function cancelResponse(chatId: string): Promise<void> {
   try {
     await requestAPI(
       'api/ai',
-      `personas/cancel?chat_path=${encodeURIComponent(chatPath)}`,
+      `personas/cancel?chat_id=${encodeURIComponent(chatId)}`,
       { method: 'POST' }
     );
   } catch (e) {

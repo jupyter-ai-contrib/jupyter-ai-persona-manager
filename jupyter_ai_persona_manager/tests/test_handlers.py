@@ -116,21 +116,17 @@ async def test_avatar_handler_serves_png(jp_fetch, jp_serverapp, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _install_cancel_fixtures(jp_serverapp, chat_path, room_id, personas):
-    """Wire a mock file_id_manager (chat_path -> file id) and a persona manager
-    (room_id -> personas) into the server settings for a cancel request."""
+def _install_cancel_fixtures(jp_serverapp, chat_id, personas):
+    """Register a persona manager (resolvable by its chat id) for a cancel
+    request. Managers are stored under the router's room id key, so the handler
+    must resolve by matching each manager's own chat ``get_id()``."""
     from unittest.mock import Mock
-
-    # file id manager: chat_path -> file id, so room_id = text:chat:<file id>.
-    file_id = room_id.split(":")[-1]
-    mock_fim = Mock()
-    mock_fim.get_id.return_value = file_id
-    jp_serverapp.web_app.settings["file_id_manager"] = mock_fim
 
     mock_pm = Mock()
     mock_pm.personas = personas
+    mock_pm.chat.get_id.return_value = chat_id
     settings = jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})
-    settings["persona-managers"] = {room_id: mock_pm}
+    settings["persona-managers"] = {"text:chat:some-room": mock_pm}
 
 
 async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
@@ -142,14 +138,12 @@ async def test_cancel_handler_calls_cancel_response(jp_fetch, jp_serverapp):
     persona.processing = True
     persona.cancel_response = AsyncMock()
 
-    _install_cancel_fixtures(
-        jp_serverapp, "notebooks/chat.chat", "text:chat:file-1", {"p": persona}
-    )
+    _install_cancel_fixtures(jp_serverapp, "chat-abc", {"p": persona})
 
     response = await jp_fetch(
         "api", "ai", "personas", "cancel",
         method="POST", body="",
-        params={"chat_path": "notebooks/chat.chat"},
+        params={"chat_id": "chat-abc"},
     )
 
     assert response.code == 200
@@ -175,15 +169,14 @@ async def test_cancel_handler_skips_idle_personas(jp_fetch, jp_serverapp):
 
     _install_cancel_fixtures(
         jp_serverapp,
-        "notebooks/chat.chat",
-        "text:chat:file-1",
+        "chat-abc",
         {"idle": idle, "busy": busy},
     )
 
     response = await jp_fetch(
         "api", "ai", "personas", "cancel",
         method="POST", body="",
-        params={"chat_path": "notebooks/chat.chat"},
+        params={"chat_id": "chat-abc"},
     )
 
     assert response.code == 200
@@ -193,8 +186,8 @@ async def test_cancel_handler_skips_idle_personas(jp_fetch, jp_serverapp):
     busy.cancel_response.assert_awaited_once()
 
 
-async def test_cancel_handler_requires_chat_path(jp_fetch):
-    """Missing chat_path is a 400."""
+async def test_cancel_handler_requires_chat_id(jp_fetch):
+    """Missing chat_id is a 400."""
     from tornado.httpclient import HTTPClientError
 
     with pytest.raises(HTTPClientError) as exc:
@@ -205,26 +198,22 @@ async def test_cancel_handler_requires_chat_path(jp_fetch):
 async def test_cancel_handler_404_for_uninitialized_chat(jp_fetch, jp_serverapp):
     """A chat with no persona manager is a 404."""
     from tornado.httpclient import HTTPClientError
-    from unittest.mock import Mock
 
-    mock_fim = Mock()
-    mock_fim.get_id.return_value = "file-unknown"
-    jp_serverapp.web_app.settings["file_id_manager"] = mock_fim
     jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})["persona-managers"] = {}
 
     with pytest.raises(HTTPClientError) as exc:
         await jp_fetch(
             "api", "ai", "personas", "cancel",
             method="POST", body="",
-            params={"chat_path": "notebooks/chat.chat"},
+            params={"chat_id": "chat-abc"},
         )
     assert exc.value.code == 404
 
 
-async def test_cancel_handler_resolves_manager_by_path_rtc_free(jp_fetch, jp_serverapp):
-    """In RTC-free mode the router registers the PersonaManager under the chat
-    path, not `text:chat:{file_id}`. The handler must resolve it by path even
-    when the RTC room_id is not present in the registry."""
+async def test_cancel_handler_resolves_manager_by_id(jp_fetch, jp_serverapp):
+    """Persona managers are stored under the router's room id, which is not the
+    chat's stable id. The handler must resolve the right manager by matching its
+    own chat ``get_id()`` against the requested chat_id."""
     from unittest.mock import AsyncMock, Mock
 
     persona = Mock()
@@ -232,19 +221,17 @@ async def test_cancel_handler_resolves_manager_by_path_rtc_free(jp_fetch, jp_ser
     persona.processing = True
     persona.cancel_response = AsyncMock()
 
-    chat_path = "notebooks/chat.chat"
-    # file_id_manager resolves some id, but the RTC room_id it yields is NOT
-    # registered — only the path-keyed manager is (as the router does RTC-free).
-    mock_fim = Mock()
-    mock_fim.get_id.return_value = "unregistered-file-id"
-    jp_serverapp.web_app.settings["file_id_manager"] = mock_fim
+    chat_id = "chat-abc"
+    mock_pm = Mock(personas={"p": persona})
+    mock_pm.chat.get_id.return_value = chat_id
     settings = jp_serverapp.web_app.settings.setdefault("jupyter-ai", {})
-    settings["persona-managers"] = {chat_path: Mock(personas={"p": persona})}
+    # Registered under a room-id key that is NOT the chat id.
+    settings["persona-managers"] = {"text:chat:file-99": mock_pm}
 
     response = await jp_fetch(
         "api", "ai", "personas", "cancel",
         method="POST", body="",
-        params={"chat_path": chat_path},
+        params={"chat_id": chat_id},
     )
 
     assert response.code == 200

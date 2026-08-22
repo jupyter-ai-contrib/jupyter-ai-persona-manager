@@ -41,10 +41,10 @@ function makeRegistry(): {
 }
 
 describe('PersonaSessionRegistry', () => {
-  it('routes a personas event to the matching chat by path', async () => {
+  it('routes a personas event to the matching chat by id', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: [{ id: 'p1', name: 'One', avatar_url: null }]
     });
     expect(registry.get('a.chat').personas.map(p => p.id)).toEqual(['p1']);
@@ -56,7 +56,7 @@ describe('PersonaSessionRegistry', () => {
   it('routes persona_state events and builds PersonaSessionState', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       persona_id: 'p1',
       model: { current: 'm1', options: [], settings: [] },
       usage: { input_tokens: 5 }
@@ -64,6 +64,30 @@ describe('PersonaSessionRegistry', () => {
     const state = registry.get('a.chat').getPersona('p1');
     expect(state?.model.current).toBe('m1');
     expect(state?.usage.input_tokens).toBe(5);
+  });
+
+  it('merges a partial persona_state event onto the previous state', async () => {
+    // A later usage-only event must NOT blank out the model/slash_commands
+    // reported by an earlier event (each event carries only what changed).
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      model: { current: 'm1', options: [], settings: [] },
+      slash_commands: [{ name: '/compact', description: null }]
+    });
+    // A subsequent event carries ONLY usage (as happens on every streamed chunk).
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      usage: { input_tokens: 5 }
+    });
+    const state = registry.get('a.chat').getPersona('p1');
+    // usage applied...
+    expect(state?.usage.input_tokens).toBe(5);
+    // ...without dropping the previously reported model and slash commands.
+    expect(state?.model.current).toBe('m1');
+    expect(state?.slash_commands.map(c => c.name)).toEqual(['/compact']);
   });
 
   it('fires the changed signal on updates', async () => {
@@ -74,11 +98,11 @@ describe('PersonaSessionRegistry', () => {
       fired += 1;
     });
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: []
     });
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       persona_id: 'p1'
     });
     expect(fired).toBe(2);
@@ -87,7 +111,7 @@ describe('PersonaSessionRegistry', () => {
   it('discards a chat session state on close, freeing memory', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: [{ id: 'p1', name: 'One', avatar_url: null }]
     });
     const state = registry.get('a.chat');
