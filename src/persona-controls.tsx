@@ -1087,9 +1087,9 @@ export function PersonaControls(
       return;
     }
     let cancelled = false;
-    void chatModel.ready.then(() => {
+    void chatModel.ready.then(id => {
       if (!cancelled) {
-        setChatId(chatModel.id ?? null);
+        setChatId(id ?? null);
       }
     });
     return () => {
