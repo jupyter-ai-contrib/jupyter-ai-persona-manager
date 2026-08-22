@@ -52,6 +52,11 @@ def e2e(session: nox.Session, env: str) -> None:
     # The prebuilt wheel from the CI ``build`` job; from source for local runs.
     target = os.environ.get("E2E_WHEEL") or "."
     session.install("jupyterlab>=4.0.0,<5", target, *_ENVS[env])
+    # Expose the transport to the suite so tests can gate on RTC. Under RTC
+    # (jcollab/jsd) the chat id travels in the collaborative document's initial
+    # sync rather than a WebSocket connection frame, which changes the timing
+    # some tests depend on (e.g. slow-load's loading-placeholder window).
+    session.env["E2E_RTC"] = "1" if env in ("jcollab", "jsd") else "0"
     with session.chdir("ui-tests"):
         session.run("jlpm", "install", external=True)
         session.run("jlpm", "playwright", "install", "chromium", external=True)

@@ -26,7 +26,21 @@ const PERSONAS = [FixturePersona.SlowLoad];
  * every other suite (see the fixture docstring). The eventual give-up/timeout
  * behavior is out of scope (issue #77 defers it until lazy `async init_session()`
  * exists).
+ *
+ * WS-only: this asserts on the transient loading placeholder, which only exists
+ * when the chat id resolves *before* the persona list. That holds over the
+ * WebSocket transport, where the id arrives in the connection frame (~2s) well
+ * ahead of the slow persona load (~10s). Under RTC the id instead travels in the
+ * collaborative document's initial sync, which is stalled behind the same
+ * event-loop-blocking persona import; measured end to end, the id and the
+ * persona list then reach the browser ~3ms apart (vs ~8s over WS), so the
+ * placeholder window never opens even though the picker resolves correctly. The
+ * eventual resolution under RTC is covered by picker.spec.ts. Skipped under RTC
+ * (E2E_RTC=1, set by noxfile) until persona loading no longer blocks the event
+ * loop (issue #77).
  */
+const RTC = process.env.E2E_RTC === '1';
+
 test.describe('slow-load', () => {
   test.beforeAll(async ({ request }) => {
     await installPersonas(request, TEST_DIR, PERSONAS);
@@ -35,6 +49,12 @@ test.describe('slow-load', () => {
   test('shows the loading placeholder, then resolves to the picker', async ({
     page
   }) => {
+    test.skip(
+      RTC,
+      'RTC delivers the chat id via the document sync (stalled behind the ' +
+        'blocking persona import), so the loading-placeholder window never ' +
+        'opens; see the suite docstring and issue #77.'
+    );
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
     await helpers.openChat();
 

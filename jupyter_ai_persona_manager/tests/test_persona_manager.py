@@ -159,7 +159,7 @@ class RefreshedEntryPointPersona(BasePersona):
 class TestRefreshPersonas:
     @pytest.mark.asyncio
     async def test_refresh_personas_rescans_entry_points(
-        self, monkeypatch, tmp_dir, mock_ychat, mock_fileid_manager
+        self, monkeypatch, tmp_dir, mock_ychat
     ):
         """
         /refresh-personas must re-scan entry points, not just local files.
@@ -195,12 +195,10 @@ class TestRefreshPersonas:
         )
 
         # Keep local persona discovery out of this test; focus on entry points.
-        mock_fileid_manager.get_path.return_value = "chat.ipynb"
+        mock_ychat.get_path.return_value = "chat.chat"
 
         manager = PersonaManager(
-            room_id="room:chat:file-id",
             chat=mock_ychat,
-            fileid_manager=mock_fileid_manager,
             root_dir=str(tmp_dir),
             event_loop=Mock(),
         )
@@ -469,8 +467,11 @@ def _make_manager_and_persona():
     pm = PersonaManager.__new__(PersonaManager)
     pm.event_loop = _RecordingLoop(asyncio.get_event_loop())
     pm.log = logging.getLogger("test-persona-manager")
-    pm.room_id = "room:chat:test"
-    pm.chat_path = "test.chat"
+    # `chat_path` is a live property backed by the chat model; give the manager
+    # a chat mock so any path/id access resolves.
+    pm.chat = MagicMock()
+    pm.chat.get_path.return_value = "test.chat"
+    pm.chat.get_id.return_value = "chat-test"
 
     persona = _LifecyclePersona.__new__(_LifecyclePersona)
     persona.chat = MagicMock()
@@ -498,7 +499,9 @@ def _message_to(persona):
 
 async def _route(pm, message):
     """Route one message through the real manager and await the dispatched work."""
-    pm.on_chat_message(pm.room_id, message)
+    # `on_chat_message`'s room_id param is the router's contract and is not read
+    # internally (routing keys on message metadata), so any value works here.
+    pm.on_chat_message("room:chat:test", message)
     await asyncio.gather(*pm.event_loop.tasks)
     pm.event_loop.tasks.clear()
 
@@ -534,8 +537,8 @@ class TestPrepareLifecycleIntegration:
         p.prepare_gate = asyncio.Event()
 
         # Two messages routed by the manager before prepare() finishes.
-        pm.on_chat_message(pm.room_id, _message_to(p))
-        pm.on_chat_message(pm.room_id, _message_to(p))
+        pm.on_chat_message("room:chat:test", _message_to(p))
+        pm.on_chat_message("room:chat:test", _message_to(p))
         await asyncio.sleep(0.05)  # let both dispatched tasks reach gated prepare()
 
         assert p.prepare_calls == 1  # started once
@@ -665,3 +668,46 @@ class TestOnChatMessageRouting:
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
             routed = self._route(pm, _message(sender, {"to_persona": "p1"}))
             assert routed == [target]
+
+
+class TestChatPath:
+    """The PersonaManager derives the chat path from the chat model via
+    ``chat.get_path()`` -- no File ID service or room id involved."""
+
+    @pytest.mark.asyncio
+    async def test_chat_path_comes_from_chat_model(
+        self, monkeypatch, tmp_dir, mock_ychat
+    ):
+        import os
+
+        # Skip entry-point scanning; focus on path resolution.
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+        mock_ychat.get_path.return_value = "chat.chat"
+
+        manager = PersonaManager(
+            chat=mock_ychat,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        assert manager.chat_path == "chat.chat"
+        assert manager.get_chat_path(relative=True) == "chat.chat"
+        assert manager.get_chat_path() == os.path.join(str(tmp_dir), "chat.chat")
+
+    @pytest.mark.asyncio
+    async def test_chat_path_follows_the_model(
+        self, monkeypatch, tmp_dir, mock_ychat
+    ):
+        """``get_chat_path()`` reflects the model's current path each call, so a
+        moved file is tracked without the manager caching a stale path."""
+        monkeypatch.setattr(PersonaManager, "_ep_persona_classes", [])
+        mock_ychat.get_path.return_value = "chat.chat"
+
+        manager = PersonaManager(
+            chat=mock_ychat,
+            root_dir=str(tmp_dir),
+            event_loop=Mock(),
+        )
+
+        mock_ychat.get_path.return_value = "renamed.chat"
+        assert manager.get_chat_path(relative=True) == "renamed.chat"
