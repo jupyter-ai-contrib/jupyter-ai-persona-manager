@@ -5,11 +5,11 @@ The persona manager registers three HTTP endpoints on Jupyter Server (see
 usual authentication — include the XSRF token / auth cookie that JupyterLab uses
 for its own API calls. Paths below are relative to the server's `base_url`.
 
-| Method | Path                                       | Purpose                                                |
-| ------ | ------------------------------------------ | ------------------------------------------------------ |
-| `POST` | `/api/ai/message/<persona_name>`           | Send a one-shot message to a persona and get its reply |
-| `POST` | `/api/ai/personas/cancel?chat_id=<id>`     | Interrupt in-progress replies in a chat                |
-| `GET`  | `/api/ai/avatars/<persona_id>`             | Fetch a persona's avatar image                         |
+| Method | Path                                   | Purpose                                                |
+| ------ | -------------------------------------- | ------------------------------------------------------ |
+| `POST` | `/api/ai/message/<persona_name>`       | Send a one-shot message to a persona and get its reply |
+| `POST` | `/api/ai/personas/cancel?chat_id=<id>` | Interrupt in-progress replies in a chat                |
+| `GET`  | `/api/ai/avatars/<persona_id>`         | Fetch a persona's avatar image                         |
 
 ```{note}
 These endpoints are backend infrastructure. In normal use, the chat UI talks to
@@ -98,10 +98,10 @@ skipped, not surfaced as an error.
 
 **Errors**
 
-| Status | When                                                                               |
-| ------ | ---------------------------------------------------------------------------------- |
-| `400`  | `chat_id` query parameter is missing                                               |
-| `404`  | No chat has that `chat_id`, or the chat has no initialized persona manager         |
+| Status | When                                                                       |
+| ------ | -------------------------------------------------------------------------- |
+| `400`  | `chat_id` query parameter is missing                                       |
+| `404`  | No chat has that `chat_id`, or the chat has no initialized persona manager |
 
 ## `GET /api/ai/avatars/<persona_id>`
 
