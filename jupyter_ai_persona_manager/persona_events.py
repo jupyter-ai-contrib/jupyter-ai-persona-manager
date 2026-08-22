@@ -15,6 +15,9 @@ would miss it. Catch-up is handled by re-emitting the current state when a clien
 connects to the chat (see ``PersonaManager`` and the ``client_connected`` action
 on jupyterlab_chat's ``room/v1`` event bus). The current values are kept in memory
 here so they can be re-emitted at any time.
+
+Each event carries the chat's stable id (``chat.get_id()``) so the frontend can
+route it to the right chat via its chat model/context ``id``.
 """
 from __future__ import annotations
 
@@ -47,9 +50,9 @@ PERSONAS_EVENT_SCHEMA = {
     "personal-data": True,
     "description": "The list of personas available in a chat.",
     "type": "object",
-    "required": ["path", "personas"],
+    "required": ["chat_id", "personas"],
     "properties": {
-        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
+        "chat_id": {"type": "string", "description": "The chat's stable id (used by the frontend to scope events to a chat)."},
         "personas": {
             "type": "array",
             "items": {"type": "object"},
@@ -66,9 +69,9 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "personal-data": True,
     "description": "A single persona's model, settings, usage, and slash commands.",
     "type": "object",
-    "required": ["path", "persona_id"],
+    "required": ["chat_id", "persona_id"],
     "properties": {
-        "path": {"type": "string", "description": "The chat's server-root-relative path (used by the frontend to scope events to a chat)."},
+        "chat_id": {"type": "string", "description": "The chat's stable id (used by the frontend to scope events to a chat)."},
         "persona_id": {"type": "string", "description": "The persona's stable id."},
         "model": {"type": "object"},
         "settings": {"type": "array", "items": {"type": "object"}},
@@ -100,11 +103,11 @@ class PersonaManagerSessionState:
         self,
         *,
         event_logger: Optional["EventLogger"],
-        path: str,
+        chat_id: str,
         log: Logger,
     ):
         self._event_logger = event_logger
-        self._path = path
+        self._chat_id = chat_id
         self._log = log
         self._personas: list[PersonaOption] = []
 
@@ -126,7 +129,7 @@ class PersonaManagerSessionState:
             self._event_logger.emit(
                 schema_id=PERSONAS_EVENT_SCHEMA_ID,
                 data={
-                    "path": self._path,
+                    "chat_id": self._chat_id,
                     "personas": [p.model_dump() for p in self._personas],
                 },
             )
@@ -148,11 +151,11 @@ class PersonaSessionState:
         *,
         event_logger: Optional["EventLogger"],
         persona_id: str,
-        path: str,
+        chat_id: str,
         log: Logger,
     ):
         self._event_logger = event_logger
-        self._path = path
+        self._chat_id = chat_id
         self._persona_id = persona_id
         self._log = log
         self._model = ModelConfiguration()
@@ -202,7 +205,7 @@ class PersonaSessionState:
 
     def to_data(self) -> dict[str, Any]:
         return {
-            "path": self._path,
+            "chat_id": self._chat_id,
             "persona_id": self._persona_id,
             "model": self._model.model_dump(),
             "settings": [s.model_dump() for s in self._settings],

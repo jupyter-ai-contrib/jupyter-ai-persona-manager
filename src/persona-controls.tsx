@@ -1075,14 +1075,14 @@ export function PersonaControls(
   }
 ): JSX.Element | null {
   const { chatModel, model, controlRegistry, sessionRegistry } = props;
-  // The chat's server-root-relative path scopes persona events to this chat.
-  const path = chatModel?.name ?? null;
+  // The chat's stable id scopes persona events to this chat.
+  const chatId = chatModel?.id ?? null;
 
   // The per-chat persona session state, built from persona events and shared
   // via the registry. Created on demand; discarded when the chat closes.
   const managerState = useMemo(
-    () => (sessionRegistry && path ? sessionRegistry.get(path) : null),
-    [sessionRegistry, path]
+    () => (sessionRegistry && chatId ? sessionRegistry.get(chatId) : null),
+    [sessionRegistry, chatId]
   );
 
   const [personas, setPersonas] = useState<PersonaOption[]>([]);
@@ -1169,15 +1169,15 @@ export function PersonaControls(
   // Discard this chat's session state when the chat model is disposed (chat
   // closed), freeing its memory.
   useEffect(() => {
-    if (!sessionRegistry || !path || !chatModel) {
+    if (!sessionRegistry || !chatId || !chatModel) {
       return;
     }
-    const onDisposed = () => sessionRegistry.discard(path);
+    const onDisposed = () => sessionRegistry.discard(chatId);
     chatModel.disposed.connect(onDisposed);
     return () => {
       chatModel.disposed.disconnect(onDisposed);
     };
-  }, [sessionRegistry, path, chatModel]);
+  }, [sessionRegistry, chatId, chatModel]);
 
   // Stamp the current persona + its settings onto the input model's metadata,
   // so it rides out with the next message and the PersonaManager routes and

@@ -38,9 +38,13 @@ def _manager(personas, event_logger):
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-events")
-    pm.chat_path = "file-id.chat"
+    # `chat_path` is a live property backed by the chat model; the manager reads
+    # the chat id (for event scoping) and path (for room-event matching) from it.
+    pm.chat = MagicMock()
+    pm.chat.get_id.return_value = "chat-1"
+    pm.chat.get_path.return_value = "file-id.chat"
     pm.state = PersonaManagerSessionState(
-        event_logger=event_logger, path=pm.chat_path, log=pm.log
+        event_logger=event_logger, chat_id=pm.chat.get_id(), log=pm.log
     )
     return pm
 
@@ -70,7 +74,7 @@ class TestPersonaListEvents:
 
             assert captured, "no personas event emitted"
             data = captured[-1]
-            assert data["path"] == "file-id.chat"
+            assert data["chat_id"] == "chat-1"
             by_id = {p["id"]: p for p in data["personas"]}
             assert by_id["p1"]["name"] == "One"
             assert by_id["p1"]["avatar_url"] == "/one"

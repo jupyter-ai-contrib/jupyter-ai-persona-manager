@@ -181,11 +181,6 @@ class PersonaManager(LoggingConfigurable):
         self.base_url = base_url
         self.event_logger = event_logger
 
-        # The chat's server-root-relative path, obtained from the chat model.
-        # Used to scope persona events to a chat on the frontend and to locate
-        # `.jupyter`/workspace/MCP config relative to the chat file.
-        self.chat_path = self.chat.get_path()
-
         # register system user for sending system msgs
         self.chat.set_user(
             User(
@@ -202,10 +197,11 @@ class PersonaManager(LoggingConfigurable):
         # This is the source of truth the browser reads for the persona selector,
         # and it works in both RTC and non-RTC mode (no Yjs awareness required).
         # The event schemas are registered once at server-extension init. Events
-        # are scoped to the chat by its server-root-relative path.
+        # are scoped to the chat by its stable id (``chat.get_id()``), which the
+        # frontend reads from its chat model/context to route events.
         self.state = PersonaManagerSessionState(
             event_logger=self.event_logger,
-            path=self.chat_path,
+            chat_id=self.chat.get_id(),
             log=self.log,
         )
         # Re-publish current state whenever a client connects to this chat, so a
@@ -522,6 +518,18 @@ class PersonaManager(LoggingConfigurable):
         # Write success message to chat & logs
         self.send_system_message("Refreshed all AI personas in this chat.")
         self.log.info(f"Refreshed all AI personas in chat '{self.chat_path}'.")
+
+    @property
+    def chat_path(self) -> str:
+        """The chat's server-root-relative path, read live from the chat model
+        on every access.
+
+        Exposed as a property (not a cached attribute) so a moved or renamed
+        chat is always reflected and consumers can never read a stale path. Used
+        to locate `.jupyter`/workspace/MCP config relative to the chat file and
+        in log messages.
+        """
+        return self.chat.get_path()
 
     def get_chat_path(self, relative: bool = False) -> str:
         """
