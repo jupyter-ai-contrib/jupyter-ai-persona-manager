@@ -2184,7 +2184,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@jupyter-ai/persona-manager@workspace:."
   dependencies:
-    "@jupyter/chat": ^0.25.0-alpha.4
+    "@jupyter/chat": ^0.25.0-alpha.5
     "@jupyterlab/application": ^4.0.0
     "@jupyterlab/builder": ^4.0.0
     "@jupyterlab/coreutils": ^6.0.0
@@ -2222,9 +2222,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@jupyter/chat@npm:^0.25.0-alpha.4":
-  version: 0.25.0-alpha.4
-  resolution: "@jupyter/chat@npm:0.25.0-alpha.4"
+"@jupyter/chat@npm:^0.25.0-alpha.5":
+  version: 0.25.0-alpha.5
+  resolution: "@jupyter/chat@npm:0.25.0-alpha.5"
   dependencies:
     "@emotion/react": ^11.10.5
     "@emotion/styled": ^11.10.5
@@ -2255,7 +2255,7 @@ __metadata:
     clsx: ^2.1.0
     react: ^18.2.0
     react-dom: ^18.2.0
-  checksum: 73ae405f512d212df86dda69970698dfa19172016d650c8d33d4198af83447b7fb63c408ccdd398cb9ccae79f9a660b9b122fbdc603caaf563f8f4783cc3fbca
+  checksum: 581f8bdfd637b4c5a0028e4a911453c2144981ea8ac9f3c6cac7318c39bc08f86693f675f4c8dda847dfc8bb5544b7edeb05e44eeab955883ac8cc46c9bbcc56
   languageName: node
   linkType: hard
 
