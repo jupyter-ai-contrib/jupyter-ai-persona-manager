@@ -38,13 +38,13 @@ export function StopButton(
   }, [chatModel]);
 
   async function handleStop() {
-    if (!chatModel) {
+    if (!chatModel?.id) {
       return;
     }
 
     setInFlight(true);
     try {
-      await cancelResponse(chatModel.name);
+      await cancelResponse(chatModel.id);
     } finally {
       setInFlight(false);
     }

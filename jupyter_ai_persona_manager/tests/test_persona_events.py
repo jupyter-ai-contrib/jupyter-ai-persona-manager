@@ -34,7 +34,7 @@ def test_setting_fields_emits_state_events():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
             event_logger=logger,
-            room_id="room:chat:x",
+            chat_id="chat.chat",
             persona_id="jupyternaut",
             log=logging.getLogger("t"),
         )
@@ -44,7 +44,7 @@ def test_setting_fields_emits_state_events():
 
         assert len(captured) == 2
         last = captured[-1]
-        assert last["room_id"] == "room:chat:x"
+        assert last["chat_id"] == "chat.chat"
         assert last["persona_id"] == "jupyternaut"
         assert last["model"]["current"] == "gpt-9"
         assert last["usage"]["input_tokens"] == 42
@@ -57,7 +57,7 @@ def test_publish_reemits_current_state_for_catchup():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
             event_logger=logger,
-            room_id="room:chat:x",
+            chat_id="chat.chat",
             persona_id="p1",
             log=logging.getLogger("t"),
         )
@@ -79,7 +79,7 @@ def test_publish_reemits_current_state_for_catchup():
 def test_no_event_logger_is_noop():
     state = PersonaSessionState(
         event_logger=None,
-        room_id="room:chat:x",
+        chat_id="chat.chat",
         persona_id="p1",
         log=logging.getLogger("t"),
     )

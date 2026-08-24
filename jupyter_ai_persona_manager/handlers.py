@@ -33,7 +33,7 @@ def build_avatar_cache(persona_managers: dict) -> None:
     global _avatar_cache
     _avatar_cache = {}
 
-    for room_id, persona_manager in persona_managers.items():
+    for persona_manager in persona_managers.values():
         for persona in persona_manager.personas.values():
             try:
                 avatar_path = persona.defaults.avatar_path
@@ -69,25 +69,21 @@ class MessageHandler(JupyterHandler):
             raise tornado.web.HTTPError(400, f"Invalid JSON body: {e}")
 
         serverapp = self.serverapp
-        fileid_manager = serverapp.web_app.settings.get("file_id_manager")
         contents_manager = serverapp.contents_manager
         root_dir = getattr(contents_manager, "root_dir", "")
         base_url = serverapp.web_app.settings.get("base_url", "/")
-        uid = uuid.uuid4()
-        room_uid = fileid_manager.index(os.path.join(root_dir, f"{uid}"))
-        temp_room_id = f"text:chat:{room_uid}"
 
-        # Obtain or create a PersonaManager for this temporary room
-        # Reuse existing if present, otherwise instantiate a minimal manager
+        # Ephemeral chat backing this one-shot request. It has no real file;
+        # give it a unique root-level path so path-derived features (`.jupyter`
+        # / MCP discovery) resolve from the server root.
         ychat = YChat()
-        # Retrieve required managers from server settings
-        # Instantiate PersonaManager
+        ychat.initial_path = f"{uuid.uuid4()}.chat"
+
+        # Instantiate a temporary PersonaManager for this ephemeral chat.
         from .persona_manager import PersonaManager
 
         persona_manager = PersonaManager(
-            room_id=temp_room_id,
             chat=ychat,
-            fileid_manager=fileid_manager,
             root_dir=root_dir,
             event_loop=asyncio.get_event_loop(),
             base_url=base_url,
@@ -140,44 +136,32 @@ class CancelHandler(JupyterHandler):
     """
     Handler to cancel personas' in-progress responses in a chat.
 
-    The frontend POSTs here (with the chat's path as a query parameter) when the
-    user interrupts. Each persona in the chat is asked to stop via
+    The frontend POSTs here (with the chat's stable id as a query parameter)
+    when the user interrupts. Each persona in the chat is asked to stop via
     `BasePersona.cancel_response()`, which halts whatever its reply set in motion
     (a model stream, an agent turn, pending tool calls). Backend-agnostic: a
     persona with nothing cancellable inherits the base no-op.
     """
 
-    @property
-    def file_id_manager(self):
-        manager = self.serverapp.web_app.settings.get("file_id_manager")
-        if manager is None:
-            raise tornado.web.HTTPError(500, "file_id_manager is not available")
-        return manager
-
     @tornado.web.authenticated
     async def post(self):
-        chat_path = self.get_argument("chat_path", None)
-        if not chat_path:
+        chat_id = self.get_argument("chat_id", None)
+        if not chat_id:
             raise tornado.web.HTTPError(
-                400, "chat_path is required as a URL query parameter"
+                400, "chat_id is required as a URL query parameter"
             )
 
         persona_managers = self.serverapp.web_app.settings.get(
             "jupyter-ai", {}
         ).get("persona-managers", {})
 
-        # The router registers each PersonaManager under the room_id it supplies,
-        # which is the chat's path in RTC-free mode and `text:chat:{file_id}`
-        # under RTC. Resolve the path first (RTC-free), then fall back to the RTC
-        # room_id, so cancellation works regardless of transport.
-        persona_manager = persona_managers.get(chat_path)
-        if persona_manager is None:
-            file_id = self.file_id_manager.get_id(chat_path)
-            if file_id:
-                persona_manager = persona_managers.get(f"text:chat:{file_id}")
+        # Persona managers are registered under the chat's stable id
+        # (`chat.get_id()`), so cancellation resolves by a direct lookup
+        # regardless of transport.
+        persona_manager = persona_managers.get(chat_id)
 
         if not persona_manager:
-            raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_path}")
+            raise tornado.web.HTTPError(404, f"Chat not initialized: {chat_id}")
 
         cancelled = []
         for persona in persona_manager.personas.values():

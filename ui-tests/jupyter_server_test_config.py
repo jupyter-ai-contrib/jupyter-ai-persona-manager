@@ -11,6 +11,13 @@ from jupyterlab.galata import configure_jupyter_server
 
 configure_jupyter_server(c)
 
+# Fixtures live under a hidden `.jupyter/personas/` directory (see below), so the
+# contents API must be allowed to create and serve hidden paths. Set it
+# explicitly rather than relying on the jupyter_server default, which varies by
+# version.
+c.ContentsManager.allow_hidden = True
+c.FileContentsManager.allow_hidden = True
+
 # The HTTP port (--ServerApp.port) and MCP port (--MCPExtensionApp.mcp_port) are
 # passed on the `jlpm start` command line (see playwright.config.js) — CLI args
 # win over the defaults set above, so nothing to do here for ports.

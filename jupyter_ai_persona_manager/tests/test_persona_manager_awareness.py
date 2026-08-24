@@ -38,10 +38,13 @@ def _manager(personas, event_logger):
     pm = PersonaManager.__new__(PersonaManager)
     pm._personas = personas
     pm.log = logging.getLogger("test-pm-events")
-    pm.room_id = "room:chat:file-id"
-    pm.chat_path = "file-id.chat"
+    # `chat_path` is a live property backed by the chat model; the manager reads
+    # the chat id (for event scoping) and path (for room-event matching) from it.
+    pm.chat = MagicMock()
+    pm.chat.get_id.return_value = "chat-1"
+    pm.chat.get_path.return_value = "file-id.chat"
     pm.state = PersonaManagerSessionState(
-        event_logger=event_logger, room_id=pm.room_id, log=pm.log
+        event_logger=event_logger, chat_id=pm.chat.get_id(), log=pm.log
     )
     return pm
 
@@ -71,7 +74,7 @@ class TestPersonaListEvents:
 
             assert captured, "no personas event emitted"
             data = captured[-1]
-            assert data["room_id"] == "room:chat:file-id"
+            assert data["chat_id"] == "chat-1"
             by_id = {p["id"]: p for p in data["personas"]}
             assert by_id["p1"]["name"] == "One"
             assert by_id["p1"]["avatar_url"] == "/one"
@@ -109,7 +112,7 @@ class TestPersonaListEvents:
             await pm._on_chat_event(
                 None,
                 "https://schema.jupyter.org/jupyterlab_chat/room/v1",
-                {"action": "client_connected", "room_id": pm.room_id},
+                {"action": "client_connected", "path": pm.chat_path},
             )
             personas["p1"].state.publish.assert_called()
 
@@ -118,7 +121,7 @@ class TestPersonaListEvents:
             await pm._on_chat_event(
                 None,
                 "https://schema.jupyter.org/jupyterlab_chat/room/v1",
-                {"action": "client_connected", "room_id": "room:chat:other"},
+                {"action": "client_connected", "path": "other.chat"},
             )
             personas["p1"].state.publish.assert_not_called()
 

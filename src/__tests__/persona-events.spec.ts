@@ -41,10 +41,10 @@ function makeRegistry(): {
 }
 
 describe('PersonaSessionRegistry', () => {
-  it('routes a personas event to the matching chat by path', async () => {
+  it('routes a personas event to the matching chat by id', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: [{ id: 'p1', name: 'One', avatar_url: null }]
     });
     expect(registry.get('a.chat').personas.map(p => p.id)).toEqual(['p1']);
@@ -56,7 +56,7 @@ describe('PersonaSessionRegistry', () => {
   it('routes persona_state events and builds PersonaSessionState', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       persona_id: 'p1',
       model: { current: 'm1', options: [], settings: [] },
       usage: { input_tokens: 5 }
@@ -74,11 +74,11 @@ describe('PersonaSessionRegistry', () => {
       fired += 1;
     });
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: []
     });
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       persona_id: 'p1'
     });
     expect(fired).toBe(2);
@@ -87,7 +87,7 @@ describe('PersonaSessionRegistry', () => {
   it('discards a chat session state on close, freeing memory', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
-      path: 'a.chat',
+      chat_id: 'a.chat',
       personas: [{ id: 'p1', name: 'One', avatar_url: null }]
     });
     const state = registry.get('a.chat');
