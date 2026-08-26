@@ -21,6 +21,7 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CheckIcon from '@mui/icons-material/Check';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { PageConfig } from '@jupyterlab/coreutils';
+import { Event } from '@jupyterlab/services';
 import { InputToolbarRegistry } from '@jupyter/chat';
 import {
   EMPTY_USAGE,
@@ -35,6 +36,7 @@ import {
   emptyPersonaSettings
 } from './metadata';
 import { IPersonaControlRegistry } from './persona-control-registry';
+import { PERSONA_SELECTED_EVENT_SCHEMA_ID } from './persona-events';
 
 const SELECTOR_CLASS = 'jp-jai-personaControls';
 const MENU_CLASS = 'jp-jai-controlMenu';
@@ -1072,9 +1074,14 @@ export function PersonaControls(
      * Optional so the component still works without it (renders nothing).
      */
     sessionRegistry?: PersonaSessionRegistry;
+    /**
+     * The event bus front-end, used to emit a `persona_selected` event when the
+     * user picks a persona so the server prepares it eagerly.
+     */
+    events?: Event.IManager;
   }
 ): JSX.Element | null {
-  const { chatModel, model, controlRegistry, sessionRegistry } = props;
+  const { chatModel, model, controlRegistry, sessionRegistry, events } = props;
   // The chat's stable id scopes persona events to this chat. It is assigned
   // asynchronously (once the model is `ready`: the WS connection frame arrives,
   // or the RTC document syncs), so track it in state and update it when the
@@ -1206,6 +1213,22 @@ export function PersonaControls(
     model.clearMetadata();
     model.updateMetadata(buildMessageMetadata(selectedId, settings));
   }, [model, metadataSignature]);
+
+  // On selection, tell the server to prepare the persona by
+  // emitting `persona_selected` over the event bus, so its controls appear
+  // before the first message. Skips "No one"; idempotent server-side.
+  useEffect(() => {
+    if (!events || !chatId || !selectedId) {
+      return;
+    }
+    void events
+      .emit({
+        schema_id: PERSONA_SELECTED_EVENT_SCHEMA_ID,
+        version: '1',
+        data: { chat_id: chatId, persona_id: selectedId }
+      })
+      .catch(e => console.warn('Error emitting persona_selected event: ', e));
+  }, [events, chatId, selectedId]);
 
   // No personas yet. While the manager's slot or its first list read is still
   // pending, show a loading placeholder (on slow networks this takes seconds);

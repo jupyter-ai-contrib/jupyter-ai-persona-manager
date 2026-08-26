@@ -119,11 +119,20 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
     controlRegistry: IPersonaControlRegistry,
     sessionRegistry: PersonaSessionRegistry
   ): IInputToolbarRegistryFactory => {
-    // Wrap the persona controls to inject the control + session registries,
-    // which the generic toolbar-item props don't carry.
+    // The event bus front-end; `PersonaControls` uses it to emit
+    // `persona_selected` on selection 
+    const events = app.serviceManager.events;
+    // Wrap the persona controls to inject the control + session registries and
+    // the event manager, which the generic toolbar-item props don't carry.
     const PersonaControlsItem = (
       itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) => PersonaControls({ ...itemProps, controlRegistry, sessionRegistry });
+    ) =>
+      PersonaControls({
+        ...itemProps,
+        controlRegistry,
+        sessionRegistry,
+        events
+      });
     return {
       create: () => {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)

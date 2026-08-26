@@ -19,6 +19,7 @@ from jupyter_ai_persona_manager.persona_manager import (
     SYSTEM_USERNAME,
     PersonaManager,
     PersonaRequirementsUnmet,
+    _safe_prepare,
     _safe_process,
     find_persona_files,
     format_persona_load_errors,
@@ -411,6 +412,49 @@ class TestSafeProcess:
         persona.handle_uncaught_exception.assert_not_called()
 
 
+class TestSafePrepare:
+    """Unit tests for the shared prepare error boundary, `_safe_prepare`."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_success(self):
+        persona = _make_mock_persona()
+
+        result = await _safe_prepare(persona)
+
+        assert result is True
+        persona._ensure_prepared.assert_awaited_once()
+        persona.handle_uncaught_exception.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_returns_false_and_delivers_error_on_failure(self):
+        exc = RuntimeError("prepare boom")
+        persona = _make_mock_persona()
+        persona._ensure_prepared.side_effect = exc
+
+        result = await _safe_prepare(persona)
+
+        assert result is False
+        persona.handle_uncaught_exception.assert_awaited_once_with(exc)
+
+    @pytest.mark.asyncio
+    async def test_no_exception_propagates_on_failure(self):
+        persona = _make_mock_persona()
+        persona._ensure_prepared.side_effect = RuntimeError("boom")
+
+        # Should not raise.
+        assert await _safe_prepare(persona) is False
+
+    @pytest.mark.asyncio
+    async def test_catches_secondary_exception_from_handler(self):
+        persona = _make_mock_persona()
+        persona._ensure_prepared.side_effect = RuntimeError("primary")
+        persona.handle_uncaught_exception.side_effect = RuntimeError("secondary")
+
+        # Should not raise even when the error handler also raises.
+        assert await _safe_prepare(persona) is False
+        assert persona.log.exception.call_count == 2
+
+
 class _LifecyclePersona(BasePersona):
     """
     A real BasePersona subclass with an instrumented prepare()/process_message,
@@ -594,6 +638,135 @@ class TestPrepareLifecycleIntegration:
         p.process_should_fail = False
         await _route(pm, _message_to(p))
         assert p.prepare_calls == 1
+
+
+async def _await_dispatched(pm):
+    """Await the tasks the manager dispatched onto the recording loop."""
+    await asyncio.gather(*pm.event_loop.tasks)
+    pm.event_loop.tasks.clear()
+
+
+class TestPreparePersonaOnSelection:
+    """
+    `PersonaManager.prepare_persona` eagerly runs a persona's prepare() when a
+    client selects it, so its model & settings are published before the first
+    message.
+    """
+
+    @pytest.mark.asyncio
+    async def test_prepares_selected_persona(self):
+        pm, p = _make_manager_and_persona()
+
+        scheduled = pm.prepare_persona(p.id)
+        await _await_dispatched(pm)
+
+        assert scheduled is True
+        assert p.prepare_calls == 1
+        assert p.process_calls == 0  # selection prepares but does not process
+        assert p.preparation_state == PreparationState.PREPARED
+
+    @pytest.mark.asyncio
+    async def test_unknown_persona_returns_false_and_schedules_nothing(self):
+        pm, _ = _make_manager_and_persona()
+
+        scheduled = pm.prepare_persona("jupyter-ai-personas::pkg::Missing")
+
+        assert scheduled is False
+        assert pm.event_loop.tasks == []
+
+    @pytest.mark.asyncio
+    async def test_prepare_then_message_does_not_reprepare(self):
+        """Selection prepares once; the first message reuses it, never re-runs it."""
+        pm, p = _make_manager_and_persona()
+
+        pm.prepare_persona(p.id)
+        await _await_dispatched(pm)
+        assert p.prepare_calls == 1
+
+        await _route(pm, _message_to(p))
+
+        assert p.prepare_calls == 1  # not re-prepared on first message
+        assert p.process_calls == 1
+        assert p.preparation_state == PreparationState.PREPARED
+
+    @pytest.mark.asyncio
+    async def test_repeated_selection_prepares_once(self):
+        """Re-selecting an already-prepared persona is a harmless no-op."""
+        pm, p = _make_manager_and_persona()
+
+        pm.prepare_persona(p.id)
+        await _await_dispatched(pm)
+        pm.prepare_persona(p.id)
+        await _await_dispatched(pm)
+
+        assert p.prepare_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_prepare_failure_is_delivered_and_not_raised(self):
+        pm, p = _make_manager_and_persona()
+        p.prepare_should_fail = True
+
+        pm.prepare_persona(p.id)
+        await _await_dispatched(pm)  # must not raise
+
+        assert p.prepare_calls == 1
+        assert p.preparation_state == PreparationState.FAILED
+        p.chat.add_message.assert_called()  # error surfaced to the user
+
+
+class TestOnPersonaSelectedListener:
+    """
+    The `persona_selected` event listener eagerly prepares the selected persona,
+    but only for events scoped to this manager's chat. The frontend emits this
+    event over the shared event bus, so each chat's manager must ignore other
+    chats' selections.
+    """
+
+    @pytest.mark.asyncio
+    async def test_prepares_persona_selected_in_this_chat(self):
+        pm, p = _make_manager_and_persona()  # chat.get_id() == "chat-test"
+
+        await pm._on_persona_selected(
+            None, None, {"chat_id": "chat-test", "persona_id": p.id}
+        )
+        await _await_dispatched(pm)
+
+        assert p.prepare_calls == 1
+        assert p.preparation_state == PreparationState.PREPARED
+
+    @pytest.mark.asyncio
+    async def test_ignores_selection_for_a_different_chat(self):
+        pm, p = _make_manager_and_persona()
+
+        await pm._on_persona_selected(
+            None, None, {"chat_id": "some-other-chat", "persona_id": p.id}
+        )
+
+        assert pm.event_loop.tasks == []  # nothing scheduled
+        assert p.prepare_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_missing_persona_id_is_a_noop(self):
+        pm, p = _make_manager_and_persona()
+
+        await pm._on_persona_selected(None, None, {"chat_id": "chat-test"})
+
+        assert pm.event_loop.tasks == []
+        assert p.prepare_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_persona_in_this_chat_is_a_noop(self):
+        pm, _ = _make_manager_and_persona()
+
+        await pm._on_persona_selected(
+            None,
+            None,
+            {"chat_id": "chat-test", "persona_id": "jupyter-ai-personas::pkg::Gone"},
+        )
+
+        # prepare_persona returns False for an unknown persona and schedules
+        # nothing.
+        assert pm.event_loop.tasks == []
 
 
 PERSONA_SENDER = "jupyter-ai-personas::pkg::Bot"

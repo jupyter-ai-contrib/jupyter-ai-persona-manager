@@ -31,6 +31,8 @@ export const PERSONAS_EVENT_SCHEMA_ID =
   'https://schema.jupyter.org/jupyter_ai_persona_manager/personas/v1';
 export const PERSONA_STATE_EVENT_SCHEMA_ID =
   'https://schema.jupyter.org/jupyter_ai_persona_manager/persona_state/v1';
+export const PERSONA_SELECTED_EVENT_SCHEMA_ID =
+  'https://schema.jupyter.org/jupyter_ai_persona_manager/persona_selected/v1';
 
 /** The wire shape of a `persona_state` event. */
 type PersonaStatePayload = {
