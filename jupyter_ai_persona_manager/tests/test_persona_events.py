@@ -10,6 +10,7 @@ from jupyter_ai_persona_manager.awareness_models import (
     Usage,
 )
 from jupyter_ai_persona_manager.persona_events import (
+    PERSONA_SELECTED_EVENT_SCHEMA_ID,
     PERSONA_STATE_EVENT_SCHEMA_ID,
     PersonaSessionState,
     register_persona_event_schemas,
@@ -87,3 +88,34 @@ def test_no_event_logger_is_noop():
     state.model = ModelConfiguration(current="m1")
     state.publish()
     assert state.model.current == "m1"
+
+
+def test_persona_selected_schema_is_registered_and_deliverable():
+    """The incoming `persona_selected` schema is registered, so a client-emitted
+    event validates and reaches a server-side listener."""
+
+    async def run():
+        logger = EventLogger()
+        register_persona_event_schemas(logger)
+        captured: list = []
+
+        async def listener(logger, schema_id, data):
+            captured.append(data)
+
+        logger.add_listener(
+            schema_id=PERSONA_SELECTED_EVENT_SCHEMA_ID, listener=listener
+        )
+
+        # Emitting a valid payload must validate against the registered schema
+        # and be delivered to the listener.
+        logger.emit(
+            schema_id=PERSONA_SELECTED_EVENT_SCHEMA_ID,
+            data={"chat_id": "chat.chat", "persona_id": "p1"},
+        )
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        assert captured[0]["chat_id"] == "chat.chat"
+        assert captured[0]["persona_id"] == "p1"
+
+    asyncio.run(run())

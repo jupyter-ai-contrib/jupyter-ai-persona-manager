@@ -23,7 +23,10 @@ from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
 from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
-from .persona_events import PersonaManagerSessionState
+from .persona_events import (
+    PERSONA_SELECTED_EVENT_SCHEMA_ID,
+    PersonaManagerSessionState,
+)
 
 try:
     # The chat event bus that carries client_connected/client_disconnected.
@@ -56,6 +59,39 @@ class PersonaRequirementsUnmet(RuntimeError):
     pass
 
 
+async def _deliver_persona_error(
+    persona: "BasePersona", exc: Exception, where: str
+) -> None:
+    """
+    Log an unhandled persona exception and surface it to the user via
+    `persona.handle_uncaught_exception()`. Shared by the process and prepare
+    error boundaries so both report failures the same way.
+    """
+    persona.log.error(f"Persona '{persona.name}' raised an exception {where}.")
+    persona.log.exception(exc)
+    try:
+        await persona.handle_uncaught_exception(exc)
+    except Exception:
+        persona.log.exception(
+            f"Persona '{persona.name}' raised a secondary exception in "
+            f"handle_uncaught_exception(); error message not delivered to user."
+        )
+
+
+async def _safe_prepare(persona: "BasePersona") -> bool:
+    """
+    Run the persona's one-time `prepare()` hook in its own error boundary,
+    returning whether it succeeded. Safe to call repeatedly: `_ensure_prepared()`
+    is idempotent. On failure the error is surfaced and `False` returned.
+    """
+    try:
+        await persona._ensure_prepared()
+        return True
+    except Exception as exc:
+        await _deliver_persona_error(persona, exc, "while preparing")
+        return False
+
+
 async def _safe_process(persona: "BasePersona", message: Message) -> None:
     """
     Wraps persona.process_message() to catch unhandled exceptions and deliver
@@ -66,26 +102,11 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
     per-message user selections take effect for every persona without each
     `process_message()` implementation having to apply them itself.
     """
-
-    async def _deliver_error(exc: Exception, where: str) -> None:
-        persona.log.error(f"Persona '{persona.name}' raised an exception {where}.")
-        persona.log.exception(exc)
-        try:
-            await persona.handle_uncaught_exception(exc)
-        except Exception:
-            persona.log.exception(
-                f"Persona '{persona.name}' raised a secondary exception in "
-                f"handle_uncaught_exception(); error message not delivered to user."
-            )
-
     # Run the one-time `prepare()` hook in its own error boundary. If it fails,
     # surface the error and skip processing. Keeping this separate from the
     # processing block below ensures a *processing* failure never resets or
     # re-triggers preparation.
-    try:
-        await persona._ensure_prepared()
-    except Exception as exc:
-        await _deliver_error(exc, "while preparing")
+    if not await _safe_prepare(persona):
         return
 
     try:
@@ -93,7 +114,7 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
         with persona.track_processing():
             await persona.process_message(message)
     except Exception as exc:
-        await _deliver_error(exc, "while processing the message")
+        await _deliver_persona_error(persona, exc, "while processing the message")
 
 
 class PersonaManager(LoggingConfigurable):
@@ -222,6 +243,13 @@ class PersonaManager(LoggingConfigurable):
         if self.event_logger is not None:
             self.event_logger.add_listener(
                 schema_id=CHAT_ROOM_EVENT_SCHEMA_ID, listener=self._on_chat_event
+            )
+            # Prepare a persona when a client selects it: the
+            # frontend emits `persona_selected`, this routes it to
+            # `prepare_persona`.
+            self.event_logger.add_listener(
+                schema_id=PERSONA_SELECTED_EVENT_SCHEMA_ID,
+                listener=self._on_persona_selected,
             )
         self._publish_persona_list()
 
@@ -463,6 +491,15 @@ class PersonaManager(LoggingConfigurable):
         for persona in self._personas.values():
             persona.state.publish()
 
+    async def _on_persona_selected(self, logger, schema_id, data) -> None:
+        """Prepare a persona when a client selects it. The event bus
+        is shared across chats, so ignore selections for other chats."""
+        if data.get("chat_id") != self.chat.get_id():
+            return
+        persona_id = data.get("persona_id")
+        if persona_id:
+            self.prepare_persona(persona_id)
+
     @property
     def default_persona(self) -> BasePersona | None:
         if not self.default_persona_id:
@@ -495,6 +532,21 @@ class PersonaManager(LoggingConfigurable):
         )
         if persona:
             self.event_loop.create_task(_safe_process(persona, message))
+
+    def prepare_persona(self, persona_id: str) -> bool:
+        """
+        Eagerly run a persona's `prepare()` because a client selected it, so it
+        publishes its model & settings before the first message.
+
+        Runs in a background task with the same error boundary as message
+        processing; idempotent, so re-selecting is harmless. Returns whether the
+        persona is installed in this chat.
+        """
+        persona = self.personas.get(persona_id)
+        if persona is None:
+            return False
+        self.event_loop.create_task(_safe_prepare(persona))
+        return True
 
     async def refresh_personas(self):
         """

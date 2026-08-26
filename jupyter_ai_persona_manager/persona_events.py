@@ -42,6 +42,9 @@ PERSONAS_EVENT_SCHEMA_ID = (
 PERSONA_STATE_EVENT_SCHEMA_ID = (
     "https://schema.jupyter.org/jupyter_ai_persona_manager/persona_state/v1"
 )
+PERSONA_SELECTED_EVENT_SCHEMA_ID = (
+    "https://schema.jupyter.org/jupyter_ai_persona_manager/persona_selected/v1"
+)
 
 PERSONAS_EVENT_SCHEMA = {
     "$id": PERSONAS_EVENT_SCHEMA_ID,
@@ -81,10 +84,32 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "additionalProperties": False,
 }
 
+PERSONA_SELECTED_EVENT_SCHEMA = {
+    "$id": PERSONA_SELECTED_EVENT_SCHEMA_ID,
+    "version": "1",
+    "title": "Persona selected",
+    "personal-data": True,
+    "description": (
+        "Emitted by a client when a persona is selected in a chat, so the "
+        "server can prepare it eagerly."
+    ),
+    "type": "object",
+    "required": ["chat_id", "persona_id"],
+    "properties": {
+        "chat_id": {"type": "string", "description": "The chat's stable id the selection happened in."},
+        "persona_id": {"type": "string", "description": "The stable id of the selected persona."},
+    },
+    "additionalProperties": False,
+}
+
 
 def register_persona_event_schemas(event_logger: "EventLogger") -> None:
     """Register the persona event schemas on ``event_logger`` (idempotent)."""
-    for schema in (PERSONAS_EVENT_SCHEMA, PERSONA_STATE_EVENT_SCHEMA):
+    for schema in (
+        PERSONAS_EVENT_SCHEMA,
+        PERSONA_STATE_EVENT_SCHEMA,
+        PERSONA_SELECTED_EVENT_SCHEMA,
+    ):
         try:
             event_logger.register_event_schema(schema)
         except Exception:  # pragma: no cover - already registered / defensive
