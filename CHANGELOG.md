@@ -2,6 +2,25 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.0a4
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a3...ca3f75a4f7aec31736908e8a17afe0fcb7c22b02))
+
+### Enhancements made
+
+- Prepare persona upon selection [#144](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/144) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-24&to=2026-08-26&type=c))
+
+@bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-24..2026-08-26&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-24..2026-08-26&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.2.0a3
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a2...439a5241e0b26b06d94db70993bfe869eb3cbdfa))
@@ -26,8 +45,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-20&to=2026-08-24&type=c))
 
 @bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-20..2026-08-24&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-20..2026-08-24&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.2.0a2
 
