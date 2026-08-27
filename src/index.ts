@@ -9,8 +9,6 @@ import {
   InputToolbarRegistry
 } from '@jupyter/chat';
 
-import { IEventListener } from 'jupyterlab-eventlistener';
-
 import { PersonaControls } from './persona-controls';
 import {
   IPersonaControlRegistry,
@@ -51,7 +49,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
 /**
  * Plugin that provides the shared per-chat persona session-state registry,
- * fed by Jupyter Events via `jupyterlab-eventlistener`.
+ * fed by Jupyter Events via the `ServiceManager` event bus.
  */
 const sessionRegistryPlugin: JupyterFrontEndPlugin<PersonaSessionRegistry> = {
   id: '@jupyter-ai/persona-manager:session-registry',
@@ -59,12 +57,8 @@ const sessionRegistryPlugin: JupyterFrontEndPlugin<PersonaSessionRegistry> = {
     'Provides the per-chat persona session-state registry (fed by Jupyter Events).',
   autoStart: true,
   provides: IPersonaSessionRegistry,
-  requires: [IEventListener],
-  activate: (
-    app: JupyterFrontEnd,
-    eventListener: IEventListener
-  ): PersonaSessionRegistry => {
-    return new PersonaSessionRegistry(eventListener);
+  activate: (app: JupyterFrontEnd): PersonaSessionRegistry => {
+    return new PersonaSessionRegistry(app.serviceManager.events);
   }
 };
 

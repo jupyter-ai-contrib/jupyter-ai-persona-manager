@@ -1,6 +1,6 @@
 /**
- * Frontend persona session state, delivered over Jupyter Events (via
- * `jupyterlab-eventlistener`), replacing the previous Yjs-awareness channel.
+ * Frontend persona session state, delivered over Jupyter Events (via the
+ * `ServiceManager` event bus), replacing the previous Yjs-awareness channel.
  *
  * Flow: the server emits `personas` / `persona_state` events (each carrying the
  * chat's stable `chat_id`); the `PersonaSessionRegistry` routes them to the
@@ -12,7 +12,6 @@
  * `PersonaSessionState`).
  */
 import { Event } from '@jupyterlab/services';
-import { IEventListener } from 'jupyterlab-eventlistener';
 import { Token } from '@lumino/coreutils';
 import { IDisposable } from '@lumino/disposable';
 import { ISignal, Signal } from '@lumino/signaling';
@@ -141,15 +140,18 @@ export class PersonaManagerSessionState implements IDisposable {
  * controls and the slash-command provider.
  */
 export class PersonaSessionRegistry {
-  constructor(eventListener: IEventListener) {
-    eventListener.addListener(
-      PERSONAS_EVENT_SCHEMA_ID,
-      this._onPersonasEvent as any
-    );
-    eventListener.addListener(
-      PERSONA_STATE_EVENT_SCHEMA_ID,
-      this._onPersonaStateEvent as any
-    );
+  constructor(events: Event.IManager) {
+    // The ServiceManager event bus (JupyterLab >= 4.0) exposes a single shared
+    // stream of all Jupyter Events; filter it by schema id to route the two
+    // persona event types. This supersedes the former `jupyterlab-eventlistener`
+    // dependency.
+    events.stream.connect((_, emission) => {
+      if (emission.schema_id === PERSONAS_EVENT_SCHEMA_ID) {
+        void this._onPersonasEvent(emission);
+      } else if (emission.schema_id === PERSONA_STATE_EVENT_SCHEMA_ID) {
+        void this._onPersonaStateEvent(emission);
+      }
+    });
   }
 
   /**
@@ -182,11 +184,7 @@ export class PersonaSessionRegistry {
     }
   }
 
-  private _onPersonasEvent = async (
-    _manager: unknown,
-    _schemaId: string,
-    event: Event.Emission
-  ): Promise<void> => {
+  private _onPersonasEvent = async (event: Event.Emission): Promise<void> => {
     const data = event as PersonasPayload;
     if (!data.chat_id) {
       return;
@@ -197,8 +195,6 @@ export class PersonaSessionRegistry {
   };
 
   private _onPersonaStateEvent = async (
-    _manager: unknown,
-    _schemaId: string,
     event: Event.Emission
   ): Promise<void> => {
     const data = event as PersonaStatePayload;
