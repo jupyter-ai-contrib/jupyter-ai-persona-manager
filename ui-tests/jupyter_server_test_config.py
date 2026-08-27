@@ -49,3 +49,22 @@ os.environ["JUPYTER_AI_ACP_CLIENT_E2E_TESTING_ONLY"] = "1"
 os.environ["JAI_TEST_ASSETS_DIR"] = str(
     Path(__file__).parent.resolve() / "fixtures" / "assets"
 )
+
+# The `mcp-integration` suite (nox env `mcp`, JAI_E2E_SUITE=mcp) runs a real
+# FastMCP server as the built-in MCP server and verifies the identity headers
+# reach it. Enable that test-only server extension and point the built-in MCP
+# server at it. Other suites leave both untouched.
+if os.environ.get("JAI_E2E_SUITE") == "mcp":
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent.resolve()))
+    c.ServerApp.jpserver_extensions.update({"mcp_probe_ext": True})
+    _probe_port = int(os.environ.get("JAI_MCP_PROBE_PORT", "3999"))
+    c.PersonaManager.builtin_mcp_servers = [
+        {
+            "type": "http",
+            "name": "Jupyter MCP Server",
+            "url": f"http://127.0.0.1:{_probe_port}/mcp",
+            "headers": [],
+        }
+    ]

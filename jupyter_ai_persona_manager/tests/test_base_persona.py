@@ -313,7 +313,7 @@ class TestMcpIdentityHeaders:
         assert headers["X-Jupyter-Chat-Id"] == "chat-XYZ"
         assert headers["X-JupyterAI-Persona-Id"] == expected_persona_id
 
-    def test_does_not_stamp_user_defined_servers(self, mock_ychat):
+    def test_stamps_all_http_servers_preserving_existing(self, mock_ychat):
         settings = McpSettings(
             mcp_servers=[
                 McpServerHttp(
@@ -332,12 +332,15 @@ class TestMcpIdentityHeaders:
 
         with patch.object(type(persona), "parent", parent):
             result = persona.get_mcp_settings()
+            expected_persona_id = persona.id
 
         third = next(s for s in result.mcp_servers if s.url == THIRD_PARTY_URL)
-        names = {h.name for h in third.headers}
-        assert "X-Jupyter-Chat-Id" not in names
-        assert "X-JupyterAI-Persona-Id" not in names
-        assert "X-Existing" in names  # existing headers untouched
+        headers = {h.name: h.value for h in third.headers}
+        # Identity headers are added to every HTTP server ...
+        assert headers["X-Jupyter-Chat-Id"] == "chat-XYZ"
+        assert headers["X-JupyterAI-Persona-Id"] == expected_persona_id
+        # ... without dropping headers the server already had.
+        assert headers["X-Existing"] == "keep"
 
     def test_returns_none_when_no_servers(self, mock_ychat):
         persona, parent = _persona_with_parent(mock_ychat, None)

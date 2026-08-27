@@ -123,7 +123,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     Automatically set by `BasePersona`.
     """
 
-    _processing_count: int = 0
+    _processing_count: int
     """
     Number of `process_message()` calls currently in flight (0 or 1). A persona
     processes messages **serially** — at most one at a time — so it never replies
@@ -131,7 +131,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     Exposed read-only via the `processing` property.
     """
 
-    _processing_message: "Message | None" = None
+    _processing_message: "Message | None"
     """
     The message this persona is currently processing, or `None` when idle. Bound
     for the duration of `process_message()` by `track_processing` and exposed
@@ -139,7 +139,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     frontend command back to the web client that triggered it.
     """
 
-    _processing_lock: "asyncio.Lock | None" = None
+    _processing_lock: "asyncio.Lock | None"
     """
     Per-instance lock that serializes `process_message()` calls. Created lazily
     on the running event loop the first time the persona processes a message.
@@ -561,12 +561,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         Returns the MCP config for the current chat.
 
-        The built-in Jupyter MCP server is additionally stamped with this
-        persona's identity headers (`X-Jupyter-Chat-Id`, `X-JupyterAI-Persona-Id`)
-        so that `jupyter-server-mcp` can route a tool call's frontend command back
-        to the web client that triggered it. See jupyterlab/jupyter-ai#1650. Only
-        the built-in Jupyter server is stamped; user-defined MCP servers never
-        receive the identity headers.
+        Every HTTP MCP server is additionally stamped with this persona's
+        identity headers (`X-Jupyter-Chat-Id`, `X-JupyterAI-Persona-Id`) so that
+        `jupyter-server-mcp` — or any MCP server that cares — can route a tool
+        call's frontend command back to the web client that triggered it. See
+        jupyterlab/jupyter-ai#1650. Servers that don't recognize the headers
+        ignore them.
         """
         settings = self.parent.get_mcp_settings()
         if settings is None:
@@ -575,24 +575,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
     def _inject_identity_headers(self, settings: "McpSettings") -> "McpSettings":
         """Return a copy of `settings` with this persona's identity headers added
-        to the built-in Jupyter MCP server(s), matched by URL."""
-        builtin_urls = {
-            entry.get("url")
-            for entry in (self.parent.builtin_mcp_servers or [])
-            if isinstance(entry, dict)
-            and entry.get("type") == "http"
-            and entry.get("url")
-        }
-        if not builtin_urls:
-            return settings
-
+        to every HTTP MCP server."""
         identity = {
             "X-Jupyter-Chat-Id": self.parent.chat.get_id(),
             "X-JupyterAI-Persona-Id": self.id,
         }
         servers = []
         for server in settings.mcp_servers:
-            if isinstance(server, McpServerHttp) and server.url in builtin_urls:
+            if isinstance(server, McpServerHttp):
                 existing = {header.name for header in server.headers}
                 merged = list(server.headers) + [
                     HttpHeader(name=name, value=value)

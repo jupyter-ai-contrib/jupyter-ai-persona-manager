@@ -523,6 +523,8 @@ def _make_manager_and_persona():
     persona.log = logging.getLogger("test-persona")
     persona.state = MagicMock()
     persona._processing_count = 0
+    persona._processing_message = None
+    persona._processing_lock = None
     persona._prepare_task = None
     persona.prepare_calls = 0
     persona.process_calls = 0

@@ -42,6 +42,9 @@ _ENVS = {
     "default": [],
     "jcollab": ["jupyter_collaboration>=4,<5"],
     "jsd": ["jupyter_server_documents"],
+    # The mcp-integration suite: a real FastMCP server stands in for the
+    # built-in Jupyter MCP server so we can verify the identity headers reach it.
+    "mcp": ["fastmcp>=3", "mcp"],
 }
 
 
@@ -57,6 +60,10 @@ def e2e(session: nox.Session, env: str) -> None:
     # sync rather than a WebSocket connection frame, which changes the timing
     # some tests depend on (e.g. slow-load's loading-placeholder window).
     session.env["E2E_RTC"] = "1" if env in ("jcollab", "jsd") else "0"
+    # The `mcp` env runs only the mcp-integration suite (playwright.config.js
+    # routes testDir on this); the others skip it.
+    if env == "mcp":
+        session.env["JAI_E2E_SUITE"] = "mcp"
     with session.chdir("ui-tests"):
         session.run("jlpm", "install", external=True)
         session.run("jlpm", "playwright", "install", "chromium", external=True)
