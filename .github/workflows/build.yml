@@ -109,9 +109,10 @@ jobs:
       fail-fast: false
       matrix:
         # Renders as "E2E tests (default)", "E2E tests (+JCollab)",
-        # "E2E tests (+JSD)". Each variant maps to a nox session below that
-        # installs the matching transport into an isolated venv.
-        variant: [default, +JCollab, +JSD]
+        # "E2E tests (+JSD)", "E2E tests (MCP integration)". Each variant maps to
+        # a nox session below that installs the matching deps into an isolated
+        # venv.
+        variant: [default, +JCollab, +JSD, MCP integration]
 
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
@@ -164,6 +165,7 @@ jobs:
           default)  SESSION="e2e(env='default')" ;;
           +JCollab) SESSION="e2e(env='jcollab')" ;;
           +JSD)     SESSION="e2e(env='jsd')" ;;
+          "MCP integration") SESSION="e2e(env='mcp')" ;;
           *) echo "unknown variant: ${{ matrix.variant }}" >&2; exit 1 ;;
         esac
         export E2E_WHEEL="$(pwd)/$(ls jupyter_ai_persona_manager*.whl)"

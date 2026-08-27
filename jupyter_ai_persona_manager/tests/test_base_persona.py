@@ -1,10 +1,16 @@
 """Tests for BasePersona.handle_uncaught_exception() and stream_message() re-raise."""
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 
 from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
+from jupyter_ai_persona_manager.mcp_server_models import (
+    HttpHeader,
+    McpServerHttp,
+    McpSettings,
+)
 
 
 @pytest.fixture
@@ -45,6 +51,8 @@ def _make_persona(mock_ychat):
     persona.log = MagicMock()
     persona.state = MagicMock()
     persona._processing_count = 0
+    persona._processing_message = None
+    persona._processing_lock = None
     return persona
 
 
@@ -212,26 +220,131 @@ class TestProcessing:
     def test_not_processing_by_default(self, mock_ychat):
         persona = _make_persona(mock_ychat)
         assert persona.processing is False
+        assert persona.processing_message is None
 
-    def test_track_processing_toggles_flag(self, mock_ychat):
+    @pytest.mark.asyncio
+    async def test_track_processing_sets_message_and_flag(self, mock_ychat):
         persona = _make_persona(mock_ychat)
-        with persona.track_processing():
+        message = object()
+        async with persona.track_processing(message):
             assert persona.processing is True
+            assert persona.processing_message is message
         assert persona.processing is False
+        assert persona.processing_message is None
 
-    def test_track_processing_is_reentrant(self, mock_ychat):
-        # Concurrent messages: the count, not a bool, keeps `processing` true
-        # until the last one finishes.
+    @pytest.mark.asyncio
+    async def test_track_processing_serializes(self, mock_ychat):
+        # Processing is serial: two concurrent messages never overlap, so a
+        # persona replies to at most one web client at a time.
         persona = _make_persona(mock_ychat)
-        with persona.track_processing():
-            with persona.track_processing():
-                assert persona.processing is True
-            assert persona.processing is True
+        events: list[tuple[str, str]] = []
+
+        async def worker(tag: str, message: object) -> None:
+            async with persona.track_processing(message):
+                events.append(("enter", tag))
+                assert persona.processing_message is message
+                await asyncio.sleep(0.05)
+                events.append(("exit", tag))
+
+        await asyncio.gather(worker("a", object()), worker("b", object()))
+
+        # Each enter is immediately followed by its own exit (no interleaving).
+        assert events in (
+            [("enter", "a"), ("exit", "a"), ("enter", "b"), ("exit", "b")],
+            [("enter", "b"), ("exit", "b"), ("enter", "a"), ("exit", "a")],
+        )
         assert persona.processing is False
+        assert persona.processing_message is None
 
-    def test_track_processing_restores_on_exception(self, mock_ychat):
+    @pytest.mark.asyncio
+    async def test_track_processing_restores_on_exception(self, mock_ychat):
         persona = _make_persona(mock_ychat)
-        with pytest.raises(ValueError):
-            with persona.track_processing():
+        with pytest.raises(ValueError, match="boom"):
+            async with persona.track_processing(object()):
                 raise ValueError("boom")
         assert persona.processing is False
+        assert persona.processing_message is None
+
+
+# ---------------------------------------------------------------------------
+# TestMcpIdentityHeaders
+# ---------------------------------------------------------------------------
+
+BUILTIN_URL = "http://localhost:3001/mcp"
+THIRD_PARTY_URL = "http://example.com/mcp"
+
+
+def _persona_with_parent(mock_ychat, mcp_settings):
+    """A persona whose parent PersonaManager returns ``mcp_settings`` and
+    advertises the built-in Jupyter MCP server."""
+    persona = _make_persona(mock_ychat)
+    parent = MagicMock()
+    parent.builtin_mcp_servers = [
+        {
+            "type": "http",
+            "name": "Jupyter MCP Server",
+            "url": BUILTIN_URL,
+            "headers": [],
+        }
+    ]
+    parent.chat.get_id.return_value = "chat-XYZ"
+    parent.get_mcp_settings.return_value = mcp_settings
+    return persona, parent
+
+
+class TestMcpIdentityHeaders:
+    def test_stamps_identity_headers_on_builtin_server(self, mock_ychat):
+        settings = McpSettings(
+            mcp_servers=[
+                McpServerHttp(
+                    type="http", name="Jupyter MCP Server", url=BUILTIN_URL, headers=[]
+                )
+            ]
+        )
+        persona, parent = _persona_with_parent(mock_ychat, settings)
+        from unittest.mock import patch
+
+        with patch.object(type(persona), "parent", parent):
+            result = persona.get_mcp_settings()
+            expected_persona_id = persona.id
+
+        builtin = next(s for s in result.mcp_servers if s.url == BUILTIN_URL)
+        headers = {h.name: h.value for h in builtin.headers}
+        assert headers["X-Jupyter-Chat-Id"] == "chat-XYZ"
+        assert headers["X-JupyterAI-Persona-Id"] == expected_persona_id
+
+    def test_stamps_all_http_servers_preserving_existing(self, mock_ychat):
+        settings = McpSettings(
+            mcp_servers=[
+                McpServerHttp(
+                    type="http", name="Jupyter MCP Server", url=BUILTIN_URL, headers=[]
+                ),
+                McpServerHttp(
+                    type="http",
+                    name="Third Party",
+                    url=THIRD_PARTY_URL,
+                    headers=[HttpHeader(name="X-Existing", value="keep")],
+                ),
+            ]
+        )
+        persona, parent = _persona_with_parent(mock_ychat, settings)
+        from unittest.mock import patch
+
+        with patch.object(type(persona), "parent", parent):
+            result = persona.get_mcp_settings()
+            expected_persona_id = persona.id
+
+        third = next(s for s in result.mcp_servers if s.url == THIRD_PARTY_URL)
+        headers = {h.name: h.value for h in third.headers}
+        # Identity headers are added to every HTTP server ...
+        assert headers["X-Jupyter-Chat-Id"] == "chat-XYZ"
+        assert headers["X-JupyterAI-Persona-Id"] == expected_persona_id
+        # ... without dropping headers the server already had.
+        assert headers["X-Existing"] == "keep"
+
+    def test_returns_none_when_no_servers(self, mock_ychat):
+        persona, parent = _persona_with_parent(mock_ychat, None)
+        from unittest.mock import patch
+
+        with patch.object(type(persona), "parent", parent):
+            assert persona.get_mcp_settings() is None

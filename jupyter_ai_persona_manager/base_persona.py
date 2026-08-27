@@ -30,6 +30,7 @@ from .doc_markers import (
     mark_required,
     mark_subclass_api,
 )
+from .mcp_server_models import HttpHeader, McpServerHttp, McpSettings
 from .persona_events import PersonaSessionState
 
 # prevents a circular import
@@ -37,7 +38,6 @@ from .persona_events import PersonaSessionState
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from jupyterlab_chat.models import BaseChatModel
-    from .mcp_server_models import McpSettings
     from .persona_manager import PersonaManager
 
 
@@ -125,10 +125,24 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
     _processing_count: int
     """
-    Number of messages this persona is currently processing. Incremented while a
-    `process_message()` call is in flight and decremented when it finishes (see
-    `track_processing`). A count because a persona can process several messages
-    concurrently. Exposed read-only via the `processing` property.
+    Number of `process_message()` calls currently in flight (0 or 1). A persona
+    processes messages **serially** — at most one at a time — so it never replies
+    to more than one web client's message concurrently (see `track_processing`).
+    Exposed read-only via the `processing` property.
+    """
+
+    _processing_message: "Message | None"
+    """
+    The message this persona is currently processing, or `None` when idle. Bound
+    for the duration of `process_message()` by `track_processing` and exposed
+    read-only via the `processing_message` property. Used to route a tool call's
+    frontend command back to the web client that triggered it.
+    """
+
+    _processing_lock: "asyncio.Lock | None"
+    """
+    Per-instance lock that serializes `process_message()` calls. Created lazily
+    on the running event loop the first time the persona processes a message.
     """
 
     ################################################
@@ -146,6 +160,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         # Bind arguments to instance attributes
         self.chat = chat
         self._processing_count = 0
+        self._processing_message = None
+        self._processing_lock = None
 
         self._prepare_task: Optional[asyncio.Task] = None
 
@@ -266,20 +282,40 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         return self._processing_count > 0
 
     @mark_consumer_api
-    @contextlib.contextmanager
-    def track_processing(self):
+    @property
+    def processing_message(self) -> "Message | None":
         """
-        Context manager that marks this persona as processing for its duration,
-        so `processing` reflects an in-flight response. `PersonaManager` wraps
-        each `process_message()` call in this; the count is restored even if the
-        call raises. A count (not a bool) because a persona may process several
-        messages concurrently.
+        The message this persona is currently processing, or `None` when idle.
+
+        A persona processes at most one message at a time, so this unambiguously
+        identifies the in-flight request — and, via `message.metadata`, the web
+        client that sent it.
         """
-        self._processing_count += 1
-        try:
-            yield
-        finally:
-            self._processing_count -= 1
+        return self._processing_message
+
+    @mark_consumer_api
+    @contextlib.asynccontextmanager
+    async def track_processing(self, message: "Message"):
+        """
+        Async context manager that marks this persona as processing `message`
+        for its duration. `PersonaManager` wraps each `process_message()` call in
+        this; the state is restored even if the call raises.
+
+        Processing is **serialized**: the persona acquires a per-instance lock, so
+        it handles at most one message at a time. A second message waits here
+        until the first finishes, guaranteeing the persona never replies to more
+        than one web client concurrently.
+        """
+        if self._processing_lock is None:
+            self._processing_lock = asyncio.Lock()
+        async with self._processing_lock:
+            self._processing_count += 1
+            self._processing_message = message
+            try:
+                yield
+            finally:
+                self._processing_count -= 1
+                self._processing_message = None
 
     ################################################
     # base class methods, available to subclasses.
@@ -524,8 +560,39 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
     def get_mcp_settings(self) -> "McpSettings | None":
         """
         Returns the MCP config for the current chat.
+
+        Every HTTP MCP server is additionally stamped with this persona's
+        identity headers (`X-Jupyter-Chat-Id`, `X-JupyterAI-Persona-Id`) so that
+        `jupyter-server-mcp` — or any MCP server that cares — can route a tool
+        call's frontend command back to the web client that triggered it. See
+        jupyterlab/jupyter-ai#1650. Servers that don't recognize the headers
+        ignore them.
         """
-        return self.parent.get_mcp_settings()
+        settings = self.parent.get_mcp_settings()
+        if settings is None:
+            return None
+        return self._inject_identity_headers(settings)
+
+    def _inject_identity_headers(self, settings: "McpSettings") -> "McpSettings":
+        """Return a copy of `settings` with this persona's identity headers added
+        to every HTTP MCP server."""
+        identity = {
+            "X-Jupyter-Chat-Id": self.parent.chat.get_id(),
+            "X-JupyterAI-Persona-Id": self.id,
+        }
+        servers = []
+        for server in settings.mcp_servers:
+            if isinstance(server, McpServerHttp):
+                existing = {header.name for header in server.headers}
+                merged = list(server.headers) + [
+                    HttpHeader(name=name, value=value)
+                    for name, value in identity.items()
+                    if name not in existing
+                ]
+                servers.append(server.model_copy(update={"headers": merged}))
+            else:
+                servers.append(server)
+        return McpSettings(mcp_servers=servers)
 
     ################################################
     # reading session information

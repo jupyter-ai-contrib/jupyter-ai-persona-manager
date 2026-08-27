@@ -18,8 +18,21 @@ if (!process.env.JAI_TEST_PORT) {
 }
 const PORT = Number(process.env.JAI_TEST_PORT);
 
+// The `mcp-integration` suite (nox env `mcp`) runs a real FastMCP server as the
+// built-in MCP server on this port and verifies the identity headers reach it.
+if (!process.env.JAI_MCP_PROBE_PORT) {
+  process.env.JAI_MCP_PROBE_PORT = String(PORT + 200);
+}
+const SUITE = process.env.JAI_E2E_SUITE;
+
 module.exports = {
   ...baseConfig,
+  // Route to the suite under test: the `mcp` env runs only the MCP-integration
+  // suite; every other env runs the rest and skips it (its fixture persona and
+  // server extension need fastmcp/mcp, present only in the `mcp` env).
+  ...(SUITE === 'mcp'
+    ? { testDir: 'tests/mcp-integration' }
+    : { testIgnore: '**/mcp-integration/**' }),
   use: { ...(baseConfig.use || {}), baseURL: `http://localhost:${PORT}` },
   webServer: {
     // MCP port offset from the HTTP port so it doesn't collide with a default
@@ -27,6 +40,13 @@ module.exports = {
     command: `jlpm start --ServerApp.port=${PORT} --MCPExtensionApp.mcp_port=${PORT + 100}`,
     url: `http://localhost:${PORT}/lab`,
     timeout: 120 * 1000,
+    // Forward the suite + probe port to the server process so the config can
+    // enable the FastMCP probe and point the built-in MCP server at it.
+    env: {
+      ...process.env,
+      JAI_MCP_PROBE_PORT: process.env.JAI_MCP_PROBE_PORT,
+      ...(SUITE ? { JAI_E2E_SUITE: SUITE } : {})
+    },
     // Never reuse an already-running server: reusing an unrelated dev server
     // would leave the E2E persona-disabling config unapplied. Free the port
     // before running locally.

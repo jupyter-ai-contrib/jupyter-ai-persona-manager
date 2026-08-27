@@ -48,7 +48,8 @@ export enum FixturePersona {
   BrokenInit = 'broken-init',
   SlowLoad = 'slow-load',
   SystemMessage = 'system-message',
-  Status = 'status'
+  Status = 'status',
+  McpProbe = 'mcp-probe'
 }
 
 interface FixturePersonaInfo {
@@ -74,7 +75,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.BrokenInit]: { name: 'Broken Init Persona' },
   [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
   [FixturePersona.SystemMessage]: { name: 'System Message Persona' },
-  [FixturePersona.Status]: { name: 'Status Persona' }
+  [FixturePersona.Status]: { name: 'Status Persona' },
+  [FixturePersona.McpProbe]: { name: 'MCP Probe Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';

@@ -111,7 +111,7 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
 
     try:
         await persona.apply_specs_in_message(message)
-        with persona.track_processing():
+        async with persona.track_processing(message):
             await persona.process_message(message)
     except Exception as exc:
         await _deliver_persona_error(persona, exc, "while processing the message")
