@@ -49,7 +49,8 @@ export enum FixturePersona {
   SlowLoad = 'slow-load',
   SystemMessage = 'system-message',
   Status = 'status',
-  McpProbe = 'mcp-probe'
+  McpProbe = 'mcp-probe',
+  MetadataEcho = 'metadata-echo'
 }
 
 interface FixturePersonaInfo {
@@ -76,7 +77,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.SlowLoad]: { name: 'Slow Load Persona' },
   [FixturePersona.SystemMessage]: { name: 'System Message Persona' },
   [FixturePersona.Status]: { name: 'Status Persona' },
-  [FixturePersona.McpProbe]: { name: 'MCP Probe Persona' }
+  [FixturePersona.McpProbe]: { name: 'MCP Probe Persona' },
+  [FixturePersona.MetadataEcho]: { name: 'Metadata Echo Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
@@ -216,6 +218,24 @@ export class TestHelpers {
     await this.personaPicker.click();
     await this.page.getByRole('menuitem', { name: 'No one' }).click();
     await expect(this.personaPicker).toContainText('No one');
+  }
+
+  /**
+   * Stamp metadata onto the active chat's input model, simulating another
+   * JupyterLab extension contributing keys to the outgoing message — e.g.
+   * jupyterlab-commands-toolkit stamps a `web_client_id` here. Uses the same
+   * public `input.updateMetadata` API the persona controls use, so it exercises
+   * the real shared-metadata path rather than a test-only shortcut.
+   */
+  async stampInputMetadata(patch: Record<string, unknown>): Promise<void> {
+    await this.page.evaluate(p => {
+      const widget = window.jupyterapp.shell.currentWidget as unknown as {
+        model: {
+          input: { updateMetadata: (patch: Record<string, unknown>) => void };
+        };
+      };
+      widget.model.input.updateMetadata(p);
+    }, patch);
   }
 
   /** Wait for the selected persona's session controls to render. */

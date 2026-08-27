@@ -1208,9 +1208,18 @@ export function PersonaControls(
   // Stamp the current persona + its settings onto the input model's metadata,
   // so it rides out with the next message and the PersonaManager routes and
   // applies it. Keyed on a signature so we only write when it changes.
+  //
+  // This merges (updateMetadata), and deliberately does not clear first: the
+  // input's metadata map is shared with any other extension that stamps its own
+  // keys onto outgoing messages. For example, jupyterlab-commands-toolkit stamps
+  // a `web_client_id` there so an AI persona can route frontend commands back to
+  // the specific web client that triggered them. A clearMetadata() here would
+  // wipe those foreign keys. Since buildMessageMetadata always emits the same
+  // keys for a given selection, the merge fully overwrites our own previous
+  // values on each change; the only residue is switching a real persona back to
+  // "No one", which leaves an inert model/settings that no persona reads.
   const metadataSignature = JSON.stringify({ selectedId, settings });
   useEffect(() => {
-    model.clearMetadata();
     model.updateMetadata(buildMessageMetadata(selectedId, settings));
   }, [model, metadataSignature]);
 
