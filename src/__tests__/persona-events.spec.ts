@@ -3,7 +3,8 @@
  * per-chat routing, the `changed` signal, and discarding a chat's state when it
  * closes.
  */
-import { IEventListener } from 'jupyterlab-eventlistener';
+import { Event } from '@jupyterlab/services';
+import { Signal } from '@lumino/signaling';
 
 import {
   PERSONAS_EVENT_SCHEMA_ID,
@@ -11,31 +12,26 @@ import {
   PersonaSessionRegistry
 } from '../persona-events';
 
-type Listener = (m: unknown, s: string, e: any) => Promise<void>;
+/**
+ * A stand-in for the ServiceManager event bus (`Event.IManager`) that lets
+ * tests push events onto the shared stream the registry subscribes to.
+ */
+class FakeEventManager {
+  readonly stream = new Signal<this, Event.Emission>(this);
 
-/** A stand-in for IEventListener that lets tests emit events to listeners. */
-class FakeEventListener {
-  private _bySchema = new Map<string, Listener[]>();
-
-  addListener(schemaId: string, listener: Listener): void {
-    const list = this._bySchema.get(schemaId) ?? [];
-    list.push(listener);
-    this._bySchema.set(schemaId, list);
-  }
+  /** Push an event onto the stream, mirroring the jupyter_server event bus. */
   async emit(schemaId: string, data: any): Promise<void> {
-    for (const l of this._bySchema.get(schemaId) ?? []) {
-      await l(null, schemaId, data);
-    }
+    this.stream.emit({ schema_id: schemaId, ...data });
   }
 }
 
 function makeRegistry(): {
   registry: PersonaSessionRegistry;
-  events: FakeEventListener;
+  events: FakeEventManager;
 } {
-  const events = new FakeEventListener();
+  const events = new FakeEventManager();
   const registry = new PersonaSessionRegistry(
-    events as unknown as IEventListener
+    events as unknown as Event.IManager
   );
   return { registry, events };
 }
