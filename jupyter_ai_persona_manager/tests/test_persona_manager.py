@@ -19,6 +19,7 @@ from jupyter_ai_persona_manager.persona_manager import (
     SYSTEM_USERNAME,
     PersonaManager,
     PersonaRequirementsUnmet,
+    _keep_chat_alive,
     _safe_prepare,
     _safe_process,
     find_persona_files,
@@ -26,6 +27,7 @@ from jupyter_ai_persona_manager.persona_manager import (
     load_from_dir,
     persona_load_error_label,
 )
+from jupyterlab_chat.websocket_model import WsChatModel
 
 
 @pytest.fixture
@@ -410,6 +412,61 @@ class TestSafeProcess:
         await _safe_process(persona, message)
 
         persona.handle_uncaught_exception.assert_not_called()
+
+
+class TestKeepChatAlive:
+    """`_safe_process` must hold a WsChatModel alive while processing, so a chat
+    is not freed if the user disconnects mid-reply -- but only for WsChatModel;
+    under RTC memory is managed elsewhere."""
+
+    def test_helper_selects_context_by_chat_type(self, tmp_path):
+        ws = WsChatModel(path="k.chat", root_dir=tmp_path)
+        with _keep_chat_alive(ws):
+            assert ws.is_kept_alive is True
+        assert ws.is_kept_alive is False
+
+        # A non-WsChatModel chat (e.g. YChat under RTC) is left untouched.
+        other = MagicMock()
+        with _keep_chat_alive(other):
+            pass
+        other.keep_alive.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ws_chat_is_kept_alive_during_processing(self, tmp_path):
+        persona = _make_mock_persona()
+        persona.chat = WsChatModel(path="k.chat", root_dir=tmp_path)
+
+        observed = {}
+
+        async def _process(_message):
+            observed["kept_alive"] = persona.chat.is_kept_alive
+
+        persona.process_message.side_effect = _process
+
+        await _safe_process(persona, _make_mock_message())
+
+        assert observed["kept_alive"] is True  # held for the whole reply
+        assert persona.chat.is_kept_alive is False  # released afterward
+
+    @pytest.mark.asyncio
+    async def test_keep_alive_released_even_when_processing_fails(self, tmp_path):
+        persona = _make_mock_persona()
+        persona.chat = WsChatModel(path="k.chat", root_dir=tmp_path)
+        persona.process_message.side_effect = RuntimeError("boom")
+
+        await _safe_process(persona, _make_mock_message())
+
+        assert persona.chat.is_kept_alive is False
+
+    @pytest.mark.asyncio
+    async def test_non_ws_chat_is_not_kept_alive(self):
+        persona = _make_mock_persona()
+        persona.chat = MagicMock()  # not a WsChatModel
+
+        await _safe_process(persona, _make_mock_message())
+
+        persona.chat.keep_alive.assert_not_called()
+        persona.process_message.assert_awaited_once()
 
 
 class TestSafePrepare:

@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import traceback
+from contextlib import nullcontext
 from glob import glob
 from logging import Logger
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
+from jupyterlab_chat.websocket_model import WsChatModel
 from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
@@ -92,6 +94,23 @@ async def _safe_prepare(persona: "BasePersona") -> bool:
         return False
 
 
+def _keep_chat_alive(chat: "BaseChatModel"):
+    """Pin the chat in memory while a persona processes a message.
+
+    A WebSocket-backed chat (``WsChatModel``) is freed once its last client
+    disconnects, which would orphan a persona still producing a reply after the
+    user closes the tab. Holding ``keep_alive()`` for the duration of processing
+    keeps the model alive until the reply is done.
+
+    Only applies to ``WsChatModel``: under real-time collaboration the chat's
+    memory is managed by jupyter-collaboration at a higher layer (and ``YChat``
+    has no ``keep_alive``), so this is a no-op there.
+    """
+    if isinstance(chat, WsChatModel):
+        return chat.keep_alive()
+    return nullcontext()
+
+
 async def _safe_process(persona: "BasePersona", message: Message) -> None:
     """
     Wraps persona.process_message() to catch unhandled exceptions and deliver
@@ -111,8 +130,11 @@ async def _safe_process(persona: "BasePersona", message: Message) -> None:
 
     try:
         await persona.apply_specs_in_message(message)
-        async with persona.track_processing(message):
-            await persona.process_message(message)
+        # Keep a WebSocket-backed chat alive for the whole reply, so it is not
+        # freed if the user disconnects mid-response (no-op under RTC).
+        with _keep_chat_alive(persona.chat):
+            async with persona.track_processing(message):
+                await persona.process_message(message)
     except Exception as exc:
         await _deliver_persona_error(persona, exc, "while processing the message")
 
