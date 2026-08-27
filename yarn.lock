@@ -2188,7 +2188,7 @@ __metadata:
     "@jupyterlab/application": ^4.0.0
     "@jupyterlab/builder": ^4.0.0
     "@jupyterlab/coreutils": ^6.0.0
-    "@jupyterlab/services": ^7.4.0
+    "@jupyterlab/services": ^7.0.0
     "@jupyterlab/testutils": ^4.0.0
     "@testing-library/dom": ^10.4.0
     "@testing-library/react": ^16.3.0
@@ -3295,7 +3295,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/services@npm:^7.4.0, @jupyterlab/services@npm:^7.6.3":
+"@jupyterlab/services@npm:^7.0.0, @jupyterlab/services@npm:^7.6.3":
   version: 7.6.3
   resolution: "@jupyterlab/services@npm:7.6.3"
   dependencies:

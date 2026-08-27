@@ -141,7 +141,7 @@ export class PersonaManagerSessionState implements IDisposable {
  */
 export class PersonaSessionRegistry {
   constructor(events: Event.IManager) {
-    // The ServiceManager event bus (JupyterLab >= 4.4) exposes a single shared
+    // The ServiceManager event bus (JupyterLab >= 4.0) exposes a single shared
     // stream of all Jupyter Events; filter it by schema id to route the two
     // persona event types. This supersedes the former `jupyterlab-eventlistener`
     // dependency.
