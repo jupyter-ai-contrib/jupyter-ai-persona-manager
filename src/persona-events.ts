@@ -41,6 +41,7 @@ type PersonaStatePayload = {
   settings?: SettingConfiguration[];
   usage?: Usage;
   slash_commands?: CommandOption[];
+  processing?: boolean;
 };
 
 /** The wire shape of a `personas` event. */
@@ -63,12 +64,15 @@ export class PersonaSessionState {
     this.settings = payload.settings ?? [];
     this.usage = { ...EMPTY_USAGE, ...(payload.usage ?? {}) };
     this.slash_commands = payload.slash_commands ?? [];
+    this.processing = payload.processing ?? false;
   }
 
   readonly model: ModelConfiguration;
   readonly settings: SettingConfiguration[];
   readonly usage: Usage;
   readonly slash_commands: CommandOption[];
+  /** Whether the persona is currently processing a message. */
+  readonly processing: boolean;
 }
 
 /**
@@ -97,6 +101,20 @@ export class PersonaManagerSessionState implements IDisposable {
   /** A persona's session state, or undefined if it has not published yet. */
   getPersona(id: string): PersonaSessionState | undefined {
     return this._states.get(id);
+  }
+
+  /**
+   * Whether any persona in this chat is currently processing a message. The
+   * stop button uses this to enable itself, since a persona can be processing
+   * (thinking, running tools, awaiting an agent turn) without actively writing.
+   */
+  get processing(): boolean {
+    for (const state of this._states.values()) {
+      if (state.processing) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Apply a `personas` event payload. */

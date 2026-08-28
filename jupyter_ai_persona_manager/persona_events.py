@@ -70,7 +70,10 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "version": "1",
     "title": "Persona session state",
     "personal-data": True,
-    "description": "A single persona's model, settings, usage, and slash commands.",
+    "description": (
+        "A single persona's model, settings, usage, slash commands, and "
+        "whether it is currently processing a message."
+    ),
     "type": "object",
     "required": ["chat_id", "persona_id"],
     "properties": {
@@ -80,6 +83,13 @@ PERSONA_STATE_EVENT_SCHEMA = {
         "settings": {"type": "array", "items": {"type": "object"}},
         "usage": {"type": "object"},
         "slash_commands": {"type": "array", "items": {"type": "object"}},
+        "processing": {
+            "type": "boolean",
+            "description": (
+                "Whether the persona is currently processing a message. The "
+                "frontend uses this to enable the stop button."
+            ),
+        },
     },
     "additionalProperties": False,
 }
@@ -187,6 +197,7 @@ class PersonaSessionState:
         self._settings: list[SettingConfiguration] = []
         self._usage = Usage()
         self._slash_commands: list[CommandOption] = []
+        self._processing = False
 
     @property
     def id(self) -> str:
@@ -228,6 +239,19 @@ class PersonaSessionState:
         self._slash_commands = commands
         self.publish()
 
+    @property
+    def processing(self) -> bool:
+        return self._processing
+
+    @processing.setter
+    def processing(self, processing: bool) -> None:
+        # Only publish on an actual transition, so repeated no-op assignments
+        # (e.g. from serialized message processing) don't emit redundant events.
+        if self._processing == processing:
+            return
+        self._processing = processing
+        self.publish()
+
     def to_data(self) -> dict[str, Any]:
         return {
             "chat_id": self._chat_id,
@@ -236,6 +260,7 @@ class PersonaSessionState:
             "settings": [s.model_dump() for s in self._settings],
             "usage": self._usage.model_dump(),
             "slash_commands": [c.model_dump() for c in self._slash_commands],
+            "processing": self._processing,
         }
 
     def publish(self) -> None:

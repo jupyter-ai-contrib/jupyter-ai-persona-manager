@@ -406,8 +406,8 @@ export class TestHelpers {
   }
 
   /**
-   * Wait until an AI persona is actively writing — the stop button becomes
-   * enabled. Returns once the persona is streaming.
+   * Wait until an AI persona is processing a message — the stop button becomes
+   * enabled. Returns once the persona has started processing.
    */
   async waitForWriting(): Promise<void> {
     await expect(this.stopButton).toBeEnabled({ timeout: TIMEOUT });
@@ -419,8 +419,8 @@ export class TestHelpers {
   }
 
   /**
-   * Wait until no AI persona is writing — the stop button is disabled again.
-   * This is the awareness-driven signal that the persona stopped streaming.
+   * Wait until no AI persona is processing — the stop button is disabled again.
+   * This is the processing-state signal that the persona finished its response.
    */
   async waitForNotWriting(): Promise<void> {
     await expect(this.stopButton).toBeDisabled({ timeout: TIMEOUT });

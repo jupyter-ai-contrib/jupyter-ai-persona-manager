@@ -11,6 +11,7 @@ from jupyter_ai_persona_manager.mcp_server_models import (
     McpServerHttp,
     McpSettings,
 )
+from jupyter_ai_persona_manager.persona_events import PersonaSessionState
 
 
 @pytest.fixture
@@ -264,6 +265,30 @@ class TestProcessing:
                 raise ValueError("boom")
         assert persona.processing is False
         assert persona.processing_message is None
+
+    @pytest.mark.asyncio
+    async def test_track_processing_publishes_processing_state(self, mock_ychat):
+        # The frontend enables the stop button off this: track_processing sets
+        # `state.processing` True while a message is in flight and False after.
+        persona = _make_persona(mock_ychat)
+        persona.state = PersonaSessionState(
+            event_logger=None, persona_id="p1", chat_id="c1", log=MagicMock()
+        )
+        assert persona.state.processing is False
+        async with persona.track_processing(object()):
+            assert persona.state.processing is True
+        assert persona.state.processing is False
+
+    @pytest.mark.asyncio
+    async def test_track_processing_clears_processing_on_exception(self, mock_ychat):
+        persona = _make_persona(mock_ychat)
+        persona.state = PersonaSessionState(
+            event_logger=None, persona_id="p1", chat_id="c1", log=MagicMock()
+        )
+        with pytest.raises(ValueError, match="boom"):
+            async with persona.track_processing(object()):
+                raise ValueError("boom")
+        assert persona.state.processing is False
 
 
 # ---------------------------------------------------------------------------

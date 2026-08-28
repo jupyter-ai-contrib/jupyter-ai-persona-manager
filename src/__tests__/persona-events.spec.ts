@@ -80,6 +80,47 @@ describe('PersonaSessionRegistry', () => {
     expect(fired).toBe(2);
   });
 
+  it('tracks per-persona processing and exposes chat-level processing', async () => {
+    const { registry, events } = makeRegistry();
+    const managerState = registry.get('a.chat');
+    expect(managerState.processing).toBe(false);
+
+    // A persona reports it started processing.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      processing: true
+    });
+    expect(managerState.getPersona('p1')?.processing).toBe(true);
+    expect(managerState.processing).toBe(true);
+
+    // A second, idle persona doesn't flip the chat back to idle.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p2',
+      processing: false
+    });
+    expect(managerState.processing).toBe(true);
+
+    // The processing persona reports it finished; chat is now idle.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      processing: false
+    });
+    expect(managerState.processing).toBe(false);
+  });
+
+  it('defaults persona processing to false when the field is absent', async () => {
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1'
+    });
+    expect(registry.get('a.chat').getPersona('p1')?.processing).toBe(false);
+    expect(registry.get('a.chat').processing).toBe(false);
+  });
+
   it('discards a chat session state on close, freeing memory', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {

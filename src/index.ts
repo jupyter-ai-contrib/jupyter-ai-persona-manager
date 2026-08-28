@@ -127,6 +127,11 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         sessionRegistry,
         events
       });
+    // Wrap the stop button to inject the session registry, so it can enable
+    // itself while a persona in the chat is processing a message.
+    const StopButtonItem = (
+      itemProps: InputToolbarRegistry.IToolbarItemProps
+    ) => StopButton({ ...itemProps, sessionRegistry });
     return {
       create: () => {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)
@@ -140,7 +145,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         // toolbar's cancel button (10); a tie would leave the order to
         // insertion rather than position.
         registry.addItem('stop', {
-          element: StopButton,
+          element: StopButtonItem,
           position: 7
         });
         return registry;
