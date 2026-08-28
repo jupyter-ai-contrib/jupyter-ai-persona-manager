@@ -2,6 +2,33 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.0rc0
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a6...d67d415848144cd4799850dc57dcf8a8d0ecc74f))
+
+### Enhancements made
+
+- Keep a WebSocket chat alive while a persona processes a message [#148](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/148) ([@dlqqq](https://github.com/dlqqq))
+
+### Bugs fixed
+
+- Fix stop button, minify events [#150](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/150) ([@dlqqq](https://github.com/dlqqq))
+
+### Maintenance and upkeep improvements
+
+- Remove `jupyterlab-eventlistener` [#149](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/149) ([@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-27&to=2026-08-28&type=c))
+
+@dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-27..2026-08-28&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.2.0a6
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a5...d871b22c294ae15b70b51eda004f923001a928b4))
@@ -18,8 +45,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-27&to=2026-08-27&type=c))
 
 @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-27..2026-08-27&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.2.0a5
 
