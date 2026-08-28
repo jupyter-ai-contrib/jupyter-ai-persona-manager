@@ -30,7 +30,7 @@ def _logger_and_capture():
     return logger, captured
 
 
-def test_setting_fields_emits_state_events():
+def test_each_setter_emits_only_its_own_attribute():
     async def run():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
@@ -44,11 +44,21 @@ def test_setting_fields_emits_state_events():
         await asyncio.sleep(0.1)
 
         assert len(captured) == 2
-        last = captured[-1]
-        assert last["chat_id"] == "chat.chat"
-        assert last["persona_id"] == "jupyternaut"
-        assert last["model"]["current"] == "gpt-9"
-        assert last["usage"]["input_tokens"] == 42
+
+        # The model change carries only `model` (plus the routing ids); it does
+        # not re-send usage/settings/slash_commands.
+        model_event = captured[0]
+        assert model_event["chat_id"] == "chat.chat"
+        assert model_event["persona_id"] == "jupyternaut"
+        assert model_event["model"]["current"] == "gpt-9"
+        assert "usage" not in model_event
+        assert "settings" not in model_event
+        assert "slash_commands" not in model_event
+
+        # Likewise, the usage change carries only `usage`.
+        usage_event = captured[1]
+        assert usage_event["usage"]["input_tokens"] == 42
+        assert "model" not in usage_event
 
     asyncio.run(run())
 

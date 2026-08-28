@@ -73,6 +73,22 @@ export class PersonaSessionState {
   readonly slash_commands: CommandOption[];
   /** Whether the persona is currently processing a message. */
   readonly processing: boolean;
+
+  /**
+   * Merge a `persona_state` event payload onto this state, returning a new
+   * instance. Attributes the event omits are carried forward unchanged, so a
+   * partial event (e.g. usage-only) replaces only what it carries. A new
+   * reference is returned so React consumers re-render.
+   */
+  withUpdate(payload: PersonaStatePayload): PersonaSessionState {
+    return new PersonaSessionState(this.id, {
+      model: payload.model ?? this.model,
+      settings: payload.settings ?? this.settings,
+      usage: payload.usage ?? this.usage,
+      slash_commands: payload.slash_commands ?? this.slash_commands,
+      processing: payload.processing ?? this.processing
+    });
+  }
 }
 
 /**
@@ -124,9 +140,16 @@ export class PersonaManagerSessionState implements IDisposable {
     this._changed.emit();
   }
 
-  /** Apply a `persona_state` event payload for one persona. */
+  /**
+   * Apply a `persona_state` event payload for one persona, merging it onto the
+   * persona's existing state (absent attributes are left unchanged).
+   */
   updatePersonaState(personaId: string, payload: PersonaStatePayload): void {
-    this._states.set(personaId, new PersonaSessionState(personaId, payload));
+    const prev = this._states.get(personaId);
+    const next = prev
+      ? prev.withUpdate(payload)
+      : new PersonaSessionState(personaId, payload);
+    this._states.set(personaId, next);
     this._changed.emit();
   }
 
