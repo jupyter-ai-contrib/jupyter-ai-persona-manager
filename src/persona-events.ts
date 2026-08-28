@@ -41,6 +41,7 @@ type PersonaStatePayload = {
   settings?: SettingConfiguration[];
   usage?: Usage;
   slash_commands?: CommandOption[];
+  processing?: boolean;
 };
 
 /** The wire shape of a `personas` event. */
@@ -63,12 +64,31 @@ export class PersonaSessionState {
     this.settings = payload.settings ?? [];
     this.usage = { ...EMPTY_USAGE, ...(payload.usage ?? {}) };
     this.slash_commands = payload.slash_commands ?? [];
+    this.processing = payload.processing ?? false;
   }
 
   readonly model: ModelConfiguration;
   readonly settings: SettingConfiguration[];
   readonly usage: Usage;
   readonly slash_commands: CommandOption[];
+  /** Whether the persona is currently processing a message. */
+  readonly processing: boolean;
+
+  /**
+   * Merge a `persona_state` event payload onto this state, returning a new
+   * instance. Attributes the event omits are carried forward unchanged, so a
+   * partial event (e.g. usage-only) replaces only what it carries. A new
+   * reference is returned so React consumers re-render.
+   */
+  withUpdate(payload: PersonaStatePayload): PersonaSessionState {
+    return new PersonaSessionState(this.id, {
+      model: payload.model ?? this.model,
+      settings: payload.settings ?? this.settings,
+      usage: payload.usage ?? this.usage,
+      slash_commands: payload.slash_commands ?? this.slash_commands,
+      processing: payload.processing ?? this.processing
+    });
+  }
 }
 
 /**
@@ -99,6 +119,20 @@ export class PersonaManagerSessionState implements IDisposable {
     return this._states.get(id);
   }
 
+  /**
+   * Whether any persona in this chat is currently processing a message. The
+   * stop button uses this to enable itself, since a persona can be processing
+   * (thinking, running tools, awaiting an agent turn) without actively writing.
+   */
+  get processing(): boolean {
+    for (const state of this._states.values()) {
+      if (state.processing) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Apply a `personas` event payload. */
   updatePersonas(personas: PersonaOption[]): void {
     this._personasReceived = true;
@@ -106,9 +140,16 @@ export class PersonaManagerSessionState implements IDisposable {
     this._changed.emit();
   }
 
-  /** Apply a `persona_state` event payload for one persona. */
+  /**
+   * Apply a `persona_state` event payload for one persona, merging it onto the
+   * persona's existing state (absent attributes are left unchanged).
+   */
   updatePersonaState(personaId: string, payload: PersonaStatePayload): void {
-    this._states.set(personaId, new PersonaSessionState(personaId, payload));
+    const prev = this._states.get(personaId);
+    const next = prev
+      ? prev.withUpdate(payload)
+      : new PersonaSessionState(personaId, payload);
+    this._states.set(personaId, next);
     this._changed.emit();
   }
 

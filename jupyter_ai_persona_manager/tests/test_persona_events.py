@@ -30,7 +30,7 @@ def _logger_and_capture():
     return logger, captured
 
 
-def test_setting_fields_emits_state_events():
+def test_each_setter_emits_only_its_own_attribute():
     async def run():
         logger, captured = _logger_and_capture()
         state = PersonaSessionState(
@@ -44,11 +44,21 @@ def test_setting_fields_emits_state_events():
         await asyncio.sleep(0.1)
 
         assert len(captured) == 2
-        last = captured[-1]
-        assert last["chat_id"] == "chat.chat"
-        assert last["persona_id"] == "jupyternaut"
-        assert last["model"]["current"] == "gpt-9"
-        assert last["usage"]["input_tokens"] == 42
+
+        # The model change carries only `model` (plus the routing ids); it does
+        # not re-send usage/settings/slash_commands.
+        model_event = captured[0]
+        assert model_event["chat_id"] == "chat.chat"
+        assert model_event["persona_id"] == "jupyternaut"
+        assert model_event["model"]["current"] == "gpt-9"
+        assert "usage" not in model_event
+        assert "settings" not in model_event
+        assert "slash_commands" not in model_event
+
+        # Likewise, the usage change carries only `usage`.
+        usage_event = captured[1]
+        assert usage_event["usage"]["input_tokens"] == 42
+        assert "model" not in usage_event
 
     asyncio.run(run())
 
@@ -77,6 +87,61 @@ def test_publish_reemits_current_state_for_catchup():
     asyncio.run(run())
 
 
+def test_processing_setter_emits_only_on_transition_and_is_in_payload():
+    """Setting `processing` emits a state event carrying the flag, but only on an
+    actual value transition (so serialized re-processing doesn't spam events)."""
+
+    async def run():
+        logger, captured = _logger_and_capture()
+        state = PersonaSessionState(
+            event_logger=logger,
+            chat_id="chat.chat",
+            persona_id="p1",
+            log=logging.getLogger("t"),
+        )
+        assert state.processing is False
+
+        state.processing = True
+        state.processing = True  # no-op: same value, must not re-emit
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        assert captured[-1]["processing"] is True
+
+        state.processing = False
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 2
+        assert captured[-1]["processing"] is False
+
+    asyncio.run(run())
+
+
+def test_publish_includes_processing_for_catchup():
+    """Catch-up `publish()` re-emits the current processing flag so a client that
+    connects mid-response sees the persona is busy."""
+
+    async def run():
+        logger, captured = _logger_and_capture()
+        state = PersonaSessionState(
+            event_logger=logger,
+            chat_id="chat.chat",
+            persona_id="p1",
+            log=logging.getLogger("t"),
+        )
+        state.processing = True
+        await asyncio.sleep(0.1)
+        captured.clear()
+
+        state.publish()
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        assert captured[0]["processing"] is True
+
+    asyncio.run(run())
+
+
 def test_no_event_logger_is_noop():
     state = PersonaSessionState(
         event_logger=None,
@@ -86,8 +151,10 @@ def test_no_event_logger_is_noop():
     )
     # Should not raise without an event logger.
     state.model = ModelConfiguration(current="m1")
+    state.processing = True
     state.publish()
     assert state.model.current == "m1"
+    assert state.processing is True
 
 
 def test_persona_selected_schema_is_registered_and_deliverable():

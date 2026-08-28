@@ -70,7 +70,10 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "version": "1",
     "title": "Persona session state",
     "personal-data": True,
-    "description": "A single persona's model, settings, usage, and slash commands.",
+    "description": (
+        "A single persona's model, settings, usage, slash commands, and "
+        "whether it is currently processing a message."
+    ),
     "type": "object",
     "required": ["chat_id", "persona_id"],
     "properties": {
@@ -80,6 +83,13 @@ PERSONA_STATE_EVENT_SCHEMA = {
         "settings": {"type": "array", "items": {"type": "object"}},
         "usage": {"type": "object"},
         "slash_commands": {"type": "array", "items": {"type": "object"}},
+        "processing": {
+            "type": "boolean",
+            "description": (
+                "Whether the persona is currently processing a message. The "
+                "frontend uses this to enable the stop button."
+            ),
+        },
     },
     "additionalProperties": False,
 }
@@ -167,8 +177,9 @@ class PersonaSessionState:
     its model configuration, general settings, usage, and slash commands.
 
     Replaces ``PersonaAwareness``. The typed properties keep the last value in
-    memory and emit a ``persona_state`` event on every change, so consumers see
-    live updates; :meth:`publish` re-emits the full state for catch-up.
+    memory and emit a ``persona_state`` event carrying only the changed
+    attribute, so consumers merge live updates onto their existing state;
+    :meth:`publish` emits the full state for catch-up.
     """
 
     def __init__(
@@ -187,6 +198,7 @@ class PersonaSessionState:
         self._settings: list[SettingConfiguration] = []
         self._usage = Usage()
         self._slash_commands: list[CommandOption] = []
+        self._processing = False
 
     @property
     def id(self) -> str:
@@ -199,7 +211,7 @@ class PersonaSessionState:
     @model.setter
     def model(self, model: ModelConfiguration) -> None:
         self._model = model
-        self.publish()
+        self._emit({"model": model.model_dump()})
 
     @property
     def settings(self) -> list[SettingConfiguration]:
@@ -208,7 +220,7 @@ class PersonaSessionState:
     @settings.setter
     def settings(self, settings: list[SettingConfiguration]) -> None:
         self._settings = settings
-        self.publish()
+        self._emit({"settings": [s.model_dump() for s in settings]})
 
     @property
     def usage(self) -> Usage:
@@ -217,7 +229,7 @@ class PersonaSessionState:
     @usage.setter
     def usage(self, usage: Usage) -> None:
         self._usage = usage
-        self.publish()
+        self._emit({"usage": usage.model_dump()})
 
     @property
     def slash_commands(self) -> list[CommandOption]:
@@ -226,9 +238,24 @@ class PersonaSessionState:
     @slash_commands.setter
     def slash_commands(self, commands: list[CommandOption]) -> None:
         self._slash_commands = commands
-        self.publish()
+        self._emit({"slash_commands": [c.model_dump() for c in commands]})
+
+    @property
+    def processing(self) -> bool:
+        return self._processing
+
+    @processing.setter
+    def processing(self, processing: bool) -> None:
+        # Only publish on an actual transition, so repeated no-op assignments
+        # (e.g. from serialized message processing) don't emit redundant events.
+        if self._processing == processing:
+            return
+        self._processing = processing
+        self._emit({"processing": processing})
 
     def to_data(self) -> dict[str, Any]:
+        """The persona's full current state, including the routing ids. Used by
+        :meth:`publish` for the catch-up snapshot."""
         return {
             "chat_id": self._chat_id,
             "persona_id": self._persona_id,
@@ -236,18 +263,42 @@ class PersonaSessionState:
             "settings": [s.model_dump() for s in self._settings],
             "usage": self._usage.model_dump(),
             "slash_commands": [c.model_dump() for c in self._slash_commands],
+            "processing": self._processing,
         }
 
-    def publish(self) -> None:
-        """(Re-)emit the persona's full current state."""
+    def _emit(self, fields: dict[str, Any]) -> None:
+        """Emit a ``persona_state`` event carrying ``fields`` plus the routing
+        ids (``chat_id``/``persona_id``).
+
+        Field setters emit only the attribute that changed; the frontend merges
+        each event into the persona's existing state, treating absent keys as
+        unchanged. This avoids re-sending the whole snapshot (model, settings,
+        slash commands) on every usage tick. :meth:`publish` sends the full
+        snapshot for catch-up when a client connects.
+        """
         if self._event_logger is None:
             return
         try:
             self._event_logger.emit(
-                schema_id=PERSONA_STATE_EVENT_SCHEMA_ID, data=self.to_data()
+                schema_id=PERSONA_STATE_EVENT_SCHEMA_ID,
+                data={
+                    "chat_id": self._chat_id,
+                    "persona_id": self._persona_id,
+                    **fields,
+                },
             )
         except Exception:  # pragma: no cover - defensive
             self._log.exception("Failed to emit persona state event")
+
+    def publish(self) -> None:
+        """Emit the persona's full current state. Used for catch-up when a
+        client connects; individual field changes emit only the changed field
+        (see :meth:`_emit`)."""
+        data = self.to_data()
+        # `_emit` re-adds the routing ids, so drop them from the field set here.
+        data.pop("chat_id", None)
+        data.pop("persona_id", None)
+        self._emit(data)
 
     def shutdown(self) -> None:
         """Symmetry with the old awareness slot's shutdown. Events are

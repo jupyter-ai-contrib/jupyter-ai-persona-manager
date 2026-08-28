@@ -19,10 +19,10 @@ const PERSONAS = [FixturePersona.SlowStream];
  * streaming loop; the loop emits a chunk every ~200ms for ~60s, so there's a
  * wide window to stop it mid-stream.
  *
- * After stopping we assert two things: the persona is no longer writing (the
- * stop button disables itself, driven by the chat's writers list, which the
- * persona leaves when `stream_message` unwinds and clears its is_writing flag),
- * and the reply text stops growing — no further chunks land once cancelled.
+ * After stopping we assert two things: the persona is no longer processing (the
+ * stop button disables itself once `process_message` returns — the persona
+ * emits a persona-state event clearing its `processing` flag), and the reply
+ * text stops growing — no further chunks land once cancelled.
  */
 test.describe('cancel-response', () => {
   test.beforeAll(async ({ request }) => {
@@ -50,7 +50,7 @@ test.describe('cancel-response', () => {
     // Interrupt.
     await helpers.clickStop();
 
-    // The persona stops writing: the stop button disables itself.
+    // The persona stops processing: the stop button disables itself.
     await helpers.waitForNotWriting();
 
     // A chunk already dispatched when the stop landed can still render just

@@ -311,11 +311,19 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         async with self._processing_lock:
             self._processing_count += 1
             self._processing_message = message
+            # Announce that this persona started processing, so the frontend can
+            # enable the stop button. Published over the persona-state event
+            # (works in both RTC and non-RTC mode). `state` may be None in some
+            # unit tests, in which case the setter simply isn't reached.
+            if self.state is not None:
+                self.state.processing = True
             try:
                 yield
             finally:
                 self._processing_count -= 1
                 self._processing_message = None
+                if self.state is not None and self._processing_count == 0:
+                    self.state.processing = False
 
     ################################################
     # base class methods, available to subclasses.

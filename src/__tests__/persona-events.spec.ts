@@ -62,6 +62,38 @@ describe('PersonaSessionRegistry', () => {
     expect(state?.usage.input_tokens).toBe(5);
   });
 
+  it('merges partial events, leaving unset attributes unchanged', async () => {
+    const { registry, events } = makeRegistry();
+    // First event sets the model.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      model: { current: 'm1', options: [], settings: [] }
+    });
+    // A usage-only event must not drop the previously-set model.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      usage: { input_tokens: 5 }
+    });
+    const state = registry.get('a.chat').getPersona('p1');
+    expect(state?.model.current).toBe('m1');
+    expect(state?.usage.input_tokens).toBe(5);
+
+    // A processing-only event likewise preserves model and usage.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      processing: true
+    });
+    const after = registry.get('a.chat').getPersona('p1');
+    expect(after?.model.current).toBe('m1');
+    expect(after?.usage.input_tokens).toBe(5);
+    expect(after?.processing).toBe(true);
+    // A new instance is produced on each merge, so React consumers re-render.
+    expect(after).not.toBe(state);
+  });
+
   it('fires the changed signal on updates', async () => {
     const { registry, events } = makeRegistry();
     const managerState = registry.get('a.chat');
@@ -78,6 +110,47 @@ describe('PersonaSessionRegistry', () => {
       persona_id: 'p1'
     });
     expect(fired).toBe(2);
+  });
+
+  it('tracks per-persona processing and exposes chat-level processing', async () => {
+    const { registry, events } = makeRegistry();
+    const managerState = registry.get('a.chat');
+    expect(managerState.processing).toBe(false);
+
+    // A persona reports it started processing.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      processing: true
+    });
+    expect(managerState.getPersona('p1')?.processing).toBe(true);
+    expect(managerState.processing).toBe(true);
+
+    // A second, idle persona doesn't flip the chat back to idle.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p2',
+      processing: false
+    });
+    expect(managerState.processing).toBe(true);
+
+    // The processing persona reports it finished; chat is now idle.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      processing: false
+    });
+    expect(managerState.processing).toBe(false);
+  });
+
+  it('defaults persona processing to false when the field is absent', async () => {
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1'
+    });
+    expect(registry.get('a.chat').getPersona('p1')?.processing).toBe(false);
+    expect(registry.get('a.chat').processing).toBe(false);
   });
 
   it('discards a chat session state on close, freeing memory', async () => {

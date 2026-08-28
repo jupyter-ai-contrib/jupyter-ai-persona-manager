@@ -127,7 +127,7 @@ no `projects`, so adding a spec file needs no config change.
   popover card is `.jp-jai-usage-card` (a page-scoped MUI portal).
 - **Slash completions:** typing `/` opens a page-scoped popup; each option's name
   is a `.jp-chat-command-name` span. `TestHelpers#slashCompletions` polls it.
-- **Stop button:** `.jp-jai-stopButton`, enabled only while an AI persona writes.
+- **Stop button:** `.jp-jai-stopButton`, enabled only while an AI persona is processing a message.
 - **Send:** type into `.jp-chat-input-container` `getByRole('combobox')`, click
   `.jp-chat-send-button`. Rendered messages are `.jp-chat-rendered-message`.
 

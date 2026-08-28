@@ -4,9 +4,10 @@ Fixture persona for E2E tests: a `BasePersona` that streams a long reply slowly
 interrupt it mid-stream with the toolbar's stop button.
 
 It counts up ("1 2 3 …"), one number per streamed chunk, via
-`BasePersona.stream_message` (which manages the `is_writing` awareness flag that
-drives the chat's writers list, and hence the stop button's enabled state).
-Between chunks it checks a cancel flag set by `cancel_response`, the override the
+`BasePersona.stream_message`. The reply runs inside `process_message`, so the
+persona is *processing* for the whole stream — which is what drives the
+toolbar's stop button enabled state. Between chunks it checks a cancel flag set
+by `cancel_response`, the override the
 PersonaManager's cancel endpoint invokes — so when the user stops the reply, the
 loop halts promptly and no further chunks land. That lets a test assert the
 message stops growing and the persona stops writing.
