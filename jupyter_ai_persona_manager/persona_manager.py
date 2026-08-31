@@ -252,7 +252,8 @@ class PersonaManager(LoggingConfigurable):
         else:
             self.log.warning(f"No default persona is set in chat '{self.chat_path}'.")
 
-        self.mcp_manager.add_observer(self._on_mcp_servers_update)
+        if self.mcp_manager:
+            self.mcp_manager.add_observer(self._on_mcp_servers_update)
 
     def _init_persona_classes(self) -> None:
         """Read entry-point and local persona classes."""
