@@ -38,7 +38,8 @@ class McpProbePersona(BasePersona):
     async def process_message(self, message: Message) -> None:
         settings = self.get_mcp_settings()
         server = next(
-            s for s in settings.mcp_servers if isinstance(s, McpServerHttp)
+            s for s in settings.mcp_servers
+            if isinstance(s, McpServerHttp) and s.name == "MCP Probe Server"
         )
         http_client = httpx2.AsyncClient(
             headers={header.name: header.value for header in server.headers}

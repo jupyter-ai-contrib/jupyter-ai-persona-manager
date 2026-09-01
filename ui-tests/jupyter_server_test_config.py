@@ -55,16 +55,32 @@ os.environ["JAI_TEST_ASSETS_DIR"] = str(
 # reach it. Enable that test-only server extension and point the built-in MCP
 # server at it. Other suites leave both untouched.
 if os.environ.get("JAI_E2E_SUITE") == "mcp":
+    import json
     import sys
+    import tempfile
 
     sys.path.insert(0, str(Path(__file__).parent.resolve()))
     c.ServerApp.jpserver_extensions.update({"mcp_probe_ext": True})
     _probe_port = int(os.environ.get("JAI_MCP_PROBE_PORT", "3999"))
-    c.PersonaManager.builtin_mcp_servers = [
+
+    # Register the probe server with McpServerManager via a temp config file.
+    # extra_config_paths takes highest precedence so it overrides any add_server()
+    # calls made by other extensions (e.g. jupyter-server-mcp).
+    _tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    )
+    json.dump(
         {
-            "type": "http",
-            "name": "Jupyter MCP Server",
-            "url": f"http://127.0.0.1:{_probe_port}/mcp",
-            "headers": [],
-        }
-    ]
+            "mcp_servers": [
+                {
+                    "type": "http",
+                    "name": "MCP Probe Server",
+                    "url": f"http://127.0.0.1:{_probe_port}/mcp",
+                    "headers": [],
+                }
+            ]
+        },
+        _tmp,
+    )
+    _tmp.close()
+    c.McpManagerExtension.extra_config_paths = [_tmp.name]
