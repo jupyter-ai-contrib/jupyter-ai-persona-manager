@@ -34,7 +34,7 @@ export const PERSONA_SELECTED_EVENT_SCHEMA_ID =
   'https://schema.jupyter.org/jupyter_ai_persona_manager/persona_selected/v1';
 
 /** The wire shape of a `persona_state` event. */
-type PersonaStatePayload = {
+export type PersonaStatePayload = {
   chat_id?: string;
   persona_id?: string;
   model?: ModelConfiguration;
@@ -104,14 +104,19 @@ export class PersonaManagerSessionState implements IDisposable {
     return this._changed;
   }
 
-  /** Whether a `personas` event has been received for this chat yet. */
+  /** Whether one or several personas have been registered. */
   get ready(): boolean {
     return this._personasReceived;
   }
 
-  /** The personas advertised in this chat. */
+  /** The personas advertised in this chat (backend + frontend). */
   get personas(): PersonaOption[] {
-    return this._personas;
+    const personas = [
+      ...this._backendPersonas,
+      ...this._frontendPersonas.values()
+    ];
+    personas.sort((a, b) => (a.name >= b.name ? 1 : -1));
+    return personas;
   }
 
   /** A persona's session state, or undefined if it has not published yet. */
@@ -133,10 +138,30 @@ export class PersonaManagerSessionState implements IDisposable {
     return false;
   }
 
-  /** Apply a `personas` event payload. */
-  updatePersonas(personas: PersonaOption[]): void {
+  /** Apply a `personas` event payload, keeping any registered frontend personas. */
+  updateBackendPersonas(personas: PersonaOption[]): void {
     this._personasReceived = true;
-    this._personas = personas;
+    this._backendPersonas = personas;
+    this._changed.emit();
+  }
+
+  /**
+   * Register a frontend-only persona (one with no backend counterpart). It
+   * survives subsequent `updatePersonas` calls and immediately marks the list
+   * as ready, so the toolbar never shows the loading placeholder when only
+   * frontend personas are available.
+   */
+  registerFrontendPersona(persona: PersonaOption): void {
+    this._personasReceived = true;
+    this._frontendPersonas.set(persona.id, persona);
+    this._changed.emit();
+  }
+
+  /**
+   * Unregister a frontend persona from its ID.
+   */
+  unregisterFrontendPersona(personaId: string): void {
+    this._frontendPersonas.delete(personaId);
     this._changed.emit();
   }
 
@@ -163,11 +188,13 @@ export class PersonaManagerSessionState implements IDisposable {
     }
     this._isDisposed = true;
     this._states.clear();
+    this._frontendPersonas.clear();
     Signal.clearData(this);
   }
 
   private _personasReceived = false;
-  private _personas: PersonaOption[] = [];
+  private _backendPersonas: PersonaOption[] = [];
+  private _frontendPersonas = new Map<string, PersonaOption>();
   private _states = new Map<string, PersonaSessionState>();
   private _isDisposed = false;
   private _changed = new Signal<this, void>(this);
@@ -214,6 +241,26 @@ export class PersonaSessionRegistry {
   }
 
   /**
+   * Register a frontend-only persona for a chat. Shorthand for
+   * `registry.get(chatId).registerFrontendPersona(persona)`.
+   */
+  registerFrontendPersona(chatId: string, persona: PersonaOption): void {
+    this.get(chatId).registerFrontendPersona(persona);
+  }
+
+  /**
+   * Update a persona's state for a chat. Shorthand for
+   * `registry.get(chatId).updatePersonaState(personaId, payload)`.
+   */
+  updatePersonaState(
+    chatId: string,
+    personaId: string,
+    payload: PersonaStatePayload
+  ): void {
+    this.get(chatId).updatePersonaState(personaId, payload);
+  }
+
+  /**
    * Discard a chat's session state and free its memory. Called when the client
    * closes the chat (wired to the chat model's `disposed` signal).
    */
@@ -230,7 +277,7 @@ export class PersonaSessionRegistry {
     if (!data.chat_id) {
       return;
     }
-    this.get(data.chat_id).updatePersonas(
+    this.get(data.chat_id).updateBackendPersonas(
       Array.isArray(data.personas) ? data.personas : []
     );
   };
