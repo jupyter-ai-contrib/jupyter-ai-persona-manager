@@ -172,4 +172,140 @@ describe('PersonaSessionRegistry', () => {
     expect(fresh.personas).toEqual([]);
     expect(fresh.ready).toBe(false);
   });
+
+  describe('registerFrontendPersona', () => {
+    it('marks the list as ready immediately, without a backend event', () => {
+      const { registry } = makeRegistry();
+      const state = registry.get('a.chat');
+      expect(state.ready).toBe(false);
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      expect(state.ready).toBe(true);
+    });
+
+    it('adds the persona to the list', () => {
+      const { registry } = makeRegistry();
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      expect(registry.get('a.chat').personas.map(p => p.id)).toContain('fp1');
+    });
+
+    it('fires the changed signal', () => {
+      const { registry } = makeRegistry();
+      const state = registry.get('a.chat');
+      let fired = 0;
+      state.changed.connect(() => {
+        fired += 1;
+      });
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      expect(fired).toBe(1);
+    });
+
+    it('survives subsequent backend personas events', async () => {
+      const { registry, events } = makeRegistry();
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
+        chat_id: 'a.chat',
+        personas: [{ id: 'bp1', name: 'Backend', avatar_url: null }]
+      });
+      const ids = registry.get('a.chat').personas.map(p => p.id);
+      expect(ids).toContain('fp1');
+      expect(ids).toContain('bp1');
+    });
+
+    it('merges with backend personas, sorted by name', async () => {
+      const { registry, events } = makeRegistry();
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Zara',
+        avatar_url: null
+      });
+      await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
+        chat_id: 'a.chat',
+        personas: [{ id: 'bp1', name: 'Alice', avatar_url: null }]
+      });
+      const names = registry.get('a.chat').personas.map(p => p.name);
+      expect(names).toEqual(['Alice', 'Zara']);
+    });
+  });
+
+  describe('unregisterFrontendPersona', () => {
+    it('removes the persona from the list', () => {
+      const { registry } = makeRegistry();
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      registry.get('a.chat').unregisterFrontendPersona('fp1');
+      expect(registry.get('a.chat').personas.map(p => p.id)).not.toContain(
+        'fp1'
+      );
+    });
+
+    it('fires the changed signal', () => {
+      const { registry } = makeRegistry();
+      registry.registerFrontendPersona('a.chat', {
+        id: 'fp1',
+        name: 'Frontend',
+        avatar_url: null
+      });
+      const managerState = registry.get('a.chat');
+      let fired = 0;
+      managerState.changed.connect(() => {
+        fired += 1;
+      });
+      managerState.unregisterFrontendPersona('fp1');
+      expect(fired).toBe(1);
+    });
+  });
+
+  describe('registry-level updatePersonaState', () => {
+    it('directly updates state without a backend event', () => {
+      const { registry } = makeRegistry();
+      registry.updatePersonaState('a.chat', 'p1', {
+        model: { current: 'm1', options: [], settings: [] },
+        processing: true
+      });
+      const state = registry.get('a.chat').getPersona('p1');
+      expect(state?.model.current).toBe('m1');
+      expect(state?.processing).toBe(true);
+    });
+
+    it('merges partial updates, preserving existing state', () => {
+      const { registry } = makeRegistry();
+      registry.updatePersonaState('a.chat', 'p1', {
+        model: { current: 'm1', options: [], settings: [] }
+      });
+      registry.updatePersonaState('a.chat', 'p1', { processing: true });
+      const state = registry.get('a.chat').getPersona('p1');
+      expect(state?.model.current).toBe('m1');
+      expect(state?.processing).toBe(true);
+    });
+
+    it('fires the changed signal', () => {
+      const { registry } = makeRegistry();
+      const managerState = registry.get('a.chat');
+      let fired = 0;
+      managerState.changed.connect(() => {
+        fired += 1;
+      });
+      registry.updatePersonaState('a.chat', 'p1', { processing: false });
+      expect(fired).toBe(1);
+    });
+  });
 });
