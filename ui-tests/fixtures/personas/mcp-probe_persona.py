@@ -44,7 +44,7 @@ class McpProbePersona(BasePersona):
             headers={header.name: header.value for header in server.headers}
         )
         async with (
-            streamable_http_client(server.url, http_client=http_client) as (read, write, _),
+            streamable_http_client(server.url, http_client=http_client) as (read, write),
             ClientSession(read, write) as session,
         ):
             await session.initialize()
