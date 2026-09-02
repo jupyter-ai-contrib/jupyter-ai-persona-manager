@@ -129,6 +129,30 @@ def test_initialize_settings_advertises_default_persona(extension, mock_server_a
     )
 
 
+class TestSetupRouterIntegration:
+    """_setup_router_integration() registers callbacks when router is active,
+    and logs a warning and exits when it is not."""
+
+    @pytest.mark.asyncio
+    async def test_registers_callbacks_when_router_present(self, extension, mock_server_app):
+        mock_router = Mock()
+        mock_server_app.web_app.settings["jupyter-ai"]["router"] = mock_router
+
+        await extension._setup_router_integration()
+
+        mock_router.observe_chat_init.assert_called_once_with(extension._on_router_chat_init)
+        mock_router.observe_chat_stop.assert_called_once_with(extension._on_router_chat_stop)
+        assert extension.router is mock_router
+
+    @pytest.mark.asyncio
+    async def test_warns_and_returns_when_router_absent(self, extension, mock_server_app):
+        # mock_server_app has no router in settings by default
+        await extension._setup_router_integration()
+
+        extension.log.warning.assert_called_once()
+        assert not hasattr(extension, "router")
+
+
 class TestLinkJupyterServerExtension:
     """The ContentsManager config applied when the extension is linked."""
 
