@@ -120,36 +120,23 @@ class PersonaManagerExtension(ExtensionApp):
         """
         Set up integration with jupyter-ai-router.
         This allows persona manager to work through the centralized MessageRouter.
+        jupyter-ai-router is an optional dependency: if it is not active, persona
+        managers are never created and AI personas will not respond to messages.
         """
-        self.log.info("Waiting for the router to be ready")
-        
-        # Wait until the router field is available
-        while True:
-            router = self.serverapp.web_app.settings.get("jupyter-ai", {}).get("router")
-            if router is not None:
-                self.log.info("Router is ready, continuing with persona manager integration")
-                break
-            await asyncio.sleep(0.1)  # Check every 100ms
-        
-        # Wait for the 'jupyter-ai.persona-managers' dictionary to be available
-        # in `self.serverapp.web_app.settings`. This will occur after
-        # `initialize_settings()` returns.
-        while self.serverapp.web_app.settings.get("jupyter-ai", {}).get("persona-managers") is None:
-            self.log.warning("PersonaManagers dictionary not found, retrying in 100ms")
-            await asyncio.sleep(0.1)
+        # All extensions' initialize_settings() complete synchronously before
+        # any async task runs, so the router is either already in settings or absent.
+        router = self.serverapp.web_app.settings.get("jupyter-ai", {}).get("router")
+        if router is None:
+            self.log.warning(
+                "jupyter-ai-router is not active. Persona Manager will not receive "
+                "chat events. Install and enable jupyter-ai-router to use AI personas."
+            )
+            return
 
-        try:
-            self.log.info("Found jupyter-ai-router, registering persona manager callbacks")
-            
-            # Register callback for new chat initialization
-            router.observe_chat_init(self._on_router_chat_init)
-            router.observe_chat_stop(self._on_router_chat_stop)
-            
-            # Store reference to router for later use
-            self.router = router
-            
-        except Exception as e:
-            self.log.error(f"Error setting up router integration: {e}")
+        self.log.info("Found jupyter-ai-router, registering persona manager callbacks")
+        router.observe_chat_init(self._on_router_chat_init)
+        router.observe_chat_stop(self._on_router_chat_stop)
+        self.router = router
     
     def _on_router_chat_init(self, chat_id: str, chat: "BaseChatModel") -> None:
         """
