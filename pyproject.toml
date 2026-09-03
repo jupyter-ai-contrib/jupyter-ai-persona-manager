@@ -28,10 +28,10 @@ classifiers = [
 ]
 dependencies = [
     "jupyter_server>=2.4.0,<3",
-    "jupyterlab_chat>=0.25.0rc0",
+    "jupyterlab_chat>=0.25.0",
     "pydantic>=2.0.0",
     "importlib_metadata>=4.0.0",
-    "jupyter_ai_router>=0.1.0a1",
+    "jupyter_ai_router>=0.1.1",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
