@@ -2,6 +2,49 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.0
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.3...a16fb47260cace3a6e7fa3dd79d55bdf510d9f0c))
+
+### Enhancements made
+
+- Keep a WebSocket chat alive while a persona processes a message [#148](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/148) ([@dlqqq](https://github.com/dlqqq))
+- Allow persona instances to be resolved to a specific web client [#145](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/145) ([@dlqqq](https://github.com/dlqqq))
+- Prepare persona upon selection [#144](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/144) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+- Add prepare() lifecycle hook [#136](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/136) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+- Replace persona awareness with Jupyter Events API [#129](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/129) ([@dlqqq](https://github.com/dlqqq))
+- Decouple persona manager from YChat and RTC internals [#121](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/121) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+
+### Bugs fixed
+
+- Fix stop button, minify events [#150](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/150) ([@dlqqq](https://github.com/dlqqq))
+- Preserve chat message metadata added by other extensions [#147](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/147) ([@dlqqq](https://github.com/dlqqq))
+- Fix minor 0.2.0 issues (#124, #127, #128) [#133](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/133) ([@dlqqq](https://github.com/dlqqq))
+- Resolve attachments via dataclass attribute access [#130](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/130) ([@bhavana-nair](https://github.com/bhavana-nair), [@dlqqq](https://github.com/dlqqq))
+
+### Maintenance and upkeep improvements
+
+- Prep official release [#157](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/157) ([@dlqqq](https://github.com/dlqqq))
+- Remove `jupyterlab-eventlistener` [#149](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/149) ([@dlqqq](https://github.com/dlqqq))
+- Add E2E test verifying persona name and avatar appear [#146](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/146) ([@dlqqq](https://github.com/dlqqq))
+- Use chat IDs, drop room IDs and file IDs [#135](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/135) ([@dlqqq](https://github.com/dlqqq))
+- Bump jupyterlab_chat floor to >=0.25.0a2 [#131](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/131) ([@dlqqq](https://github.com/dlqqq))
+
+### Other merged PRs
+
+- Group Dependabot npm updates into a single PR [#120](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/120) ([@srdas](https://github.com/srdas), [@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-18&to=2026-09-03&type=c))
+
+@bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-18..2026-09-03&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-18..2026-09-03&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-08-18..2026-09-03&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.2.0rc0
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0a6...d67d415848144cd4799850dc57dcf8a8d0ecc74f))
@@ -26,8 +69,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-27&to=2026-08-28&type=c))
 
 @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-27..2026-08-28&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.2.0a6
 
