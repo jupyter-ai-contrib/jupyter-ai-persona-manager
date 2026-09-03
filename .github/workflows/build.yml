@@ -153,7 +153,7 @@ jobs:
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
       run: |
         set -eux
-        python -m pip install "jupyterlab>=4.0.0,<5" "jupyter_ai_router>=0.1.0"
+        python -m pip install "jupyterlab>=4.0.0,<5"
         jlpm install
         jlpm playwright install-deps
         jlpm playwright install chromium
