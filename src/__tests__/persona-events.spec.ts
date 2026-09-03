@@ -1,5 +1,5 @@
 /**
- * Tests for the frontend persona session state fed by Jupyter Events:
+ * Tests for the frontend persona manager fed by Jupyter Events:
  * per-chat routing, the `changed` signal, and discarding a chat's state when it
  * closes.
  */
@@ -96,9 +96,9 @@ describe('PersonaSessionRegistry', () => {
 
   it('fires the changed signal on updates', async () => {
     const { registry, events } = makeRegistry();
-    const managerState = registry.get('a.chat');
+    const personaManager = registry.get('a.chat');
     let fired = 0;
-    managerState.changed.connect(() => {
+    personaManager.changed.connect(() => {
       fired += 1;
     });
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
@@ -114,8 +114,8 @@ describe('PersonaSessionRegistry', () => {
 
   it('tracks per-persona processing and exposes chat-level processing', async () => {
     const { registry, events } = makeRegistry();
-    const managerState = registry.get('a.chat');
-    expect(managerState.processing).toBe(false);
+    const personaManager = registry.get('a.chat');
+    expect(personaManager.processing).toBe(false);
 
     // A persona reports it started processing.
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
@@ -123,8 +123,8 @@ describe('PersonaSessionRegistry', () => {
       persona_id: 'p1',
       processing: true
     });
-    expect(managerState.getPersona('p1')?.processing).toBe(true);
-    expect(managerState.processing).toBe(true);
+    expect(personaManager.getPersona('p1')?.processing).toBe(true);
+    expect(personaManager.processing).toBe(true);
 
     // A second, idle persona doesn't flip the chat back to idle.
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
@@ -132,7 +132,7 @@ describe('PersonaSessionRegistry', () => {
       persona_id: 'p2',
       processing: false
     });
-    expect(managerState.processing).toBe(true);
+    expect(personaManager.processing).toBe(true);
 
     // The processing persona reports it finished; chat is now idle.
     await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
@@ -140,7 +140,7 @@ describe('PersonaSessionRegistry', () => {
       persona_id: 'p1',
       processing: false
     });
-    expect(managerState.processing).toBe(false);
+    expect(personaManager.processing).toBe(false);
   });
 
   it('defaults persona processing to false when the field is absent', async () => {
@@ -153,22 +153,22 @@ describe('PersonaSessionRegistry', () => {
     expect(registry.get('a.chat').processing).toBe(false);
   });
 
-  it('discards a chat session state on close, freeing memory', async () => {
+  it('discards a chat persona manager on close, freeing memory', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {
       chat_id: 'a.chat',
       personas: [{ id: 'p1', name: 'One', avatar_url: null }]
     });
-    const state = registry.get('a.chat');
+    const manager = registry.get('a.chat');
     expect(registry.has('a.chat')).toBe(true);
 
     registry.discard('a.chat');
 
     expect(registry.has('a.chat')).toBe(false);
-    expect(state.isDisposed).toBe(true);
-    // A fresh get() creates a new, empty state (the old one is gone).
+    expect(manager.isDisposed).toBe(true);
+    // A fresh get() creates a new, empty manager (the old one is gone).
     const fresh = registry.get('a.chat');
-    expect(fresh).not.toBe(state);
+    expect(fresh).not.toBe(manager);
     expect(fresh.personas).toEqual([]);
     expect(fresh.ready).toBe(false);
   });
@@ -176,14 +176,14 @@ describe('PersonaSessionRegistry', () => {
   describe('registerFrontendPersona', () => {
     it('marks the list as ready immediately, without a backend event', () => {
       const { registry } = makeRegistry();
-      const state = registry.get('a.chat');
-      expect(state.ready).toBe(false);
+      const manager = registry.get('a.chat');
+      expect(manager.ready).toBe(false);
       registry.registerFrontendPersona('a.chat', {
         id: 'fp1',
         name: 'Frontend',
         avatar_url: null
       });
-      expect(state.ready).toBe(true);
+      expect(manager.ready).toBe(true);
     });
 
     it('adds the persona to the list', () => {
@@ -198,9 +198,9 @@ describe('PersonaSessionRegistry', () => {
 
     it('fires the changed signal', () => {
       const { registry } = makeRegistry();
-      const state = registry.get('a.chat');
+      const manager = registry.get('a.chat');
       let fired = 0;
-      state.changed.connect(() => {
+      manager.changed.connect(() => {
         fired += 1;
       });
       registry.registerFrontendPersona('a.chat', {
@@ -251,7 +251,7 @@ describe('PersonaSessionRegistry', () => {
         name: 'Frontend',
         avatar_url: null
       });
-      registry.get('a.chat').unregisterFrontendPersona('fp1');
+      registry.unregisterFrontendPersona('a.chat', 'fp1');
       expect(registry.get('a.chat').personas.map(p => p.id)).not.toContain(
         'fp1'
       );
@@ -264,12 +264,12 @@ describe('PersonaSessionRegistry', () => {
         name: 'Frontend',
         avatar_url: null
       });
-      const managerState = registry.get('a.chat');
+      const manager = registry.get('a.chat');
       let fired = 0;
-      managerState.changed.connect(() => {
+      manager.changed.connect(() => {
         fired += 1;
       });
-      managerState.unregisterFrontendPersona('fp1');
+      manager.unregisterFrontendPersona('fp1');
       expect(fired).toBe(1);
     });
   });
@@ -299,9 +299,9 @@ describe('PersonaSessionRegistry', () => {
 
     it('fires the changed signal', () => {
       const { registry } = makeRegistry();
-      const managerState = registry.get('a.chat');
+      const manager = registry.get('a.chat');
       let fired = 0;
-      managerState.changed.connect(() => {
+      manager.changed.connect(() => {
         fired += 1;
       });
       registry.updatePersonaState('a.chat', 'p1', { processing: false });

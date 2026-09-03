@@ -4,12 +4,9 @@
  *
  * Flow: the server emits `personas` / `persona_state` events (each carrying the
  * chat's stable `chat_id`); the `PersonaSessionRegistry` routes them to the
- * per-chat `PersonaManagerSessionState`, which holds the persona list and a
+ * per-chat `PersonaManager`, which holds the persona list and a
  * `PersonaSessionState` per persona and fires a Lumino `changed` signal. React
  * components listen to that signal. When a chat closes, its state is discarded.
- *
- * Names mirror the Python package (`PersonaManagerSessionState`,
- * `PersonaSessionState`).
  */
 import { Event } from '@jupyterlab/services';
 import { Token } from '@lumino/coreutils';
@@ -92,11 +89,11 @@ export class PersonaSessionState {
 }
 
 /**
- * The per-chat manager session state: the persona list plus a
+ * The per-chat persona manager: the persona list plus a
  * `PersonaSessionState` per persona. Fires `changed` whenever the persona list
  * or any persona's state updates, so React components re-render.
  */
-export class PersonaManagerSessionState implements IDisposable {
+export class PersonaManager implements IDisposable {
   constructor(public readonly chatId: string) {}
 
   /** Emits whenever the persona list or a persona's state changes. */
@@ -201,7 +198,7 @@ export class PersonaManagerSessionState implements IDisposable {
 }
 
 /**
- * Routes persona events to the correct per-chat `PersonaManagerSessionState`,
+ * Routes persona events to the correct per-chat `PersonaManager`,
  * creating one on demand and discarding it when the chat closes.
  *
  * A single instance is created by the plugin and shared with the toolbar
@@ -223,34 +220,39 @@ export class PersonaSessionRegistry {
   }
 
   /**
-   * Get (or create) the manager session state for a chat. Components call this
+   * Get (or create) the persona manager for a chat. Components call this
    * with their chat's stable id (`IChatModel.id` / `IChatContext.id`).
    */
-  get(chatId: string): PersonaManagerSessionState {
-    let state = this._byChatId.get(chatId);
-    if (!state) {
-      state = new PersonaManagerSessionState(chatId);
-      this._byChatId.set(chatId, state);
+  get(chatId: string): PersonaManager {
+    let manager = this._byChatId.get(chatId);
+    if (!manager) {
+      manager = new PersonaManager(chatId);
+      this._byChatId.set(chatId, manager);
     }
-    return state;
+    return manager;
   }
 
-  /** Whether a manager session state exists for `chatId` (without creating one). */
+  /** Whether a persona manager exists for `chatId` (without creating one). */
   has(chatId: string): boolean {
     return this._byChatId.has(chatId);
   }
 
   /**
-   * Register a frontend-only persona for a chat. Shorthand for
-   * `registry.get(chatId).registerFrontendPersona(persona)`.
+   * Register a frontend-only persona for a chat.
    */
   registerFrontendPersona(chatId: string, persona: PersonaOption): void {
     this.get(chatId).registerFrontendPersona(persona);
   }
 
   /**
-   * Update a persona's state for a chat. Shorthand for
-   * `registry.get(chatId).updatePersonaState(personaId, payload)`.
+   * Unregister a frontend-only persona for a chat.
+   */
+  unregisterFrontendPersona(chatId: string, personaId: string): void {
+    this.get(chatId).unregisterFrontendPersona(personaId);
+  }
+
+  /**
+   * Update a persona's state for a chat.
    */
   updatePersonaState(
     chatId: string,
@@ -261,13 +263,13 @@ export class PersonaSessionRegistry {
   }
 
   /**
-   * Discard a chat's session state and free its memory. Called when the client
+   * Discard a chat's persona manager and free its memory. Called when the client
    * closes the chat (wired to the chat model's `disposed` signal).
    */
   discard(chatId: string): void {
-    const state = this._byChatId.get(chatId);
-    if (state) {
-      state.dispose();
+    const manager = this._byChatId.get(chatId);
+    if (manager) {
+      manager.dispose();
       this._byChatId.delete(chatId);
     }
   }
@@ -292,7 +294,7 @@ export class PersonaSessionRegistry {
     this.get(data.chat_id).updatePersonaState(data.persona_id, data);
   };
 
-  private _byChatId = new Map<string, PersonaManagerSessionState>();
+  private _byChatId = new Map<string, PersonaManager>();
 }
 
 /**
