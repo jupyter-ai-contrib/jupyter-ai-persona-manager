@@ -6,13 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
-from jupyter_ai_persona_manager.mcp_server_models import (
+from jupyter_ai_persona_manager.persona_events import PersonaSessionState
+from jupyter_mcp_manager import (
     HttpHeader,
     McpServerHttp,
     McpSettings,
 )
-from jupyter_ai_persona_manager.persona_events import PersonaSessionState
-
 
 @pytest.fixture
 def mock_ychat():

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from asyncio import get_event_loop_policy
 from typing import TYPE_CHECKING
 
+from jupyter_mcp_manager import McpServerManager
 from jupyter_server.extension.application import ExtensionApp
 from jupyter_server.serverapp import ServerApp
 from traitlets import Type
@@ -29,28 +29,28 @@ if TYPE_CHECKING:
 class PersonaManagerExtension(ExtensionApp):
     """
     Jupyter AI Persona Manager Extension
-    
+
     This extension handles persona management for Jupyter AI chat interactions.
     It depends on jupyter-ai-router for message routing and coordination.
     """
-    
+
     name = "jupyter_ai_persona_manager"
     handlers = [
         (r"/api/ai/avatars/(.*)", AvatarHandler),
         (r"/api/ai/message/(.*)", MessageHandler),
         (r"/api/ai/personas/cancel", CancelHandler),
     ]
-    
+
     persona_manager_class = Type(
         klass=PersonaManager,
         default_value=PersonaManager,
         config=True,
         help="The `PersonaManager` class.",
     )
-    
+
     def initialize(self, argv: Any = None) -> None:
         super().initialize()
-        
+
     @property
     def event_loop(self) -> AbstractEventLoop:
         if self.serverapp is not None:
@@ -61,7 +61,7 @@ class PersonaManagerExtension(ExtensionApp):
             return asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.get_event_loop_policy().get_event_loop()
-    
+
     def initialize_settings(self):
         """Initialize persona manager settings and router integration."""
         start = time.time()
@@ -122,7 +122,7 @@ class PersonaManagerExtension(ExtensionApp):
         This allows persona manager to work through the centralized MessageRouter.
         """
         self.log.info("Waiting for the router to be ready")
-        
+
         # Wait until the router field is available
         while True:
             router = self.serverapp.web_app.settings.get("jupyter-ai", {}).get("router")
@@ -130,7 +130,7 @@ class PersonaManagerExtension(ExtensionApp):
                 self.log.info("Router is ready, continuing with persona manager integration")
                 break
             await asyncio.sleep(0.1)  # Check every 100ms
-        
+
         # Wait for the 'jupyter-ai.persona-managers' dictionary to be available
         # in `self.serverapp.web_app.settings`. This will occur after
         # `initialize_settings()` returns.
@@ -140,17 +140,33 @@ class PersonaManagerExtension(ExtensionApp):
 
         try:
             self.log.info("Found jupyter-ai-router, registering persona manager callbacks")
-            
+
+            # Register default MCP server if jupyter_server_mcp is installed
+            mcp_manager: McpServerManager = self.serverapp.web_app.settings.get("mcp_manager")
+            if mcp_manager:
+                try:
+                    import jupyter_server_mcp  # noqa: F401
+                    mcp_port = self.config.get("MCPExtensionApp", {}).get("mcp_port", 3001)
+                    mcp_name = self.config.get("MCPExtensionApp", {}).get("mcp_name", "Jupyter MCP Server")
+                    mcp_manager.add_server({
+                        "type": "http",
+                        "name": mcp_name,
+                        "url": f"http://localhost:{mcp_port}/mcp",
+                        "headers": [],
+                    })
+                except ImportError:
+                    pass
+
             # Register callback for new chat initialization
             router.observe_chat_init(self._on_router_chat_init)
             router.observe_chat_stop(self._on_router_chat_stop)
-            
+
             # Store reference to router for later use
             self.router = router
-            
+
         except Exception as e:
             self.log.error(f"Error setting up router integration: {e}")
-    
+
     def _on_router_chat_init(self, chat_id: str, chat: "BaseChatModel") -> None:
         """
         Callback for when router detects a new chat initialization.
@@ -181,7 +197,7 @@ class PersonaManagerExtension(ExtensionApp):
 
         # Register persona manager callbacks with router
         self.router.observe_chat_msg(chat_id, persona_manager.on_chat_message)
-    
+
     def _on_router_chat_stop(self, chat_id: str) -> None:
         """
         Callback for when a chat is permanently stopped.
@@ -194,18 +210,18 @@ class PersonaManagerExtension(ExtensionApp):
         self.log.info(f"Chat '{chat_id}' stopped. Shutting down persona manager.")
         task = self.event_loop.create_task(self._stop_persona_manager(chat_id))
         self._stopping_chats[chat_id] = task
-    
+
     def _init_persona_manager(
         self, chat: "BaseChatModel"
     ) -> PersonaManager | None:
         """
         Initializes a `PersonaManager` instance scoped to a chat model.
-        
+
         This method should not raise an exception. Upon encountering an
         exception, this method will catch it, log it, and return `None`.
         """
         persona_manager: PersonaManager | None = None
-        
+
         try:
             assert self.serverapp
             assert self.serverapp.web_app
@@ -214,7 +230,7 @@ class PersonaManagerExtension(ExtensionApp):
             contents_manager = self.serverapp.contents_manager
             root_dir = getattr(contents_manager, "root_dir", None)
             assert isinstance(root_dir, str)
-            
+
             base_url = self.serverapp.web_app.settings.get("base_url", "/")
 
             PersonaManagerClass = self.persona_manager_class
@@ -225,6 +241,7 @@ class PersonaManagerExtension(ExtensionApp):
                 event_loop=self.event_loop,
                 base_url=base_url,
                 event_logger=self.serverapp.web_app.settings.get("event_logger"),
+                mcp_manager=self.serverapp.web_app.settings.get("mcp_manager")
             )
         except Exception as e:
             self.log.error(
@@ -233,7 +250,7 @@ class PersonaManagerExtension(ExtensionApp):
             self.log.exception(e)
         finally:
             return persona_manager
-    
+
     async def _stop_persona_manager(self, chat_id: str) -> None:
         """Shuts down personas for a chat and removes it from settings."""
         async with self._stop_lock:
@@ -250,7 +267,7 @@ class PersonaManagerExtension(ExtensionApp):
             finally:
                 persona_managers.pop(chat_id, None)
                 self._stopping_chats.pop(chat_id, None)
-    
+
     async def stop_extension(self):
         """
         Public method called by Jupyter Server when the server is stopping.
@@ -260,7 +277,7 @@ class PersonaManagerExtension(ExtensionApp):
         except Exception as e:
             self.log.error("Persona Manager extension raised an exception while stopping:")
             self.log.exception(e)
-    
+
     async def _stop_extension(self):
         """
         Private method that defines the cleanup code to run when the server is
@@ -278,7 +295,7 @@ class PersonaManagerExtension(ExtensionApp):
         for chat_id in list(persona_managers.keys()):
             self.log.warning(f"Chat '{chat_id}' did not receive a stop event. Stopping it manually.")
             await self._stop_persona_manager(chat_id)
-    
+
     def _link_jupyter_server_extension(self, server_app: ServerApp):
         """Setup custom config needed by this extension."""
         c = Config()

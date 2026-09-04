@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import importlib.util
 import inspect
-import json
 import os
 import sys
 import traceback
@@ -12,19 +11,19 @@ from glob import glob
 from logging import Logger
 from pathlib import Path
 from time import time_ns
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.websocket_model import WsChatModel
-from traitlets import List, Unicode, default
+from jupyter_mcp_manager import McpServerManager, McpSettings
+from traitlets import Unicode
 from traitlets.config import LoggingConfigurable
 
 from .awareness_models import PersonaOption
 from .base_persona import BasePersona
 from .directories import find_dot_dir, find_workspace_dir
 from .handlers import build_avatar_cache
-from .mcp_server_models import McpServerHttp, McpServerStdio, McpSettings
 from .persona_events import (
     PERSONA_SELECTED_EVENT_SCHEMA_ID,
     PersonaManagerSessionState,
@@ -156,37 +155,6 @@ class PersonaManager(LoggingConfigurable):
         config=True,
     )
 
-    builtin_mcp_servers = List(
-        allow_none=True,
-        help=(
-            "List of built-in MCP server dicts (matching the McpServerHttp / "
-            "McpServerStdio schema) that are enabled by default. "
-            "Set to [] to disable all built-in MCP servers."
-        ),
-    ).tag(config=True)
-
-    @default("builtin_mcp_servers")
-    def _default_builtin_mcp_servers(self):
-        """Returns the jupyter_server_mcp HTTP server if the package is installed."""
-        try:
-            import jupyter_server_mcp  # noqa: F401
-        except Exception:
-            return []
-
-        mcp_port = self.config.get("MCPExtensionApp", {}).get("mcp_port", 3001)
-        mcp_name = self.config.get("MCPExtensionApp", {}).get(
-            "mcp_name", "Jupyter MCP Server"
-        )
-
-        return [
-            {
-                "type": "http",
-                "name": mcp_name,
-                "url": f"http://localhost:{mcp_port}/mcp",
-                "headers": [],
-            }
-        ]
-
     # class attr storing persona classes from entry points
     # We treat this as a class attribute so that we only have to load them once
     _ep_persona_classes: ClassVar[list[dict] | None] = None
@@ -196,7 +164,7 @@ class PersonaManager(LoggingConfigurable):
     root_dir: str
     event_loop: "AbstractEventLoop"
     base_url: str
-
+    mcp_manager: McpServerManager
     log: Logger  # type: ignore
     """
     The `logging.Logger` instance used by this class. This is automatically set
@@ -224,6 +192,7 @@ class PersonaManager(LoggingConfigurable):
         event_loop: "AbstractEventLoop",
         base_url: str = "/",
         event_logger: "Optional[EventLogger]" = None,
+        mcp_manager: Optional[McpServerManager] = None,
         **kwargs,
     ):
         # Forward other arguments to parent class
@@ -235,6 +204,7 @@ class PersonaManager(LoggingConfigurable):
         self.event_loop = event_loop
         self.base_url = base_url
         self.event_logger = event_logger
+        self.mcp_manager = mcp_manager
 
         # register system user for sending system msgs
         self.chat.set_user(
@@ -281,6 +251,9 @@ class PersonaManager(LoggingConfigurable):
             )
         else:
             self.log.warning(f"No default persona is set in chat '{self.chat_path}'.")
+
+        if self.mcp_manager:
+            self.mcp_manager.add_observer(self._on_mcp_servers_update)
 
     def _init_persona_classes(self) -> None:
         """Read entry-point and local persona classes."""
@@ -570,7 +543,7 @@ class PersonaManager(LoggingConfigurable):
         self.event_loop.create_task(_safe_prepare(persona))
         return True
 
-    async def refresh_personas(self):
+    async def refresh_personas(self, silent=False):
         """
         Method that reloads all persona classes defined by entry points and
         locally under `.jupyter/personas`, and re-initializes each persona class
@@ -601,8 +574,9 @@ class PersonaManager(LoggingConfigurable):
         except Exception as e:
             self.log.error(f"Error rebuilding avatar cache: {e}")
 
-        # Write success message to chat & logs
-        self.send_system_message("Refreshed all AI personas in this chat.")
+        # Write success message to chat (if not silent) & logs
+        if not silent:
+            self.send_system_message("Refreshed all AI personas in this chat.")
         self.log.info(f"Refreshed all AI personas in chat '{self.chat_path}'.")
 
     @property
@@ -660,61 +634,19 @@ class PersonaManager(LoggingConfigurable):
         User-defined servers take precedence over built-in servers.
         Returns None if no servers are configured.
         """
-        dotjupyter_dir = self.get_dotjupyter_dir()
-        user_settings: McpSettings | None = None
 
-        # Parse user-defined servers
-        if dotjupyter_dir is not None:
-            mcp_config_path = Path(dotjupyter_dir) / 'mcp_settings.json'
-            if mcp_config_path.exists():
-                try:
-                    with open(mcp_config_path, 'r') as f:
-                        config_data = json.load(f)
-                    user_settings = McpSettings(**config_data)
-                except Exception:
-                    self.log.exception(
-                        f"Failed to read or parse MCP config from {mcp_config_path}."
-                    )
-
-        # Parse builtin servers
-        builtin_servers = []
-        for entry in (self.builtin_mcp_servers or []):
-            try:
-                if entry.get("type") == "http":
-                    builtin_servers.append(McpServerHttp(**entry))
-                else:
-                    builtin_servers.append(McpServerStdio(**entry))
-            except Exception:
-                self.log.warning(
-                    f"Skipping invalid builtin MCP server entry: {entry}"
-                )
-
-        user_servers = user_settings.mcp_servers if user_settings else []
-        user_http_urls = {s.url for s in user_servers if isinstance(s, McpServerHttp)}
-        user_stdio_names = {s.name for s in user_servers if isinstance(s, McpServerStdio)}
-
-        # Filter out builtin servers that duplicate a user-defined server
-        filtered_builtins = []
-        for s in builtin_servers:
-            if isinstance(s, McpServerHttp) and s.url in user_http_urls:
-                self.log.info(
-                    f"Skipping builtin HTTP MCP server '{s.name}' since it is overridden by user settings."
-                )
-            elif isinstance(s, McpServerStdio) and s.name in user_stdio_names:
-                self.log.info(
-                    f"Skipping builtin stdio MCP server '{s.name}' since it is overridden by user settings."
-                )
-            else:
-                filtered_builtins.append(s)
-
-        all_servers = user_servers + filtered_builtins
-        if not all_servers:
+        if self.mcp_manager is None:
             return None
 
-        self.log.info(
-            f"MCP servers loaded: {len(filtered_builtins)} builtin, {len(user_servers)} from settings file."
-        )
-        return McpSettings(mcp_servers=all_servers)
+        settings = self.mcp_manager.get_settings()
+        return settings if settings.mcp_servers else None
+
+    async def _on_mcp_servers_update(self):
+        """
+        Callback when MCP servers are updated.
+        Refresh the personas to load the new MCP server.
+        """
+        await self.refresh_personas(True)
 
     async def shutdown_personas(self):
         """

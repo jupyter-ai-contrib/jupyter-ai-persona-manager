@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from jupyterlab_chat.models import Message, NewMessage, User
 from jupyterlab_chat.utils import find_mentions
+from jupyter_mcp_manager import HttpHeader, McpServerHttp, McpSettings
 from pydantic import BaseModel
 from traitlets import MetaHasTraits
 from traitlets.config import LoggingConfigurable
@@ -30,7 +31,6 @@ from .doc_markers import (
     mark_required,
     mark_subclass_api,
 )
-from .mcp_server_models import HttpHeader, McpServerHttp, McpSettings
 from .persona_events import PersonaSessionState
 
 # prevents a circular import
