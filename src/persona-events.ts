@@ -205,18 +205,22 @@ export class PersonaManager implements IDisposable {
  * controls and the slash-command provider.
  */
 export class PersonaSessionRegistry {
-  constructor(events: Event.IManager) {
+  constructor(events?: Event.IManager) {
     // The ServiceManager event bus (JupyterLab >= 4.0) exposes a single shared
     // stream of all Jupyter Events; filter it by schema id to route the two
     // persona event types. This supersedes the former `jupyterlab-eventlistener`
     // dependency.
-    events.stream.connect((_, emission) => {
-      if (emission.schema_id === PERSONAS_EVENT_SCHEMA_ID) {
-        void this._onPersonasEvent(emission);
-      } else if (emission.schema_id === PERSONA_STATE_EVENT_SCHEMA_ID) {
-        void this._onPersonaStateEvent(emission);
-      }
-    });
+    // In JupyterLite, serviceManager.events is undefined (no server backend),
+    // so backend persona events are simply never received.
+    if (events) {
+      events.stream.connect((_, emission) => {
+        if (emission.schema_id === PERSONAS_EVENT_SCHEMA_ID) {
+          void this._onPersonasEvent(emission);
+        } else if (emission.schema_id === PERSONA_STATE_EVENT_SCHEMA_ID) {
+          void this._onPersonaStateEvent(emission);
+        }
+      });
+    }
   }
 
   /**
