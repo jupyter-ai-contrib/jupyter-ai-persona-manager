@@ -20,22 +20,26 @@ test.describe('frontend-persona', () => {
 
     // Inject a fake frontend persona directly via the session registry,
     // mimicking what a JupyterLite extension does via registerFrontendPersona.
-    await page.evaluate(() => {
-      const app = window.jupyterapp as any;
+    // Return chatId so the unregister step doesn't need to re-derive it from
+    // currentWidget (which shifts after the Escape keypress closes the menu).
+    const chatId = await page.evaluate(async () => {
+      const app = (window as any).jupyterapp;
       const plugins: Map<string, any> = app.pluginRegistry._plugins;
       const sessionRegistry = plugins.get(
         '@jupyter-ai/persona-manager:session-registry'
       )?.service;
-      const chatId = (app.shell.currentWidget as any)?.model?.id;
-      if (!sessionRegistry || !chatId) {
+      // model.id is set asynchronously; await model.ready to get the stable id.
+      const id = await (app.shell.currentWidget as any)?.model?.ready;
+      if (!sessionRegistry || !id) {
         throw new Error(
-          `Missing: sessionRegistry=${sessionRegistry}, chatId=${chatId}`
+          `Missing: sessionRegistry=${sessionRegistry}, chatId=${id}`
         );
       }
-      sessionRegistry.registerFrontendPersona(chatId, {
+      sessionRegistry.registerFrontendPersona(id, {
         id: 'test-frontend-persona',
         name: 'Test Frontend Persona'
       });
+      return id;
     });
 
     await expect(helpers.personaPicker).toBeVisible({ timeout: 10000 });
@@ -44,5 +48,27 @@ test.describe('frontend-persona', () => {
       page.getByRole('menuitem', { name: 'Test Frontend Persona' })
     ).toBeVisible();
     await page.keyboard.press('Escape');
+
+    // Unregister the persona and verify it disappears.
+    await page.evaluate((id: string) => {
+      const app = (window as any).jupyterapp;
+      const plugins: Map<string, any> = app.pluginRegistry._plugins;
+      const sessionRegistry = plugins.get(
+        '@jupyter-ai/persona-manager:session-registry'
+      )?.service;
+      sessionRegistry.unregisterFrontendPersona(id, 'test-frontend-persona');
+    }, chatId);
+
+    if (await helpers.personaPicker.isVisible()) {
+      // Other personas remain — the unregistered one must be gone from the menu.
+      await helpers.personaPicker.click();
+      await expect(
+        page.getByRole('menuitem', { name: 'Test Frontend Persona' })
+      ).not.toBeVisible();
+      await page.keyboard.press('Escape');
+    } else {
+      // It was the only persona — the picker itself must have disappeared.
+      await expect(helpers.personaPicker).not.toBeVisible();
+    }
   });
 });
