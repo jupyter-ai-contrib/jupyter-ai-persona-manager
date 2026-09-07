@@ -1,17 +1,32 @@
 import json
+import os
+import sys
 from pathlib import Path
 
 from jupyterlite_core.addons.base import BaseAddon
 
-_PACKAGE_JSON = Path(__file__).parent / "labextension" / "package.json"
+# The labextension is installed to share/jupyter/labextensions/ (shared-data),
+# not into the Python package directory. Check sys.prefix first (covers venvs
+# and nox sessions), then fall back to the source tree for editable installs.
+_SHARE_PACKAGE_JSON = (
+    Path(sys.prefix)
+    / "share"
+    / "jupyter"
+    / "labextensions"
+    / "@jupyter-ai"
+    / "persona-manager"
+    / "package.json"
+)
+_LOCAL_PACKAGE_JSON = Path(__file__).parent / "labextension" / "package.json"
 
 
 def _disabled_extensions_from_package_json() -> list[str]:
-    """ Read jupyterlab.disabledExtensions from labextension package.json. """
-    if not _PACKAGE_JSON.exists():
-        return []
-    data = json.loads(_PACKAGE_JSON.read_text())
-    return data.get("jupyterlab", {}).get("disabledExtensions", [])
+    """ Read jupyterlab.disabledExtensions from the installed labextension package.json. """
+    for candidate in (_SHARE_PACKAGE_JSON, _LOCAL_PACKAGE_JSON):
+        if candidate.exists():
+            data = json.loads(candidate.read_text())
+            return data.get("jupyterlab", {}).get("disabledExtensions", [])
+    return []
 
 
 class DisableConflictingExtensionAddon(BaseAddon):
@@ -26,8 +41,6 @@ class DisableConflictingExtensionAddon(BaseAddon):
 
     def _patch_config(self, manager):
         to_disable = _disabled_extensions_from_package_json()
-        if not to_disable:
-            return
 
         config_path = manager.output_dir / "jupyter-lite.json"
         config = json.loads(config_path.read_text()) if config_path.exists() else {}
@@ -38,5 +51,10 @@ class DisableConflictingExtensionAddon(BaseAddon):
         for extension_id in to_disable:
             if extension_id not in disabled:
                 disabled.append(extension_id)
+
+        # Expose window.jupyterapp for Galata/Playwright tests. Opt-in only:
+        # enabled when JAI_E2E_SUITE is set (i.e. inside the nox e2e session).
+        if os.environ.get("JAI_E2E_SUITE"):
+            jupyter_config["exposeAppInBrowser"] = True
 
         config_path.write_text(json.dumps(config, indent=2) + "\n")

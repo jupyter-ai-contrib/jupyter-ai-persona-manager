@@ -7,6 +7,7 @@
  * `.jupyter/personas/` walking up from a chat's directory, so suites stay
  * isolated on one server.
  */
+const path = require('path');
 const baseConfig = require('@jupyterlab/galata/lib/playwright-config');
 
 // Random port so a run doesn't collide with a dev server (or another run) on a
@@ -24,20 +25,32 @@ if (!process.env.JAI_MCP_PROBE_PORT) {
   process.env.JAI_MCP_PROBE_PORT = String(PORT + 200);
 }
 const SUITE = process.env.JAI_E2E_SUITE;
+const isLite = SUITE === 'jupyterlite';
+const isMcp = SUITE === 'mcp';
 
 module.exports = {
   ...baseConfig,
-  // Route to the suite under test: the `mcp` env runs only the MCP-integration
-  // suite; every other env runs the rest and skips it (its fixture persona and
-  // server extension need fastmcp/mcp, present only in the `mcp` env).
-  ...(SUITE === 'mcp'
+  // Route to the suite under test.
+  ...(isMcp
     ? { testDir: 'tests/mcp-integration' }
-    : { testIgnore: '**/mcp-integration/**' }),
-  use: { ...(baseConfig.use || {}), baseURL: `http://localhost:${PORT}` },
+    : isLite
+      ? { testMatch: ['**/frontend-persona.spec.ts'] }
+      : { testIgnore: ['**/mcp-integration/**'] }),
+  use: {
+    ...(baseConfig.use || {}),
+    baseURL: `http://localhost:${PORT}`,
+    // In JupyterLite, disable galata's auto-navigation (it expects the
+    // JupyterLab URL pattern and fails for a static JupyterLite site).
+    // The test navigates manually via page.goto() instead.
+    ...(isLite ? { autoGoto: false } : {})
+  },
   webServer: {
-    // MCP port offset from the HTTP port so it doesn't collide with a default
-    // (3001) or a dev server. CLI args win over galata's config defaults.
-    command: `jlpm start --ServerApp.port=${PORT} --MCPExtensionApp.mcp_port=${PORT + 100}`,
+    // Serve Jupyterlite or Jupyterlab, depending on the test suite.
+    // MCP port offset from the HTTP port so it doesn't collide with a
+    // default (3001) or a dev server. CLI args win over galata's defaults.
+    command: isLite
+      ? `python -m http.server ${PORT} --directory ${path.resolve(__dirname, '..', '_output')}`
+      : `jlpm start --ServerApp.port=${PORT} --MCPExtensionApp.mcp_port=${PORT + 100}`,
     url: `http://localhost:${PORT}/lab`,
     timeout: 120 * 1000,
     // Forward the suite + probe port to the server process so the config can

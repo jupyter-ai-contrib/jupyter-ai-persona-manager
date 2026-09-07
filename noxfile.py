@@ -45,6 +45,9 @@ _ENVS = {
     # The mcp-integration suite: a real FastMCP server stands in for the
     # built-in Jupyter MCP server so we can verify the identity headers reach it.
     "mcp": ["fastmcp>=3", "mcp"],
+    # JupyterLite suite: builds a static site and runs the frontend-persona test
+    # against it (no server backend, no backend personas).
+    "jupyterlite": ["jupyterlite-core>=0.8"],
 }
 
 
@@ -64,6 +67,12 @@ def e2e(session: nox.Session, env: str) -> None:
     # routes testDir on this); the others skip it.
     if env == "mcp":
         session.env["JAI_E2E_SUITE"] = "mcp"
+    elif env == "jupyterlite":
+        session.env["JAI_E2E_SUITE"] = "jupyterlite"
+        # Build the JupyterLite site before playwright starts. Use the default
+        # output dir (_output/) so playwright.config.js can find it with a
+        # __dirname-relative path without needing an env var.
+        session.run("jupyter", "lite", "build")
     with session.chdir("ui-tests"):
         session.run("jlpm", "install", external=True)
         session.run("jlpm", "playwright", "install", "chromium", external=True)

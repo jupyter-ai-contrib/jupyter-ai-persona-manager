@@ -13,8 +13,27 @@ const TEST_DIR = 'frontend-persona';
 
 test.describe('frontend-persona', () => {
   test('registers a frontend persona and shows it in the picker', async ({
-    page
+    page,
+    baseURL
   }) => {
+    // In JupyterLite, autoGoto is disabled so galata doesn't apply its
+    // JupyterLab URL matcher. Navigate manually and wait for the app.
+    if (process.env.JAI_E2E_SUITE === 'jupyterlite') {
+      // Galata's goto calls hookHelpersUp() which requires window.galata (galata's
+      // own JupyterLab extension). That extension is not installed in JupyterLite,
+      // so we bypass the galata wrapper and call the underlying Playwright page.
+      await (page as any).page.goto(`${baseURL}/lab/index.html`);
+      await page.waitForFunction(
+        () => {
+          const app = (window as any).jupyterapp;
+          return app?.commands.hasCommand('jupyterlab-chat:open');
+        },
+        {
+          timeout: 30000
+        }
+      );
+    }
+
     const helpers = new TestHelpers({ dir: TEST_DIR, page });
     await helpers.openChat();
 
