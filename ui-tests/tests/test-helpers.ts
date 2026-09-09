@@ -222,10 +222,9 @@ export class TestHelpers {
 
   /**
    * Stamp metadata onto the active chat's input model, simulating another
-   * JupyterLab extension contributing keys to the outgoing message — e.g.
-   * jupyterlab-commands-toolkit stamps a `web_client_id` here. Uses the same
-   * public `input.updateMetadata` API the persona controls use, so it exercises
-   * the real shared-metadata path rather than a test-only shortcut.
+   * JupyterLab extension contributing keys to the outgoing message. Uses the
+   * same public `input.updateMetadata` API the persona controls use, so it
+   * exercises the real shared-metadata path rather than a test-only shortcut.
    */
   async stampInputMetadata(patch: Record<string, unknown>): Promise<void> {
     await this.page.evaluate(p => {
