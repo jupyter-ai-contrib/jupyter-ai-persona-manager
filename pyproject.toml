@@ -42,7 +42,12 @@ test = [
     "pytest-asyncio",
     "pytest-cov",
     "pytest-jupyter[server]>=0.6.0",
+    "fastmcp>=3,<4",
+    "jupyterlab_commands_toolkit>=0.2.0",
 ]
+
+[project.entry-points."jupyter_server_mcp.middleware"]
+jupyter_ai_persona_manager = "jupyter_ai_persona_manager.client_routing:ClientRoutingMiddleware"
 
 [tool.hatch.version]
 source = "nodejs"
