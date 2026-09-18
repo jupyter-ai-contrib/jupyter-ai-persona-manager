@@ -100,35 +100,6 @@ class MessageHandler(JupyterHandler):
         if not target_persona:
             raise tornado.web.HTTPError(404, f"Persona '{persona_name}' not found")
 
-        # Run the persona's one-time `prepare()` lifecycle hook before
-        # processing. The live chat path does this via
-        # `PersonaManager._safe_process`; because we invoke the persona
-        # directly here we must replicate it. For most personas `prepare()` is a
-        # no-op, but for ACP personas it is what spawns the agent subprocess,
-        # initializes the ACP client, and creates the chat's ACP session —
-        # without it `process_message()` awaits uninitialized futures and raises,
-        # surfacing to the caller as an opaque 500.
-        from .persona_manager import _safe_prepare
-
-        if not await _safe_prepare(target_persona):
-            # `_safe_prepare` already delivered the failure into the ephemeral
-            # chat; return that text instead of a bare 500 so the caller sees the
-            # real cause (e.g. an ACP agent that isn't authenticated).
-            response = "".join(
-                m.body if getattr(m, "body", None) is not None else str(m)
-                for m in ychat.get_messages()
-            )
-            self.set_header("Content-Type", "application/json")
-            self.finish(
-                json.dumps(
-                    {
-                        "response": response
-                        or f"Persona '{persona_name}' failed to initialize."
-                    }
-                )
-            )
-            return
-
         msg = Message(
             id="msgid",
             body=message_text,
@@ -140,23 +111,28 @@ class MessageHandler(JupyterHandler):
             metadata=metadata
         )
 
-        # Mark the persona as processing for the duration of the call, matching
-        # the live chat path. This is what makes the `processing` wait loop below
-        # meaningful for streaming personas (e.g. ACP), whose reply continues to
-        # arrive after `process_message()` returns. Any unhandled exception is
-        # caught and returned as an error message rather than an opaque 500.
-        try:
-            async with target_persona.track_processing(msg):
-                await target_persona.process_message(msg)
-        except Exception as e:
-            self.log.exception("Error while processing message for persona")
-            self.set_header("Content-Type", "application/json")
-            self.finish(
-                json.dumps(
-                    {"response": f"Error processing message: {e}"}
-                )
-            )
-            return
+        # Route the message through the same error boundary the live chat path
+        # uses (`PersonaManager._safe_process`) rather than reimplementing its
+        # steps inline — that inline copy had drifted out of sync and is what
+        # broke ACP personas here. `_safe_process` runs the persona's one-time
+        # `prepare()` hook, applies per-message specs, and marks the persona as
+        # processing for the duration of the call:
+        #
+        #   - `prepare()` is a no-op for most personas, but for ACP personas it
+        #     spawns the agent subprocess, initializes the ACP client, and
+        #     creates the chat's ACP session; without it `process_message()`
+        #     awaits uninitialized futures and raises.
+        #   - `track_processing` is what makes the `processing` wait loop below
+        #     meaningful for streaming personas (e.g. ACP), whose reply keeps
+        #     arriving after `process_message()` returns.
+        #
+        # Any failure (prepare or processing) is caught and delivered into the
+        # ephemeral chat, so the caller sees the real cause (e.g. an ACP agent
+        # that isn't authenticated) in the response text below rather than an
+        # opaque 500.
+        from .persona_manager import _safe_process
+
+        await _safe_process(target_persona, msg)
 
         # Streaming personas may still be working after process_message returns.
         # Wait until the persona is no longer processing, up to the response
