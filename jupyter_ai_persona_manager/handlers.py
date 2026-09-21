@@ -111,7 +111,29 @@ class MessageHandler(JupyterHandler):
             metadata=metadata
         )
 
-        await target_persona.process_message(msg)
+        # Route the message through the same error boundary the live chat path
+        # uses (`PersonaManager._safe_process`) rather than reimplementing its
+        # steps inline — that inline copy had drifted out of sync and is what
+        # broke ACP personas here. `_safe_process` runs the persona's one-time
+        # `prepare()` hook, applies per-message specs, and marks the persona as
+        # processing for the duration of the call:
+        #
+        #   - `prepare()` is a no-op for most personas, but for ACP personas it
+        #     spawns the agent subprocess, initializes the ACP client, and
+        #     creates the chat's ACP session; without it `process_message()`
+        #     awaits uninitialized futures and raises.
+        #   - `track_processing` is what makes the `processing` wait loop below
+        #     meaningful for streaming personas (e.g. ACP), whose reply keeps
+        #     arriving after `process_message()` returns.
+        #
+        # Any failure (prepare or processing) is caught and delivered into the
+        # ephemeral chat, so the caller sees the real cause (e.g. an ACP agent
+        # that isn't authenticated) in the response text below rather than an
+        # opaque 500.
+        from .persona_manager import _safe_process
+
+        await _safe_process(target_persona, msg)
+
         # Streaming personas may still be working after process_message returns.
         # Wait until the persona is no longer processing, up to the response
         # timeout.
