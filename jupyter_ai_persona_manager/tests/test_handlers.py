@@ -252,8 +252,8 @@ async def test_cancel_handler_resolves_manager_by_id(jp_fetch, jp_serverapp):
 # ---------------------------------------------------------------------------
 #
 # The magics feature (jupyter-ai-magic-commands) POSTs here directly, bypassing
-# the live chat path (`PersonaManager._safe_process`). PR #160 fixed this
-# handler to route through `_safe_process` instead of reimplementing its steps
+# the live chat path (`BasePersona.on_message`). PR #160 fixed this handler to
+# route through the shared entry point instead of reimplementing its steps
 # inline, so a persona's `prepare()` hook runs before `process_message()`, and
 # the handler's wait loop only matters because `processing` is tracked for the
 # duration of the call.
