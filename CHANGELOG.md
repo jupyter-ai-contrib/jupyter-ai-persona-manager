@@ -2,6 +2,33 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.2.1
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.0...5b5f0efd28b1ef5b97e1755c6ecfa99f28fccbdf))
+
+### Enhancements made
+
+- Add E2E tests for persona REST endpoint [#161](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/161) ([@srdas](https://github.com/srdas), [@dlqqq](https://github.com/dlqqq))
+
+### Bugs fixed
+
+- Fixes use of ACP Personas in Magics [#160](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/160) ([@srdas](https://github.com/srdas), [@3coins](https://github.com/3coins), [@dlqqq](https://github.com/dlqqq))
+
+### Maintenance and upkeep improvements
+
+- Fix MCP integration test with mcp>=2 [#155](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/155) ([@brichet](https://github.com/brichet), [@dlqqq](https://github.com/dlqqq))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-09-03&to=2026-09-23&type=c))
+
+@3coins ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3A3coins+updated%3A2026-09-03..2026-09-23&type=Issues)) | @brichet ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abrichet+updated%3A2026-09-03..2026-09-23&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-09-03..2026-09-23&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-09-03..2026-09-23&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.2.0
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.1.3...a16fb47260cace3a6e7fa3dd79d55bdf510d9f0c))
@@ -42,8 +69,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-08-18&to=2026-09-03&type=c))
 
 @bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-08-18..2026-09-03&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-08-18..2026-09-03&type=Issues)) | @srdas ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Asrdas+updated%3A2026-08-18..2026-09-03&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.2.0rc0
 
