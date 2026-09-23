@@ -80,7 +80,7 @@ class MessageHandler(JupyterHandler):
         ychat.initial_path = f"{uuid.uuid4()}.chat"
 
         # Instantiate a temporary PersonaManager for this ephemeral chat.
-        from .persona_manager import PersonaManager, _safe_process
+        from .persona_manager import PersonaManager
 
         persona_manager = PersonaManager(
             chat=ychat,
@@ -111,12 +111,26 @@ class MessageHandler(JupyterHandler):
             metadata=metadata
         )
 
-        # Route through the same error boundary as the live chat path
-        # (`_safe_process`) instead of reimplementing its steps inline: it runs
-        # `prepare()` (which spawns the ACP subprocess and session) and marks
-        # the persona as processing so the wait loop below works for streaming
-        # personas. Failures are delivered into the chat.
-        await _safe_process(target_persona, msg)
+        # Route the message through the same entry point the live chat path uses
+        # (`BasePersona.on_message`) rather than reimplementing its steps inline
+        # — that inline copy had drifted out of sync and is what broke ACP
+        # personas here. `on_message` runs the persona's one-time `prepare()`
+        # hook, dispatches on the resulting state (prompting for sign-in when
+        # unauthenticated), applies per-message specs, and marks the persona as
+        # processing for the duration of the call:
+        #
+        #   - `prepare()` is a no-op for most personas, but for ACP personas it
+        #     spawns the agent subprocess, initializes the ACP client, and
+        #     creates the chat's ACP session; without it `process_message()`
+        #     awaits uninitialized futures and raises.
+        #   - `track_processing` is what makes the `processing` wait loop below
+        #     meaningful for streaming personas (e.g. ACP), whose reply keeps
+        #     arriving after `process_message()` returns.
+        #
+        # Any failure is caught and delivered into the ephemeral chat, so the
+        # caller sees the real cause (e.g. an ACP agent that isn't authenticated)
+        # in the response text below rather than an opaque 500.
+        await target_persona.on_message(msg)
 
         # Streaming personas may still be working after process_message returns.
         # Wait until the persona is no longer processing, up to the response
