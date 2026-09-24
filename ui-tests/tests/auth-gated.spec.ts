@@ -3,13 +3,14 @@
  * Distributed under the terms of the Modified BSD License.
  */
 
-import { expect, test } from '@jupyterlab/galata';
+import { expect, galata, test } from '@jupyterlab/galata';
 import { FixturePersona, installPersonas, TestHelpers } from './test-helpers';
 
-// This suite's working directory and the fixture persona installed into it: a
-// persona that gates prepare() on auth and is never authenticated.
+// This suite's working directory and the fixture personas installed into it: a
+// persona that gates prepare() on auth and is never authenticated, plus one
+// that authenticates once a sentinel file appears (the resume-poll test).
 const TEST_DIR = 'auth-gated';
-const PERSONAS = [FixturePersona.AuthGated];
+const PERSONAS = [FixturePersona.AuthGated, FixturePersona.AuthResume];
 
 // The rendered chat messages, used to prove nothing was posted on selection.
 const MESSAGE = '.jp-chat-rendered-message';
@@ -55,5 +56,34 @@ test.describe('auth-gated', () => {
     // A message (unlike selection) triggers the sign-in prompt.
     const reply = await helpers.sendMessage('hello');
     expect(reply).toContain('please sign in');
+  });
+
+  test('resumes automatically once auth succeeds, without a further message', async ({
+    page,
+    request
+  }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.AuthResume);
+
+    // Unauthenticated message: the sign-in prompt appears and the resume poll
+    // starts running its check_auth_fn.
+    const reply = await helpers.sendMessage('hello');
+    expect(reply).toContain('please sign in');
+
+    // Create the sentinel file the fixture's check_auth_fn looks for. The
+    // already-running poll observes it and the persona resumes on its own — no
+    // further user message is sent.
+    const contents = galata.newContentsHelper(request);
+    const created = await contents.uploadContent(
+      '1',
+      'text',
+      '.auth-resume-signal'
+    );
+    expect(created).toBe(true);
+
+    await expect(
+      helpers.chat.locator(MESSAGE, { hasText: 'signed in, resuming' })
+    ).toBeVisible({ timeout: 15000 });
   });
 });
