@@ -74,7 +74,9 @@ class TestPersonaAuthManager:
         state = {"authed": False}
         parent = _FakeParent()
         mgr = PersonaAuthManager(
-            parent=parent, check_auth_fn=lambda: state["authed"], poll_interval=0.01
+            parent=parent,
+            check_auth_fn=lambda: state["authed"],
+            default_poll_interval=0.01,
         )
         mgr.start_poll()
         await asyncio.sleep(0.03)
@@ -94,6 +96,47 @@ class TestPersonaAuthManager:
         state["authed"] = False
         mgr.reset()
         assert await mgr.check_auth() is False  # cache cleared, re-checks
+
+    @pytest.mark.asyncio
+    async def test_inert_with_no_check_fn(self):
+        # With no check_auth_fn the manager is authed from the start and
+        # start_poll() is a no-op (nothing to poll).
+        mgr = PersonaAuthManager(parent=_FakeParent())
+        assert mgr.authed is True
+        mgr.start_poll()
+        assert mgr._auth_poll_task is None
+
+    @pytest.mark.asyncio
+    async def test_start_poll_noop_when_already_authed(self):
+        mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=lambda: True)
+        assert await mgr.check_auth() is True  # caches authed
+        mgr.start_poll()
+        assert mgr._auth_poll_task is None  # no poll: already authenticated
+
+    def test_default_poll_interval_is_configurable_trait(self):
+        from traitlets.config import Config
+
+        cfg = Config()
+        cfg.PersonaAuthManager.default_poll_interval = 2.5
+        mgr = PersonaAuthManager(parent=_FakeParent(), config=cfg)
+        assert mgr.default_poll_interval == 2.5
+
+    @pytest.mark.asyncio
+    async def test_start_poll_interval_overrides_default(self):
+        # A slow default must not delay a caller that passes an explicit
+        # interval to start_poll().
+        state = {"authed": False}
+        parent = _FakeParent()
+        mgr = PersonaAuthManager(
+            parent=parent,
+            check_auth_fn=lambda: state["authed"],
+            default_poll_interval=100.0,
+        )
+        mgr.start_poll(interval=0.01)
+        state["authed"] = True
+        await asyncio.sleep(0.05)
+        assert parent.auth_calls == 1  # resumed on the fast override, not the default
+        mgr.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +173,7 @@ def _make_auth_gated_persona(authed: dict):
     persona._login_terminal_opened = False
     persona.processed = []
     persona.auth = PersonaAuthManager(
-        parent=persona, check_auth_fn=lambda: authed["v"], poll_interval=0.01
+        parent=persona, check_auth_fn=lambda: authed["v"], default_poll_interval=0.01
     )
     return persona
 

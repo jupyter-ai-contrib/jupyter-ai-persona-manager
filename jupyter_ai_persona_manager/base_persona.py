@@ -171,10 +171,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self._prepare_task: Optional[asyncio.Task] = None
 
         # Owns this persona's auth mechanism (check + resume poll). The default
-        # instance has no `check_auth_fn`, so the persona is always considered
-        # authenticated; a persona that requires sign-in replaces this with a
-        # configured `PersonaAuthManager` (e.g. in a subclass `__init__`).
-        self.auth = PersonaAuthManager(parent=self)
+        # instance has no `check_auth_fn`, so it is inert and the persona is
+        # always considered authenticated; a persona that requires sign-in
+        # replaces this with a configured `PersonaAuthManager` (e.g. in a
+        # subclass `__init__`). `config` is threaded through so its traits (e.g.
+        # `default_poll_interval`) pick up the persona's traitlets configuration.
+        self.auth = PersonaAuthManager(parent=self, config=self.config)
         # Guards `_open_login_terminal` so it opens at most one terminal.
         self._login_terminal_opened = False
 
@@ -276,17 +278,15 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         Runs the one-time `prepare()` hook (awaiting an in-flight run and
         retrying a failed/unauthenticated one), then dispatches on the outcome:
 
-        - **NOT_AUTHED** — start the auth resume poll and hand off to
-          `handle_message_no_auth`. This is the *only* place that reacts to an
-          unauthenticated state, so a `prepare()` run triggered eagerly on
-          selection stays silent: the user is prompted to sign in only when they
-          actually send a message.
+        - **NOT_AUTHED** — hand off to `handle_message_no_auth`. This is the
+          *only* place that reacts to an unauthenticated state, so a `prepare()`
+          run triggered eagerly on selection stays silent: the user is prompted
+          to sign in only when they actually send a message.
         - **FAILED** — surface the preparation error in the chat.
         - **PREPARED** — apply the message's model/settings spec, then process it
           while holding the chat alive and tracking processing state.
 
-        This replaces the former `_safe_process`/`_safe_prepare` split: this one
-        method owns the whole invocation lifecycle and its error boundary.
+        This method owns the whole invocation lifecycle and its error boundary.
         """
         # 1. Prepare. The resulting `preparation_state` — not an exception —
         #    drives dispatch, so an auth failure is caught here and handled
@@ -300,10 +300,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             return
 
         if self.preparation_state == PreparationState.NOT_AUTHED:
-            # Mechanism (guaranteed): resume the user's request once they sign
-            # in, regardless of how a subclass customizes the prompt below.
-            self.auth.start_poll()
-            # Policy (implementer-controlled): what the user sees.
+            # The persona decides what the user sees and whether to poll for
+            # sign-in; the base `handle_message_no_auth` does both by default.
             await self.handle_message_no_auth(message)
             return
 
@@ -353,22 +351,27 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         React to a message received while the user is not authenticated.
 
-        The default sends a generic sign-in notice. Override to customize the
-        message, open a login terminal (`_open_login_terminal`), or take other
-        action. The resume poll that re-runs the persona once the user signs in
-        is started by `on_message` independently of this method, so an override
-        controls only what the user sees — not whether the persona recovers.
+        Override this to give the user sign-in instructions, and call
+        `self.auth.start_poll()` to automatically detect authentication and
+        resume the persona once the user signs in. Keeping the poll here (rather
+        than in `on_message`) makes polling opt-in: a persona that should not
+        poll simply does not call `start_poll`.
+
+        The base implementation sends a generic sign-in notice and starts the
+        poll.
         """
         self.send_message(
             "You need to sign in to use this persona. Please sign in, then send "
             "your message again."
         )
+        # No-op unless a `check_auth_fn` was passed to the auth manager at init.
+        self.auth.start_poll()
 
     @mark_optional
     async def handle_auth(self) -> None:
         """
         React once authentication succeeds. Invoked by the auth resume poll (see
-        `PersonaAuthManager.poll_for_auth`) after the user signs in.
+        `PersonaAuthManager.start_poll`) after the user signs in.
 
         The default is a no-op. Override to resume the user's original request —
         e.g. an ACP persona re-runs `prepare()` to bring up its agent and replays
