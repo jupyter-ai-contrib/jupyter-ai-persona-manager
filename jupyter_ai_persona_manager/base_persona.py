@@ -32,6 +32,7 @@ from .doc_markers import (
 )
 from .mcp_server_models import HttpHeader, McpServerHttp, McpSettings
 from .persona_events import PersonaSessionState
+from .auth_manager import PersonaAuthManager, PersonaNotAuthenticated
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -79,13 +80,17 @@ class PreparationState(str, Enum):
     - NOT_STARTED: `prepare()` has not been run yet.
     - PREPARING: a `prepare()` run is in flight.
     - PREPARED: `prepare()` completed successfully.
-    - FAILED: the last `prepare()` run raised; it will be retried on the next
-      message.
+    - NOT_AUTHED: the last `prepare()` run raised `PersonaNotAuthenticated`
+      because the user is not signed in; it will be retried on the next message,
+      and `on_message` prompts the user to sign in rather than showing an error.
+    - FAILED: the last `prepare()` run raised some other error; it will be
+      retried on the next message.
     """
 
     NOT_STARTED = "not_started"
     PREPARING = "preparing"
     PREPARED = "prepared"
+    NOT_AUTHED = "not_authed"
     FAILED = "failed"
 
 
@@ -165,6 +170,14 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         self._prepare_task: Optional[asyncio.Task] = None
 
+        # Owns this persona's auth mechanism (check + resume poll). The default
+        # instance has no `check_auth_fn`, so the persona is always considered
+        # authenticated; a persona that requires sign-in replaces this with a
+        # configured `PersonaAuthManager` (e.g. in a subclass `__init__`).
+        self.auth = PersonaAuthManager(parent=self)
+        # Guards `_open_login_terminal` so it opens at most one terminal.
+        self._login_terminal_opened = False
+
         # Publish this persona's session state over Jupyter Events. Works in
         # both RTC and non-RTC mode. The event logger and chat path come from
         # the PersonaManager (this persona's ``parent``); when constructed
@@ -231,7 +244,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             return PreparationState.NOT_STARTED
         if not task.done():
             return PreparationState.PREPARING
-        if task.cancelled() or task.exception() is not None:
+        if task.cancelled():
+            return PreparationState.FAILED
+        exc = task.exception()
+        if exc is not None:
+            if isinstance(exc, PersonaNotAuthenticated):
+                return PreparationState.NOT_AUTHED
             return PreparationState.FAILED
         return PreparationState.PREPARED
 
@@ -239,13 +257,143 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """
         Run `prepare()` exactly once, awaiting an in-flight run if one exists.
 
+        A run that previously failed or ended unauthenticated is retried, so a
+        user who signs in and sends another message gets a fresh attempt.
         """
         if self.preparation_state in (
             PreparationState.NOT_STARTED,
             PreparationState.FAILED,
+            PreparationState.NOT_AUTHED,
         ):
             self._prepare_task = asyncio.ensure_future(self.prepare())
         await self._prepare_task
+
+    @mark_consumer_api
+    async def on_message(self, message: "Message") -> None:
+        """
+        Single entry point for a message routed to this persona.
+
+        Runs the one-time `prepare()` hook (awaiting an in-flight run and
+        retrying a failed/unauthenticated one), then dispatches on the outcome:
+
+        - **NOT_AUTHED** — start the auth resume poll and hand off to
+          `handle_message_no_auth`. This is the *only* place that reacts to an
+          unauthenticated state, so a `prepare()` run triggered eagerly on
+          selection stays silent: the user is prompted to sign in only when they
+          actually send a message.
+        - **FAILED** — surface the preparation error in the chat.
+        - **PREPARED** — apply the message's model/settings spec, then process it
+          while holding the chat alive and tracking processing state.
+
+        This replaces the former `_safe_process`/`_safe_prepare` split: this one
+        method owns the whole invocation lifecycle and its error boundary.
+        """
+        # 1. Prepare. The resulting `preparation_state` — not an exception —
+        #    drives dispatch, so an auth failure is caught here and handled
+        #    below, while any other preparation error is surfaced and stops.
+        try:
+            await self._ensure_prepared()
+        except PersonaNotAuthenticated:
+            pass
+        except Exception as exc:
+            await self._deliver_error(exc, "while preparing")
+            return
+
+        if self.preparation_state == PreparationState.NOT_AUTHED:
+            # Mechanism (guaranteed): resume the user's request once they sign
+            # in, regardless of how a subclass customizes the prompt below.
+            self.auth.start_poll()
+            # Policy (implementer-controlled): what the user sees.
+            await self.handle_message_no_auth(message)
+            return
+
+        # 2. Process, holding a WebSocket-backed chat alive for the whole reply
+        #    and marking the persona as processing for the stop button.
+        try:
+            await self.apply_specs_in_message(message)
+            with self._keep_chat_alive():
+                async with self.track_processing(message):
+                    await self.process_message(message)
+        except Exception as exc:
+            await self._deliver_error(exc, "while processing the message")
+
+    async def _deliver_error(self, exc: Exception, where: str) -> None:
+        """
+        Log an unhandled persona exception and surface it to the user via
+        `handle_uncaught_exception()`, guarding against a secondary failure in
+        the handler itself.
+        """
+        self.log.error(f"Persona '{self.name}' raised an exception {where}.")
+        self.log.exception(exc)
+        try:
+            await self.handle_uncaught_exception(exc)
+        except Exception:
+            self.log.exception(
+                f"Persona '{self.name}' raised a secondary exception in "
+                f"handle_uncaught_exception(); error message not delivered to user."
+            )
+
+    def _keep_chat_alive(self):
+        """
+        Pin the chat in memory while a persona processes a message.
+
+        A WebSocket-backed chat (`WsChatModel`) is freed once its last client
+        disconnects, which would orphan a persona still producing a reply after
+        the user closes the tab. Under RTC the chat's memory is managed at a
+        higher layer (and `YChat` has no `keep_alive`), so this is a no-op there.
+        """
+        from jupyterlab_chat.websocket_model import WsChatModel
+
+        if isinstance(self.chat, WsChatModel):
+            return self.chat.keep_alive()
+        return contextlib.nullcontext()
+
+    @mark_optional
+    async def handle_message_no_auth(self, message: "Message") -> None:
+        """
+        React to a message received while the user is not authenticated.
+
+        The default sends a generic sign-in notice. Override to customize the
+        message, open a login terminal (`_open_login_terminal`), or take other
+        action. The resume poll that re-runs the persona once the user signs in
+        is started by `on_message` independently of this method, so an override
+        controls only what the user sees — not whether the persona recovers.
+        """
+        self.send_message(
+            "You need to sign in to use this persona. Please sign in, then send "
+            "your message again."
+        )
+
+    @mark_optional
+    async def handle_auth(self) -> None:
+        """
+        React once authentication succeeds. Invoked by the auth resume poll (see
+        `PersonaAuthManager.poll_for_auth`) after the user signs in.
+
+        The default is a no-op. Override to resume the user's original request —
+        e.g. an ACP persona re-runs `prepare()` to bring up its agent and replays
+        the pending prompt.
+        """
+
+    @mark_subclass_api
+    async def _open_login_terminal(self, command: str = "terminal:create-new") -> bool:
+        """
+        Open a terminal in the frontend to help the user sign in, returning
+        `True` on success.
+
+        Soft-depends on `jupyterlab_commands_toolkit`; returns `False` if it is
+        unavailable or the command fails. Guarded so it opens at most one
+        terminal per persona instance.
+        """
+        if self._login_terminal_opened:
+            return False
+        try:
+            from jupyterlab_commands_toolkit.tools import execute_command
+        except Exception:
+            return False
+        response = await execute_command(command)
+        self._login_terminal_opened = bool(response.get("success", False))
+        return self._login_terminal_opened
 
     @mark_recommended
     async def cancel_response(self) -> None:
@@ -954,6 +1102,10 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         logic. The override should generally call `super().shutdown()` first
         before running custom shutdown logic.
         """
+        # Cancel any background auth poll so no task outlives the persona.
+        auth = getattr(self, "auth", None)
+        if auth is not None:
+            auth.stop()
         # Stop awareness heartbeat task & remove self from chat awareness
         if self.state is not None:
             self.state.shutdown()
