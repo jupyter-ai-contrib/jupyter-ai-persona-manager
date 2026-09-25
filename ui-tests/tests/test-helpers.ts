@@ -173,10 +173,26 @@ export class TestHelpers {
   async openChat(filepath?: string): Promise<Locator> {
     if (!filepath) {
       filepath = `${this.dir}/chat-${UUID.uuid4()}.chat`;
-      await this.page.filebrowser.contents.uploadContent(
-        '{}',
-        'text',
-        filepath
+      // Use the browser-side Contents API so this works in JupyterLite (where
+      // galata's direct-HTTP uploadContent bypasses the service-worker contents
+      // layer) as well as in JupyterLab.
+      await this.page.evaluate(
+        async (args: { path: string; dir: string }) => {
+          const contents = (window.jupyterapp as any).serviceManager.contents;
+          // JupyterLite's in-memory FS starts empty: create the parent directory
+          // before saving the file (no-op if it already exists in JupyterLab).
+          try {
+            await contents.get(args.dir, { content: false });
+          } catch {
+            await contents.save(args.dir, { type: 'directory' });
+          }
+          await contents.save(args.path, {
+            type: 'file',
+            format: 'text',
+            content: '{}'
+          });
+        },
+        { path: filepath, dir: this.dir }
       );
     }
     await this.page.evaluate(async (name: string) => {
