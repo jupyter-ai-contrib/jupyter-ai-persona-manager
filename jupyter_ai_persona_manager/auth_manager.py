@@ -16,6 +16,7 @@ inert. It only does work once a persona passes a ``check_auth_fn``.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Awaitable, Callable, Optional, Union
 
 from traitlets import Float
@@ -26,6 +27,22 @@ if TYPE_CHECKING:
 
 # A function returning whether the user is authenticated. May be sync or async.
 CheckAuthFn = Callable[[], Union[bool, Awaitable[bool]]]
+
+
+@dataclass
+class PersonaAuthSpec:
+    """
+    Declarative description of how a persona authenticates.
+
+    A persona passes this to ``super().__init__(auth_spec=...)`` and `BasePersona`
+    hands it to the persona's `PersonaAuthManager`. It is pure data — no
+    ``parent``, no running poll — so a subclass can construct it *before* the
+    persona itself exists, and the persona is what binds the resulting manager
+    to itself. With the default (no ``check_auth_fn``) the persona is inert:
+    always considered authenticated.
+    """
+
+    check_auth_fn: Optional[CheckAuthFn] = None
 
 
 class PersonaNotAuthenticated(Exception):
@@ -43,12 +60,13 @@ class PersonaAuthManager(LoggingConfigurable):
     """
     Owns a persona's authentication mechanism (see module docstring).
 
-    Pass a ``check_auth_fn`` (sync or async, returning a bool) to make the
-    manager do work. **With none, the manager is inert**: the persona is
-    considered authenticated from the start, `check_auth()` / `assert_auth()`
-    pass, and `start_poll()` is a no-op. The persona is this object's traitlets
-    ``parent``; configurable traits (e.g. `default_poll_interval`) are read from
-    the persona's ``config`` when it is threaded through at construction.
+    Pass a `PersonaAuthSpec` via ``spec`` whose ``check_auth_fn`` (sync or async,
+    returning a bool) makes the manager do work. **With no spec (or a spec with
+    no ``check_auth_fn``), the manager is inert**: the persona is considered
+    authenticated from the start, `check_auth()` / `assert_auth()` pass, and
+    `start_poll()` is a no-op. The persona is this object's traitlets ``parent``;
+    configurable traits (e.g. `default_poll_interval`) are read from the
+    persona's ``config`` when it is threaded through at construction.
     """
 
     default_poll_interval = Float(
@@ -63,16 +81,19 @@ class PersonaAuthManager(LoggingConfigurable):
     def __init__(
         self,
         *args,
-        check_auth_fn: Optional[CheckAuthFn] = None,
+        spec: Optional[PersonaAuthSpec] = None,
         **kwargs,
     ) -> None:
         # `parent` (the persona) and any configurable traits (e.g.
         # `default_poll_interval`) are passed through to LoggingConfigurable.
         super().__init__(*args, **kwargs)
-        self._check_auth_fn = check_auth_fn
+        # The spec declares how this persona authenticates (see PersonaAuthSpec);
+        # an absent spec means the default, inert configuration.
+        self._spec = spec or PersonaAuthSpec()
+        self._check_auth_fn = self._spec.check_auth_fn
         # With no check function there is nothing to authenticate against, so the
         # persona is authed from the start and every method below is a no-op.
-        self._authed = check_auth_fn is None
+        self._authed = self._check_auth_fn is None
         self._auth_poll_task: Optional[asyncio.Task] = None
 
     @property
