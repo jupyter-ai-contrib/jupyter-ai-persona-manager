@@ -32,7 +32,7 @@ from .doc_markers import (
 )
 from .mcp_server_models import HttpHeader, McpServerHttp, McpSettings
 from .persona_events import PersonaSessionState
-from .auth_manager import PersonaAuthManager, PersonaNotAuthenticated
+from .auth_manager import PersonaAuthManager, PersonaAuthSpec, PersonaNotAuthenticated
 
 # prevents a circular import
 # types imported under this block have to be surrounded in single quotes on use
@@ -157,6 +157,7 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self,
         *args,
         chat: "BaseChatModel",
+        auth_spec: Optional[PersonaAuthSpec] = None,
         **kwargs,
     ):
         # Forward other arguments to parent class
@@ -170,13 +171,16 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         self._prepare_task: Optional[asyncio.Task] = None
 
-        # Owns this persona's auth mechanism (check + resume poll). The default
-        # instance has no `check_auth_fn`, so it is inert and the persona is
-        # always considered authenticated; a persona that requires sign-in
-        # replaces this with a configured `PersonaAuthManager` (e.g. in a
-        # subclass `__init__`). `config` is threaded through so its traits (e.g.
+        # Owns this persona's auth mechanism (check + resume poll). A subclass
+        # declares how it authenticates by passing an ``auth_spec``
+        # (``super().__init__(..., auth_spec=PersonaAuthSpec(check_auth_fn=self.is_authed))``);
+        # `BasePersona` binds the resulting manager to itself. With no spec the
+        # manager is inert and the persona is always considered authenticated.
+        # `config` is threaded through so the manager's traits (e.g.
         # `default_poll_interval`) pick up the persona's traitlets configuration.
-        self.auth = PersonaAuthManager(parent=self, config=self.config)
+        self.auth = PersonaAuthManager(
+            parent=self, spec=auth_spec, config=self.config
+        )
         # Guards `_open_login_terminal` so it opens at most one terminal.
         self._login_terminal_opened = False
 

@@ -13,6 +13,7 @@ from traitlets.config import LoggingConfigurable
 
 from jupyter_ai_persona_manager import (
     PersonaAuthManager,
+    PersonaAuthSpec,
     PersonaNotAuthenticated,
     PreparationState,
 )
@@ -50,14 +51,14 @@ class TestPersonaAuthManager:
             calls["n"] += 1
             return True
 
-        mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=fn)
+        mgr = PersonaAuthManager(parent=_FakeParent(), spec=PersonaAuthSpec(check_auth_fn=fn))
         assert await mgr.check_auth() is True
         assert await mgr.check_auth() is True
         assert calls["n"] == 1  # cached after first success
 
     @pytest.mark.asyncio
     async def test_assert_auth_raises_when_unauthenticated(self):
-        mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=lambda: False)
+        mgr = PersonaAuthManager(parent=_FakeParent(), spec=PersonaAuthSpec(check_auth_fn=lambda: False))
         with pytest.raises(PersonaNotAuthenticated):
             await mgr.assert_auth()
 
@@ -66,7 +67,7 @@ class TestPersonaAuthManager:
         async def fn():
             return True
 
-        mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=fn)
+        mgr = PersonaAuthManager(parent=_FakeParent(), spec=PersonaAuthSpec(check_auth_fn=fn))
         assert await mgr.check_auth() is True
 
     @pytest.mark.asyncio
@@ -75,7 +76,7 @@ class TestPersonaAuthManager:
         parent = _FakeParent()
         mgr = PersonaAuthManager(
             parent=parent,
-            check_auth_fn=lambda: state["authed"],
+            spec=PersonaAuthSpec(check_auth_fn=lambda: state["authed"]),
             default_poll_interval=0.01,
         )
         mgr.start_poll()
@@ -90,7 +91,7 @@ class TestPersonaAuthManager:
     async def test_reset_clears_cache_and_stops(self):
         state = {"authed": True}
         mgr = PersonaAuthManager(
-            parent=_FakeParent(), check_auth_fn=lambda: state["authed"]
+            parent=_FakeParent(), spec=PersonaAuthSpec(check_auth_fn=lambda: state["authed"])
         )
         assert await mgr.check_auth() is True
         state["authed"] = False
@@ -108,7 +109,7 @@ class TestPersonaAuthManager:
 
     @pytest.mark.asyncio
     async def test_start_poll_noop_when_already_authed(self):
-        mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=lambda: True)
+        mgr = PersonaAuthManager(parent=_FakeParent(), spec=PersonaAuthSpec(check_auth_fn=lambda: True))
         assert await mgr.check_auth() is True  # caches authed
         mgr.start_poll()
         assert mgr._auth_poll_task is None  # no poll: already authenticated
@@ -129,7 +130,7 @@ class TestPersonaAuthManager:
         parent = _FakeParent()
         mgr = PersonaAuthManager(
             parent=parent,
-            check_auth_fn=lambda: state["authed"],
+            spec=PersonaAuthSpec(check_auth_fn=lambda: state["authed"]),
             default_poll_interval=100.0,
         )
         mgr.start_poll(interval=0.01)
@@ -173,7 +174,7 @@ def _make_auth_gated_persona(authed: dict):
     persona._login_terminal_opened = False
     persona.processed = []
     persona.auth = PersonaAuthManager(
-        parent=persona, check_auth_fn=lambda: authed["v"], default_poll_interval=0.01
+        parent=persona, spec=PersonaAuthSpec(check_auth_fn=lambda: authed["v"]), default_poll_interval=0.01
     )
     return persona
 
@@ -281,3 +282,33 @@ class TestOpenLoginTerminal:
         persona = _make_auth_gated_persona({"v": False})
         assert await persona._open_login_terminal() is False
         persona.auth.stop()
+
+
+class _ConfigurablePersona(BasePersona):
+    """A minimal concrete persona constructed through the real `__init__`."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Cfg", description="", avatar_path="", system_prompt=""
+        )
+
+    async def process_message(self, message) -> None:  # pragma: no cover - unused
+        pass
+
+
+class TestConstructorAuthSpec:
+    @pytest.mark.asyncio
+    async def test_auth_spec_forwarded_via_constructor(self):
+        # Passing a PersonaAuthSpec to the persona constructor gates the auth
+        # manager without the subclass having to replace self.auth.
+        persona = _ConfigurablePersona(
+            chat=MagicMock(), auth_spec=PersonaAuthSpec(check_auth_fn=lambda: False)
+        )
+        assert persona.auth.authed is False  # gated, not inert
+        assert await persona.auth.check_auth() is False
+
+    def test_default_is_inert_without_auth_spec(self):
+        # Omitting it preserves the always-authenticated default.
+        persona = _ConfigurablePersona(chat=MagicMock())
+        assert persona.auth.authed is True
