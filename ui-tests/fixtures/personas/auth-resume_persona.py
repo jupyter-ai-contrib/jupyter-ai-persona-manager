@@ -58,8 +58,10 @@ class AuthResumePersona(BasePersona):
         # Poll quickly so the E2E test does not wait long for the resume.
         self.auth.start_poll(interval=0.5)
 
-    async def handle_auth(self) -> None:
+    async def handle_auth(self, was_unauthenticated: bool = False) -> None:
         # Fired by the resume poll once the sentinel appears — no user message.
+        # ``was_unauthenticated`` is True here because the poll only runs after a
+        # message arrived while signed out.
         self.send_message(RESUMED_MESSAGE)
 
     async def process_message(self, message: Message) -> None:
