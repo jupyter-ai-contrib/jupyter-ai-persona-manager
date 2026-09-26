@@ -22,6 +22,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { Event } from '@jupyterlab/services';
+import { CommandRegistry } from '@lumino/commands';
 import { InputToolbarRegistry } from '@jupyter/chat';
 import {
   EMPTY_USAGE,
@@ -37,6 +38,11 @@ import {
 } from './metadata';
 import { IPersonaControlRegistry } from './persona-control-registry';
 import { PERSONA_SELECTED_EVENT_SCHEMA_ID } from './persona-events';
+
+/**
+ * The jupyterlab-commands-toolkit command returning the id of this web client.
+ */
+const WEB_CLIENT_ID_COMMAND = 'jupyterlab-commands-toolkit:get-web-client-id';
 
 const SELECTOR_CLASS = 'jp-jai-personaControls';
 const MENU_CLASS = 'jp-jai-controlMenu';
@@ -1079,9 +1085,21 @@ export function PersonaControls(
      * user picks a persona so the server prepares it eagerly.
      */
     events?: Event.IManager;
+    /**
+     * The command registry, used to read the id of this web client from
+     * jupyterlab-commands-toolkit when it is installed.
+     */
+    commands?: CommandRegistry;
   }
 ): JSX.Element | null {
-  const { chatModel, model, controlRegistry, sessionRegistry, events } = props;
+  const {
+    chatModel,
+    model,
+    controlRegistry,
+    sessionRegistry,
+    events,
+    commands
+  } = props;
   // The chat's stable id scopes persona events to this chat. It is assigned
   // asynchronously (once the model is `ready`: the WS connection frame arrives,
   // or the RTC document syncs), so track it in state and update it when the
@@ -1205,19 +1223,36 @@ export function PersonaControls(
     };
   }, [sessionRegistry, chatId, chatModel]);
 
+  // Stamp the id of this web client onto the input model's metadata, so it
+  // rides out with each message and a persona can route frontend commands back
+  // to this browser tab. Without jupyterlab-commands-toolkit there is no id and
+  // commands run on every web client.
+  useEffect(() => {
+    if (!commands?.hasCommand(WEB_CLIENT_ID_COMMAND)) {
+      return;
+    }
+    let cancelled = false;
+    void commands.execute(WEB_CLIENT_ID_COMMAND).then(id => {
+      if (!cancelled && id) {
+        model.updateMetadata({ web_client_id: id });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [commands, model]);
+
   // Stamp the current persona + its settings onto the input model's metadata,
   // so it rides out with the next message and the PersonaManager routes and
   // applies it. Keyed on a signature so we only write when it changes.
   //
   // This merges (updateMetadata), and deliberately does not clear first: the
-  // input's metadata map is shared with any other extension that stamps its own
-  // keys onto outgoing messages. For example, jupyterlab-commands-toolkit stamps
-  // a `web_client_id` there so an AI persona can route frontend commands back to
-  // the specific web client that triggered them. A clearMetadata() here would
-  // wipe those foreign keys. Since buildMessageMetadata always emits the same
-  // keys for a given selection, the merge fully overwrites our own previous
-  // values on each change; the only residue is switching a real persona back to
-  // "No one", which leaves an inert model/settings that no persona reads.
+  // input's metadata map is shared with the `web_client_id` above and with any
+  // other extension that stamps its own keys onto outgoing messages. Since
+  // buildMessageMetadata always emits the same keys for a given selection, the
+  // merge fully overwrites our own previous values on each change; the only
+  // residue is switching a real persona back to "No one", which leaves an inert
+  // model/settings that no persona reads.
   const metadataSignature = JSON.stringify({ selectedId, settings });
   useEffect(() => {
     model.updateMetadata(buildMessageMetadata(selectedId, settings));

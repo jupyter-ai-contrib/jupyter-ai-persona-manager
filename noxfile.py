@@ -54,7 +54,14 @@ def e2e(session: nox.Session, env: str) -> None:
     """Run the ui-tests suite against one transport."""
     # The prebuilt wheel from the CI ``build`` job; from source for local runs.
     target = os.environ.get("E2E_WHEEL") or "."
-    session.install("jupyterlab>=4.0.0,<5", target, *_ENVS[env])
+    # The toolkit provides the web client id that the persona controls stamp
+    # onto messages (see tests/metadata-preservation.spec.ts).
+    session.install(
+        "jupyterlab>=4.0.0,<5",
+        "jupyterlab_commands_toolkit>=0.2.0",
+        target,
+        *_ENVS[env],
+    )
     # Expose the transport to the suite so tests can gate on RTC. Under RTC
     # (jcollab/jsd) the chat id travels in the collaborative document's initial
     # sync rather than a WebSocket connection frame, which changes the timing
