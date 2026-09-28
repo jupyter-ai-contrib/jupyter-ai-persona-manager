@@ -49,7 +49,7 @@ module.exports = {
     // MCP port offset from the HTTP port so it doesn't collide with a
     // default (3001) or a dev server. CLI args win over galata's defaults.
     command: isLite
-      ? `python -m http.server ${PORT} --directory ${path.resolve(__dirname, '..', '_output')}`
+      ? `python -m http.server ${PORT} --directory ${path.resolve(__dirname, '_output')}`
       : `jlpm start --ServerApp.port=${PORT} --MCPExtensionApp.mcp_port=${PORT + 100}`,
     url: `http://localhost:${PORT}/lab`,
     timeout: 120 * 1000,

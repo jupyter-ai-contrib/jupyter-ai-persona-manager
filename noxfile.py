@@ -72,7 +72,7 @@ def e2e(session: nox.Session, env: str) -> None:
         # Build the JupyterLite site before playwright starts. Use the default
         # output dir (_output/) so playwright.config.js can find it with a
         # __dirname-relative path without needing an env var.
-        session.run("jupyter", "lite", "build")
+        session.run("jupyter", "lite", "build", "--lite-dir", "ui-tests", "--output-dir", "ui-tests/_output")
     with session.chdir("ui-tests"):
         session.run("jlpm", "install", external=True)
         session.run("jlpm", "playwright", "install", "chromium", external=True)

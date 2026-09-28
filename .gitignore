@@ -128,3 +128,7 @@ dmypy.json
 playground/
 # pytest output
 junit.xml
+
+# jupyterlite tests
+.jupyterlite.doit.db
+ui-tests/_output/
