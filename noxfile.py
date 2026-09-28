@@ -47,7 +47,7 @@ _ENVS = {
     "mcp": ["fastmcp>=3", "mcp"],
     # JupyterLite suite: builds a static site and runs the frontend-persona test
     # against it (no server backend, no backend personas).
-    "jupyterlite": ["jupyterlite-core>=0.8"],
+    "jupyterlite": ["jupyterlite-core>=0.8.5"],
 }
 
 
