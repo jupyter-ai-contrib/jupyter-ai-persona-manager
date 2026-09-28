@@ -56,7 +56,7 @@ exclude = [".github", "binder"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter_ai_persona_manager/labextension" = "share/jupyter/labextensions/@jupyter-ai/persona-manager"
-# "install.json" = "share/jupyter/labextensions/@jupyter-ai/persona-manager/install.json"
+"install.json" = "share/jupyter/labextensions/@jupyter-ai/persona-manager/install.json"
 "jupyter-config/server-config" = "etc/jupyter/jupyter_server_config.d"
 
 [tool.hatch.build.hooks.version]
