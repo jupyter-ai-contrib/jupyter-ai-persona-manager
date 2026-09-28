@@ -51,7 +51,8 @@ export enum FixturePersona {
   Status = 'status',
   McpProbe = 'mcp-probe',
   MetadataEcho = 'metadata-echo',
-  AuthGated = 'auth-gated'
+  AuthGated = 'auth-gated',
+  AuthResume = 'auth-resume'
 }
 
 interface FixturePersonaInfo {
@@ -80,7 +81,8 @@ export const FIXTURE_PERSONAS: Record<FixturePersona, FixturePersonaInfo> = {
   [FixturePersona.Status]: { name: 'Status Persona' },
   [FixturePersona.McpProbe]: { name: 'MCP Probe Persona' },
   [FixturePersona.MetadataEcho]: { name: 'Metadata Echo Persona' },
-  [FixturePersona.AuthGated]: { name: 'Auth Gated Persona' }
+  [FixturePersona.AuthGated]: { name: 'Auth Gated Persona' },
+  [FixturePersona.AuthResume]: { name: 'Auth Resume Persona' }
 };
 
 const PICKER = '.jp-jai-personaControls-persona-btn';
