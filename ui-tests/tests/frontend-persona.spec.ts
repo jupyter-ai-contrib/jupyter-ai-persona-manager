@@ -78,9 +78,16 @@ test.describe('frontend-persona', () => {
       sessionRegistry.unregisterFrontendPersona(id, 'test-frontend-persona');
     }, chatId);
 
-    if (await helpers.personaPicker.isVisible()) {
+    // Use a short-timeout click to avoid a TOCTOU race: if the picker disappears
+    // between an isVisible() check and the subsequent click(), the click would hang
+    // for the full test timeout. Catching the short-timeout error lets us branch safely.
+    const pickerClicked = await helpers.personaPicker
+      .click({ timeout: 3000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (pickerClicked) {
       // Other personas remain — the unregistered one must be gone from the menu.
-      await helpers.personaPicker.click();
       await expect(
         page.getByRole('menuitem', { name: 'Test Frontend Persona' })
       ).not.toBeVisible();
