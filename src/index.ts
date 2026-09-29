@@ -33,9 +33,6 @@ export * from './persona-events';
 // Public API for contributing controls to the persona controls toolbar.
 export * from './persona-control-registry';
 
-// Export the widgets for persona control.
-export * from './persona-controls';
-
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
  */
