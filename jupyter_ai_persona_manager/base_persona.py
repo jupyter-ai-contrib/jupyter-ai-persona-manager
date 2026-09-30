@@ -368,14 +368,24 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         self.auth.start_poll()
 
     @mark_optional
-    async def handle_auth(self) -> None:
+    async def handle_auth(self, was_unauthenticated: bool = False) -> None:
         """
         React once authentication succeeds. Invoked by the auth resume poll (see
         `PersonaAuthManager.start_poll`) after the user signs in.
 
+        ``was_unauthenticated`` is ``True`` when this call comes from the resume
+        poll: the user sent a message while signed out, the poll waited, and auth
+        has now been restored. The poll only ever runs while the user is
+        unauthenticated (`start_poll` is a no-op once authenticated), so a
+        poll-driven resume always passes ``True``. It defaults to ``False`` for a
+        direct call that does not signal a prior sign-out — ``False`` means only
+        "the caller did not indicate a prior unauthenticated state", not "the
+        user was definitely already authenticated".
+
         The default is a no-op. Override to resume the user's original request —
         e.g. an ACP persona re-runs `prepare()` to bring up its agent and replays
-        the pending prompt.
+        the pending prompt. An override that only cares about the poll-driven
+        case can branch on ``was_unauthenticated``.
         """
 
     @mark_subclass_api

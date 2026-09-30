@@ -30,9 +30,11 @@ class _FakeParent(LoggingConfigurable):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.auth_calls = 0
+        self.last_was_unauthenticated = None
 
-    async def handle_auth(self):
+    async def handle_auth(self, was_unauthenticated: bool = False):
         self.auth_calls += 1
+        self.last_was_unauthenticated = was_unauthenticated
 
 
 class TestPersonaAuthManager:
@@ -84,6 +86,9 @@ class TestPersonaAuthManager:
         state["authed"] = True
         await asyncio.sleep(0.05)
         assert parent.auth_calls == 1  # resumed exactly once
+        # The poll only runs while unauthenticated, so the resume it drives
+        # always signals that the persona was signed out.
+        assert parent.last_was_unauthenticated is True
         mgr.stop()
 
     @pytest.mark.asyncio
@@ -240,10 +245,11 @@ class TestOnMessageAuth:
         # fires. Here we assert the poll observes the sign-in.
         state = {"v": False}
         persona = _make_auth_gated_persona(state)
-        resumed = {"n": 0}
+        resumed = {"n": 0, "was_unauthenticated": None}
 
-        async def _resume():
+        async def _resume(was_unauthenticated: bool = False):
             resumed["n"] += 1
+            resumed["was_unauthenticated"] = was_unauthenticated
 
         persona.handle_auth = _resume
 
@@ -253,6 +259,8 @@ class TestOnMessageAuth:
         state["v"] = True
         await asyncio.sleep(0.05)
         assert resumed["n"] == 1
+        # Resumed via the poll after a message arrived while signed out.
+        assert resumed["was_unauthenticated"] is True
         persona.auth.stop()
 
 
