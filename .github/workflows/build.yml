@@ -112,7 +112,7 @@ jobs:
         # "E2E tests (+JSD)", "E2E tests (MCP integration)". Each variant maps to
         # a nox session below that installs the matching deps into an isolated
         # venv.
-        variant: [default, +JCollab, +JSD, MCP integration]
+        variant: [default, +JCollab, +JSD, MCP integration, JupyterLite]
 
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
@@ -166,6 +166,7 @@ jobs:
           +JCollab) SESSION="e2e(env='jcollab')" ;;
           +JSD)     SESSION="e2e(env='jsd')" ;;
           "MCP integration") SESSION="e2e(env='mcp')" ;;
+          JupyterLite)       SESSION="e2e(env='jupyterlite')" ;;
           *) echo "unknown variant: ${{ matrix.variant }}" >&2; exit 1 ;;
         esac
         export E2E_WHEEL="$(pwd)/$(ls jupyter_ai_persona_manager*.whl)"

@@ -170,9 +170,13 @@ export function buildControls(
  */
 export function reconcilePersonas(
   previous: PersonaOption[],
-  next: PersonaOption[]
+  next: PersonaOption[],
+  ready: boolean
 ): PersonaOption[] {
-  return next.length ? next : previous;
+  // Guard against transient empty lists before any personas have been received.
+  // Once ready, trust the list even when empty — all personas may have been
+  // genuinely unregistered and the UI must reflect that.
+  return next.length || ready ? next : previous;
 }
 
 /**
@@ -1146,7 +1150,7 @@ export function PersonaControls(
       return;
     }
     const list = managerState.personas;
-    setPersonas(prev => reconcilePersonas(prev, list));
+    setPersonas(prev => reconcilePersonas(prev, list, managerState.ready));
     setSelectedId(current => {
       const next = reconcileSelection(list, current, userPicked.current);
       return next === undefined ? current : next;
