@@ -15,7 +15,7 @@ import os
 
 from jupyter_ai_persona_manager import (
     BasePersona,
-    PersonaAuthManager,
+    PersonaAuthSpec,
     PersonaDefaults,
 )
 from jupyterlab_chat.models import Message
@@ -33,8 +33,9 @@ class AuthResumePersona(BasePersona):
     """Test-only persona that authenticates once a sentinel file appears."""
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.auth = PersonaAuthManager(parent=self, check_auth_fn=self._signed_in)
+        super().__init__(
+            *args, auth_spec=PersonaAuthSpec(check_auth_fn=self._signed_in), **kwargs
+        )
 
     def _signed_in(self) -> bool:
         return os.path.exists(os.path.join(self.parent.root_dir, SIGNAL_FILE))

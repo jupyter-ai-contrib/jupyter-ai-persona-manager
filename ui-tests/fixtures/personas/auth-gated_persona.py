@@ -15,7 +15,7 @@ import os
 
 from jupyter_ai_persona_manager import (
     BasePersona,
-    PersonaAuthManager,
+    PersonaAuthSpec,
     PersonaDefaults,
 )
 from jupyterlab_chat.models import Message
@@ -31,11 +31,12 @@ class AuthGatedPersona(BasePersona):
     """Test-only persona that is never authenticated."""
 
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
         # Never authenticated. No `check_auth_fn` toggle is needed: this fixture
         # exists to prove selection stays silent and a message prompts — not to
         # exercise the resume-after-sign-in path (covered by Python tests).
-        self.auth = PersonaAuthManager(parent=self, check_auth_fn=lambda: False)
+        super().__init__(
+            *args, auth_spec=PersonaAuthSpec(check_auth_fn=lambda: False), **kwargs
+        )
 
     @property
     def defaults(self) -> PersonaDefaults:
