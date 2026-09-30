@@ -607,6 +607,19 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             # first chunk lands.
             self.set_status()
             async for chunk in reply_stream:
+                # Handle structured chunks (e.g., reasoning)
+                if isinstance(chunk, dict):
+                    if chunk.get("type") == "reasoning" and stream_id:
+                        msg = self.chat.get_message(stream_id)
+                        if msg:
+                            msg.metadata = msg.metadata or {}
+                            msg.metadata["reasoning"] = chunk.get("content", "")
+                            self.chat.update_message(
+                                msg,
+                                trigger_actions=[],
+                            )
+                    continue
+
                 # Coerce LiteLLM stream chunk to a string delta
                 if not isinstance(chunk, str):
                     chunk = chunk.choices[0].delta.content
