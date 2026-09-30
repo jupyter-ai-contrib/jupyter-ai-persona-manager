@@ -5,11 +5,13 @@ mechanism and how `BasePersona.on_message` reacts to an unauthenticated
 """
 
 import asyncio
+import contextlib
 import logging
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from traitlets.config import LoggingConfigurable
+from traitlets.config import Config, LoggingConfigurable
 
 from jupyter_ai_persona_manager import (
     PersonaAuthManager,
@@ -19,20 +21,55 @@ from jupyter_ai_persona_manager import (
 from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
 
 
+@pytest.fixture(autouse=True)
+def _clear_shared_polls():
+    """The poll registry is class-level and shared across managers; clear it
+    after every test so one test's poll never leaks into the next."""
+    yield
+    for task in list(PersonaAuthManager._poll_tasks.values()):
+        if not task.done():
+            task.cancel()
+    PersonaAuthManager._poll_tasks.clear()
+    PersonaAuthManager._poll_deadlines.clear()
+    PersonaAuthManager._poll_waiters.clear()
+
+
 # ---------------------------------------------------------------------------
 # PersonaAuthManager (mechanism)
 # ---------------------------------------------------------------------------
 
 
 class _FakeParent(LoggingConfigurable):
-    """A minimal Configurable to stand in for the persona a manager serves."""
+    """A minimal stand-in for the persona a manager serves.
 
-    def __init__(self, **kwargs):
+    ``id`` and ``chat_id`` are what `PersonaAuthManager` reads to build its
+    `poll_key`; pass a shared ``persona_id`` to two fakes to exercise
+    ``scope="global"`` sharing, or distinct ``chat_id``s under ``scope="chat"``.
+    """
+
+    def __init__(self, persona_id=None, chat_id="chat", **kwargs):
         super().__init__(**kwargs)
         self.auth_calls = 0
+        self.timeout_calls = 0
+        self.id = persona_id or f"test-persona::{uuid.uuid4()}"
+        self.chat_id = chat_id
+        self.name = "Fake"
 
     async def handle_auth(self):
         self.auth_calls += 1
+
+    async def handle_auth_timeout(self):
+        self.timeout_calls += 1
+
+
+def _task_for(mgr):
+    return PersonaAuthManager._poll_tasks.get(mgr.poll_key)
+
+
+async def _drain(task):
+    """Await a cancelled poll task so its `finally` cleanup runs deterministically."""
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 class TestPersonaAuthManager:
@@ -84,7 +121,6 @@ class TestPersonaAuthManager:
         state["authed"] = True
         await asyncio.sleep(0.05)
         assert parent.auth_calls == 1  # resumed exactly once
-        mgr.stop()
 
     @pytest.mark.asyncio
     async def test_reset_clears_cache_and_stops(self):
@@ -104,22 +140,14 @@ class TestPersonaAuthManager:
         mgr = PersonaAuthManager(parent=_FakeParent())
         assert mgr.authed is True
         mgr.start_poll()
-        assert mgr._auth_poll_task is None
+        assert _task_for(mgr) is None
 
     @pytest.mark.asyncio
     async def test_start_poll_noop_when_already_authed(self):
         mgr = PersonaAuthManager(parent=_FakeParent(), check_auth_fn=lambda: True)
         assert await mgr.check_auth() is True  # caches authed
         mgr.start_poll()
-        assert mgr._auth_poll_task is None  # no poll: already authenticated
-
-    def test_default_poll_interval_is_configurable_trait(self):
-        from traitlets.config import Config
-
-        cfg = Config()
-        cfg.PersonaAuthManager.default_poll_interval = 2.5
-        mgr = PersonaAuthManager(parent=_FakeParent(), config=cfg)
-        assert mgr.default_poll_interval == 2.5
+        assert _task_for(mgr) is None  # no poll: already authenticated
 
     @pytest.mark.asyncio
     async def test_start_poll_interval_overrides_default(self):
@@ -136,7 +164,170 @@ class TestPersonaAuthManager:
         state["authed"] = True
         await asyncio.sleep(0.05)
         assert parent.auth_calls == 1  # resumed on the fast override, not the default
-        mgr.stop()
+
+    def test_default_poll_interval_is_configurable_trait(self):
+        cfg = Config()
+        cfg.PersonaAuthManager.default_poll_interval = 2.5
+        mgr = PersonaAuthManager(parent=_FakeParent(), config=cfg)
+        assert mgr.default_poll_interval == 2.5
+
+    # -- poll_timeout ------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_poll_timeout_fires_handler_and_stops(self):
+        parent = _FakeParent()
+        mgr = PersonaAuthManager(
+            parent=parent,
+            check_auth_fn=lambda: False,  # never authenticates
+            default_poll_interval=0.005,
+            default_poll_timeout=0.03,
+        )
+        mgr.start_poll()
+        await asyncio.sleep(0.08)
+        assert parent.timeout_calls == 1  # gave up and notified once
+        assert parent.auth_calls == 0  # never resumed
+        assert _task_for(mgr) is None  # registry cleaned up on exit
+
+    @pytest.mark.asyncio
+    async def test_start_poll_timeout_overrides_default(self):
+        # A long default must not delay a caller that passes an explicit timeout.
+        parent = _FakeParent()
+        mgr = PersonaAuthManager(
+            parent=parent,
+            check_auth_fn=lambda: False,
+            default_poll_interval=0.005,
+            default_poll_timeout=100.0,
+        )
+        mgr.start_poll(timeout=0.03)
+        await asyncio.sleep(0.08)
+        assert parent.timeout_calls == 1  # gave up on the fast override
+        assert _task_for(mgr) is None
+
+    @pytest.mark.asyncio
+    async def test_start_poll_extends_deadline(self):
+        parent = _FakeParent()
+        mgr = PersonaAuthManager(
+            parent=parent,
+            check_auth_fn=lambda: False,
+            default_poll_interval=0.01,
+            default_poll_timeout=10.0,
+        )
+        mgr.start_poll()
+        first = PersonaAuthManager._poll_deadlines[mgr.poll_key]
+        await asyncio.sleep(0.02)
+        mgr.start_poll()  # a fresh message must push the deadline out
+        assert PersonaAuthManager._poll_deadlines[mgr.poll_key] > first
+
+    def test_default_poll_timeout_is_configurable_trait(self):
+        cfg = Config()
+        cfg.PersonaAuthManager.default_poll_timeout = 42.0
+        mgr = PersonaAuthManager(parent=_FakeParent(), config=cfg)
+        assert mgr.default_poll_timeout == 42.0
+
+    # -- scope (constructor argument) --------------------------------------
+
+    def test_scope_defaults_to_global(self):
+        mgr = PersonaAuthManager(parent=_FakeParent())
+        assert mgr.scope == "global"
+
+    def test_invalid_scope_rejected(self):
+        with pytest.raises(ValueError):
+            PersonaAuthManager(parent=_FakeParent(), scope="bogus")
+
+    def test_global_scope_key_is_persona_id(self):
+        mgr = PersonaAuthManager(
+            parent=_FakeParent(persona_id="p1"), check_auth_fn=lambda: False
+        )
+        assert mgr.poll_key == "p1"
+
+    def test_chat_scope_key_includes_chat_id(self):
+        mgr = PersonaAuthManager(
+            parent=_FakeParent(persona_id="p1", chat_id="c9"),
+            check_auth_fn=lambda: False,
+            scope="chat",
+        )
+        assert mgr.poll_key == "p1::c9"
+
+    @pytest.mark.asyncio
+    async def test_global_scope_shares_one_poll_and_resumes_all(self):
+        # Two persona instances (two chats) of the same persona share one poll
+        # under global scope, and both are resumed when auth succeeds.
+        state = {"authed": False}
+        p1 = _FakeParent(persona_id="shared")
+        p2 = _FakeParent(persona_id="shared")
+        m1 = PersonaAuthManager(
+            parent=p1, check_auth_fn=lambda: state["authed"], default_poll_interval=0.01
+        )
+        m2 = PersonaAuthManager(
+            parent=p2, check_auth_fn=lambda: state["authed"], default_poll_interval=0.01
+        )
+        m1.start_poll()
+        m2.start_poll()
+        # Exactly one shared task, two registered waiters.
+        assert len(PersonaAuthManager._poll_tasks) == 1
+        assert PersonaAuthManager._poll_waiters["shared"] == {p1, p2}
+
+        state["authed"] = True
+        await asyncio.sleep(0.05)
+        assert p1.auth_calls == 1 and p2.auth_calls == 1  # both chats resumed
+
+    @pytest.mark.asyncio
+    async def test_chat_scope_runs_separate_polls(self):
+        p1 = _FakeParent(persona_id="p", chat_id="c1")
+        p2 = _FakeParent(persona_id="p", chat_id="c2")
+        m1 = PersonaAuthManager(
+            parent=p1, check_auth_fn=lambda: False, default_poll_interval=0.01, scope="chat"
+        )
+        m2 = PersonaAuthManager(
+            parent=p2, check_auth_fn=lambda: False, default_poll_interval=0.01, scope="chat"
+        )
+        m1.start_poll()
+        m2.start_poll()
+        assert set(PersonaAuthManager._poll_tasks) == {"p::c1", "p::c2"}
+
+    # -- ref-counted stop --------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_keeps_shared_poll_for_remaining_waiters(self):
+        # Closing one chat must NOT strand the others sharing a global poll.
+        state = {"authed": False}
+        p1 = _FakeParent(persona_id="shared")
+        p2 = _FakeParent(persona_id="shared")
+        m1 = PersonaAuthManager(
+            parent=p1, check_auth_fn=lambda: state["authed"], default_poll_interval=0.01
+        )
+        m2 = PersonaAuthManager(
+            parent=p2, check_auth_fn=lambda: state["authed"], default_poll_interval=0.01
+        )
+        m1.start_poll()
+        m2.start_poll()
+        task = PersonaAuthManager._poll_tasks["shared"]
+
+        m1.stop()  # chat 1 closes
+        await asyncio.sleep(0.02)
+        assert not task.done()  # poll still running for chat 2
+        assert PersonaAuthManager._poll_waiters["shared"] == {p2}
+
+        # chat 2 signs in -> only the remaining waiter is resumed
+        state["authed"] = True
+        await asyncio.sleep(0.05)
+        assert p2.auth_calls == 1
+        assert p1.auth_calls == 0  # the closed chat is not called
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_poll_when_last_waiter_leaves(self):
+        parent = _FakeParent()
+        mgr = PersonaAuthManager(
+            parent=parent, check_auth_fn=lambda: False, default_poll_interval=0.01
+        )
+        mgr.start_poll()
+        task = _task_for(mgr)
+        assert task is not None and not task.done()
+
+        mgr.stop()  # sole waiter leaves -> cancels the shared task
+        await _drain(task)  # let the task's finally run
+        assert task.cancelled()
+        assert _task_for(mgr) is None  # registry cleaned up by the task's finally
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +386,6 @@ class TestPreparationStateNotAuthed:
         except PersonaNotAuthenticated:
             pass
         assert persona.preparation_state == PreparationState.NOT_AUTHED
-        persona.auth.stop()
 
     @pytest.mark.asyncio
     async def test_eager_prepare_is_silent_when_unauthed(self):
@@ -208,7 +398,6 @@ class TestPreparationStateNotAuthed:
             pass
         assert persona.preparation_state == PreparationState.NOT_AUTHED
         persona.chat.add_message.assert_not_called()  # silent on selection
-        persona.auth.stop()
 
 
 class TestOnMessageAuth:
@@ -222,7 +411,6 @@ class TestOnMessageAuth:
         persona.chat.add_message.assert_called_once()
         assert persona.processed == []
         assert persona.preparation_state == PreparationState.NOT_AUTHED
-        persona.auth.stop()
 
     @pytest.mark.asyncio
     async def test_authed_message_processes(self):
@@ -253,24 +441,32 @@ class TestOnMessageAuth:
         state["v"] = True
         await asyncio.sleep(0.05)
         assert resumed["n"] == 1
-        persona.auth.stop()
+
+
+class TestHandleAuthTimeout:
+    @pytest.mark.asyncio
+    async def test_default_posts_a_nudge(self):
+        persona = _make_auth_gated_persona({"v": False})
+        persona.send_message = MagicMock()
+        await persona.handle_auth_timeout()
+        persona.send_message.assert_called_once()
 
 
 class TestShutdownCleansUpAuth:
     @pytest.mark.asyncio
-    async def test_shutdown_cancels_auth_poll(self):
+    async def test_shutdown_deregisters_and_cancels_last_waiter(self):
         # A persona that started its resume poll must not leave a background
-        # task running once it is shut down.
+        # task running once it is shut down (it is the only waiter here).
         persona = _make_auth_gated_persona({"v": False})
         persona.auth.start_poll()
-        task = persona.auth._auth_poll_task
+        task = PersonaAuthManager._poll_tasks.get(persona.auth.poll_key)
         assert task is not None and not task.done()
 
         await persona.shutdown()
+        await _drain(task)  # let the cancelled task's finally run
 
-        assert persona.auth._auth_poll_task is None  # handle cleared
-        await asyncio.sleep(0)  # let the cancellation propagate
         assert task.cancelled()  # no background task persists
+        assert _task_for(persona.auth) is None  # registry cleaned up
 
 
 class TestOpenLoginTerminal:
@@ -280,4 +476,3 @@ class TestOpenLoginTerminal:
         # import fails and the helper degrades to False rather than raising.
         persona = _make_auth_gated_persona({"v": False})
         assert await persona._open_login_terminal() is False
-        persona.auth.stop()

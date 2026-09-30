@@ -378,6 +378,22 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         the pending prompt.
         """
 
+    @mark_optional
+    async def handle_auth_timeout(self) -> None:
+        """
+        React when the auth resume poll gives up. Invoked (in place of
+        `handle_auth`) once `PersonaAuthManager.default_poll_timeout` seconds pass with
+        the user still not signed in — each message resets that countdown, so
+        this fires only after a genuine lull.
+
+        The default posts a gentle nudge. Override to customize the message or to
+        take other action (e.g. tearing down a partially-started agent).
+        """
+        self.send_message(
+            "It looks like you're still not signed in, so I've stopped waiting. "
+            "Sign in and send your message again whenever you're ready."
+        )
+
     @mark_subclass_api
     async def _open_login_terminal(self, command: str = "terminal:create-new") -> bool:
         """
@@ -496,6 +512,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         package_name = self.__module__.split(".")[0]
         class_name = self.__class__.__name__
         return f"jupyter-ai-personas::{package_name}::{class_name}"
+
+    @mark_consumer_api
+    @property
+    def chat_id(self) -> str:
+        """The ID of the chat this persona instance belongs to."""
+        return self.chat.get_id()
 
     @mark_consumer_api
     @property
