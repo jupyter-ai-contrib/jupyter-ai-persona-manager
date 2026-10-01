@@ -44,3 +44,8 @@ class McpSettings(BaseModel):
     `.jupyter/mcp_settings.json`.
     """
     mcp_servers: list[McpServerStdio | McpServerHttp]
+
+# The identity headers that `BasePersona.get_mcp_settings()` adds to every HTTP
+# MCP server, so that a tool call can be traced back to the calling persona
+CHAT_ID_HEADER = "X-Jupyter-Chat-Id"
+PERSONA_ID_HEADER = "X-JupyterAI-Persona-Id"

@@ -24,5 +24,10 @@ declare module '@jupyter/chat' {
      * A null value means "use the persona's current value".
      */
     settings?: { [id: string]: string | null };
+    /**
+     * The id of the web client (browser tab) that sent the message, so a
+     * persona can route frontend commands back to it.
+     */
+    web_client_id?: string;
   }
 }

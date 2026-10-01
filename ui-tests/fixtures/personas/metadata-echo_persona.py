@@ -6,9 +6,7 @@ stamping.
 This guards a specific regression. The persona-manager input-toolbar controls
 stamp their own metadata (`to_persona`, model, settings) onto each outgoing
 message. They must merge that onto whatever metadata other extensions have
-already contributed to the shared chat input — never clear it. For example,
-jupyterlab-commands-toolkit stamps a `web_client_id` onto the input so an AI
-persona can route frontend commands back to the web client that triggered them.
+already contributed to the shared chat input — never clear it.
 This persona makes the metadata that actually reaches the message observable in
 its reply, so a test can assert a third-party key is preserved.
 
@@ -34,8 +32,7 @@ from jupyterlab_chat.models import Message
 _AVATAR_PATH = os.path.join(os.environ["JAI_TEST_ASSETS_DIR"], "persona.svg")
 
 # The key a test stamps onto the input to stand in for a third-party extension's
-# metadata (e.g. the commands-toolkit's web_client_id). Kept in sync with
-# tests/metadata-preservation.spec.ts.
+# metadata. Kept in sync with tests/metadata-preservation.spec.ts.
 _THIRD_PARTY_KEY = "third_party_key"
 
 # A single general setting, rendered as one toolbar control. Its value is
@@ -80,6 +77,8 @@ class MetadataEchoPersona(BasePersona):
         metadata = message.metadata or {}
         keys = ",".join(sorted(metadata))
         third_party = metadata.get(_THIRD_PARTY_KEY, "(absent)")
+        web_client_id = metadata.get("web_client_id", "(absent)")
         self.send_message(
-            f"metadata keys: {keys}\n{_THIRD_PARTY_KEY}: {third_party}"
+            f"metadata keys: {keys}\n{_THIRD_PARTY_KEY}: {third_party}\n"
+            f"web_client_id: {web_client_id}"
         )

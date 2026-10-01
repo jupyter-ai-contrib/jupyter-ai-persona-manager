@@ -30,7 +30,13 @@ from .doc_markers import (
     mark_required,
     mark_subclass_api,
 )
-from .mcp_server_models import HttpHeader, McpServerHttp, McpSettings
+from .mcp_server_models import (
+    CHAT_ID_HEADER,
+    PERSONA_ID_HEADER,
+    HttpHeader,
+    McpServerHttp,
+    McpSettings,
+)
 from .persona_events import PersonaSessionState
 from .auth_manager import PersonaAuthManager, PersonaNotAuthenticated
 
@@ -722,10 +728,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
 
         Every HTTP MCP server is additionally stamped with this persona's
         identity headers (`X-Jupyter-Chat-Id`, `X-JupyterAI-Persona-Id`) so that
-        `jupyter-server-mcp` — or any MCP server that cares — can route a tool
-        call's frontend command back to the web client that triggered it. See
-        jupyterlab/jupyter-ai#1650. Servers that don't recognize the headers
-        ignore them.
+        the `ClientRoutingMiddleware` can route a tool call's frontend command
+        back to the web client that triggered it. See jupyterlab/jupyter-ai#1650.
+        Servers that don't recognize the headers ignore them.
         """
         settings = self.parent.get_mcp_settings()
         if settings is None:
@@ -736,8 +741,8 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         """Return a copy of `settings` with this persona's identity headers added
         to every HTTP MCP server."""
         identity = {
-            "X-Jupyter-Chat-Id": self.parent.chat.get_id(),
-            "X-JupyterAI-Persona-Id": self.id,
+            CHAT_ID_HEADER: self.parent.chat.get_id(),
+            PERSONA_ID_HEADER: self.id,
         }
         servers = []
         for server in settings.mcp_servers:
