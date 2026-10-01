@@ -119,16 +119,21 @@ describe('reconcilePersonas', () => {
   it('accepts a fresh non-empty list', () => {
     const previous = [personaOption('a')];
     const next = [personaOption('a'), personaOption('b')];
-    expect(reconcilePersonas(previous, next)).toBe(next);
+    expect(reconcilePersonas(previous, next, true)).toBe(next);
   });
 
-  it('keeps the previous list on a transient empty read', () => {
+  it('keeps the previous list on a transient empty read before ready', () => {
     const previous = [personaOption('a'), personaOption('b')];
-    expect(reconcilePersonas(previous, [])).toBe(previous);
+    expect(reconcilePersonas(previous, [], false)).toBe(previous);
+  });
+
+  it('allows empty list when ready (all personas genuinely removed)', () => {
+    const previous = [personaOption('a'), personaOption('b')];
+    expect(reconcilePersonas(previous, [], true)).toEqual([]);
   });
 
   it('stays empty when nothing has ever loaded', () => {
-    expect(reconcilePersonas([], [])).toEqual([]);
+    expect(reconcilePersonas([], [], false)).toEqual([]);
   });
 });
 

@@ -8,7 +8,8 @@ except ImportError:
     warnings.warn("Importing 'jupyter_ai_persona_manager' outside a proper installation.")
     __version__ = "dev"
 
-from .base_persona import BasePersona, PersonaDefaults
+from .base_persona import BasePersona, PersonaDefaults, PreparationState
+from .auth_manager import PersonaAuthManager, PersonaNotAuthenticated
 from .doc_markers import (
     ContractLevel,
     get_contract_level,

@@ -228,9 +228,9 @@ The `jlpm` command is JupyterLab's pinned version of
 # Clone the repo to your local environment
 # Change directory to the jupyter_ai_persona_manager directory
 # Install package in development mode
-pip install -e ".[test]"
+pip install -e ".[dev,test]"
 # Link your development version of the extension with JupyterLab
-jupyter labextension develop . --overwrite
+jupyter-builder develop . --overwrite
 # Server extension must be manually installed in develop mode
 jupyter server extension enable jupyter_ai_persona_manager
 # Rebuild extension Typescript source after making changes
@@ -262,7 +262,7 @@ jupyter server extension disable jupyter_ai_persona_manager
 pip uninstall jupyter_ai_persona_manager
 ```
 
-In development mode, you will also need to remove the symlink created by `jupyter labextension develop`
+In development mode, you will also need to remove the symlink created by `jupyter-builder develop`
 command. To find its location, you can run `jupyter labextension list` to figure out where the `labextensions`
 folder is located. Then you can remove the symlink named `@jupyter-ai/persona-manager` within that folder.
 
@@ -275,9 +275,9 @@ This extension is using [Pytest](https://docs.pytest.org/) for Python code testi
 Install test dependencies (needed only once):
 
 ```sh
-pip install -e ".[test]"
+pip install -e ".[dev,test]"
 # Each time you install the Python package, you need to restore the front-end extension link
-jupyter labextension develop . --overwrite
+jupyter-builder develop . --overwrite
 ```
 
 To execute them, run:

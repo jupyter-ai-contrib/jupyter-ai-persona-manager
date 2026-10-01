@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import traceback
-from contextlib import nullcontext
 from glob import glob
 from logging import Logger
 from pathlib import Path
@@ -16,7 +15,6 @@ from typing import TYPE_CHECKING
 
 from importlib_metadata import entry_points
 from jupyterlab_chat.models import Message, NewMessage, User
-from jupyterlab_chat.websocket_model import WsChatModel
 from traitlets import List, Unicode, default
 from traitlets.config import LoggingConfigurable
 
@@ -59,84 +57,6 @@ class PersonaRequirementsUnmet(RuntimeError):
     being reported in the chat.
     """
     pass
-
-
-async def _deliver_persona_error(
-    persona: "BasePersona", exc: Exception, where: str
-) -> None:
-    """
-    Log an unhandled persona exception and surface it to the user via
-    `persona.handle_uncaught_exception()`. Shared by the process and prepare
-    error boundaries so both report failures the same way.
-    """
-    persona.log.error(f"Persona '{persona.name}' raised an exception {where}.")
-    persona.log.exception(exc)
-    try:
-        await persona.handle_uncaught_exception(exc)
-    except Exception:
-        persona.log.exception(
-            f"Persona '{persona.name}' raised a secondary exception in "
-            f"handle_uncaught_exception(); error message not delivered to user."
-        )
-
-
-async def _safe_prepare(persona: "BasePersona") -> bool:
-    """
-    Run the persona's one-time `prepare()` hook in its own error boundary,
-    returning whether it succeeded. Safe to call repeatedly: `_ensure_prepared()`
-    is idempotent. On failure the error is surfaced and `False` returned.
-    """
-    try:
-        await persona._ensure_prepared()
-        return True
-    except Exception as exc:
-        await _deliver_persona_error(persona, exc, "while preparing")
-        return False
-
-
-def _keep_chat_alive(chat: "BaseChatModel"):
-    """Pin the chat in memory while a persona processes a message.
-
-    A WebSocket-backed chat (``WsChatModel``) is freed once its last client
-    disconnects, which would orphan a persona still producing a reply after the
-    user closes the tab. Holding ``keep_alive()`` for the duration of processing
-    keeps the model alive until the reply is done.
-
-    Only applies to ``WsChatModel``: under real-time collaboration the chat's
-    memory is managed by jupyter-collaboration at a higher layer (and ``YChat``
-    has no ``keep_alive``), so this is a no-op there.
-    """
-    if isinstance(chat, WsChatModel):
-        return chat.keep_alive()
-    return nullcontext()
-
-
-async def _safe_process(persona: "BasePersona", message: Message) -> None:
-    """
-    Wraps persona.process_message() to catch unhandled exceptions and deliver
-    an error message to the user via persona.handle_uncaught_exception().
-
-    Before processing, applies the model & settings specification carried on the
-    message's metadata (see `BasePersona.apply_specs_in_message()`), so
-    per-message user selections take effect for every persona without each
-    `process_message()` implementation having to apply them itself.
-    """
-    # Run the one-time `prepare()` hook in its own error boundary. If it fails,
-    # surface the error and skip processing. Keeping this separate from the
-    # processing block below ensures a *processing* failure never resets or
-    # re-triggers preparation.
-    if not await _safe_prepare(persona):
-        return
-
-    try:
-        await persona.apply_specs_in_message(message)
-        # Keep a WebSocket-backed chat alive for the whole reply, so it is not
-        # freed if the user disconnects mid-response (no-op under RTC).
-        with _keep_chat_alive(persona.chat):
-            async with persona.track_processing(message):
-                await persona.process_message(message)
-    except Exception as exc:
-        await _deliver_persona_error(persona, exc, "while processing the message")
 
 
 class PersonaManager(LoggingConfigurable):
@@ -553,21 +473,39 @@ class PersonaManager(LoggingConfigurable):
             "Routing message to persona: %s", persona.name if persona else None
         )
         if persona:
-            self.event_loop.create_task(_safe_process(persona, message))
+            self.event_loop.create_task(persona.on_message(message))
 
     def prepare_persona(self, persona_id: str) -> bool:
         """
         Eagerly run a persona's `prepare()` because a client selected it, so it
         publishes its model & settings before the first message.
 
-        Runs in a background task with the same error boundary as message
-        processing; idempotent, so re-selecting is harmless. Returns whether the
-        persona is installed in this chat.
+        Runs in a background task. Unlike message handling, this is **silent**:
+        a failed or unauthenticated preparation is not surfaced to the chat here
+        — the outcome is reflected in `preparation_state` and only acted on when
+        the user actually sends a message (via `on_message`). Idempotent, so
+        re-selecting is harmless. Returns whether the persona is installed in
+        this chat.
         """
         persona = self.personas.get(persona_id)
         if persona is None:
             return False
-        self.event_loop.create_task(_safe_prepare(persona))
+
+        async def _prepare_quietly() -> None:
+            # Eager prepare is silent: swallow failures (including
+            # PersonaNotAuthenticated) so selection never posts to the chat. The
+            # outcome lives in `preparation_state` and is acted on by
+            # `on_message` when the user sends a message.
+            try:
+                await persona._ensure_prepared()
+            except Exception:
+                persona.log.debug(
+                    "Eager prepare on selection did not complete for '%s'.",
+                    persona.name,
+                    exc_info=True,
+                )
+
+        self.event_loop.create_task(_prepare_quietly())
         return True
 
     async def refresh_personas(self):

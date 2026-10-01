@@ -245,3 +245,173 @@ async def test_cancel_handler_resolves_manager_by_id(jp_fetch, jp_serverapp):
     target.cancel_response.assert_awaited_once()
     # A different chat's persona must not be cancelled.
     other.cancel_response.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# MessageHandler
+# ---------------------------------------------------------------------------
+#
+# The magics feature (jupyter-ai-magic-commands) POSTs here directly, bypassing
+# the live chat path (`BasePersona.on_message`). PR #160 fixed this handler to
+# route through the shared entry point instead of reimplementing its steps
+# inline, so a persona's `prepare()` hook runs before `process_message()`, and
+# the handler's wait loop only matters because `processing` is tracked for the
+# duration of the call.
+#
+# These tests exercise the real (non-mocked) handler end-to-end: a real
+# PersonaManager discovers a real persona class written to
+# `<jp_root_dir>/.jupyter/personas/`, exactly as it would for a real magics
+# request. `MessageHandler` always creates its ephemeral chat at `root_dir`
+# itself (no subdirectory — see `ychat.initial_path` in handlers.py), so the
+# fixture persona must live directly under `jp_root_dir`, not a nested dir.
+
+_PREPARE_REQUIRED_PERSONA_SOURCE = '''
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+
+
+class PrepareRequiredPersona(BasePersona):
+    """Mirrors an ACP persona: process_message() depends on state that only
+    prepare() sets up (e.g. a spawned agent session)."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Prepare Required Persona",
+            description="test",
+            avatar_path="",
+            system_prompt="unused",
+        )
+
+    async def prepare(self) -> None:
+        self._session_ready = True
+
+    async def process_message(self, message: Message) -> None:
+        if not getattr(self, "_session_ready", False):
+            raise RuntimeError("session not ready: prepare() never ran")
+        self.send_message(f"session ready: {message.body}")
+'''
+
+_BROKEN_PREPARE_PERSONA_SOURCE = '''
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+
+
+class BrokenPreparePersona(BasePersona):
+    """A persona whose one-time prepare() hook always fails, mirroring an ACP
+    agent that can't spawn (e.g. not authenticated)."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Broken Prepare Persona",
+            description="test",
+            avatar_path="",
+            system_prompt="unused",
+        )
+
+    async def prepare(self) -> None:
+        raise RuntimeError("boom: prepare failed")
+
+    async def process_message(self, message: Message) -> None:
+        self.send_message("should never run")
+'''
+
+_STREAMING_PERSONA_SOURCE = '''
+import asyncio
+
+from jupyter_ai_persona_manager import BasePersona, PersonaDefaults
+from jupyterlab_chat.models import Message
+
+
+class StreamingPersona(BasePersona):
+    """Streams its reply over a few chunks, so a test can assert the handler
+    waits for the full stream rather than returning early."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="Streaming Persona",
+            description="test",
+            avatar_path="",
+            system_prompt="unused",
+        )
+
+    async def _chunks(self):
+        for chunk in ("one ", "two ", "three"):
+            await asyncio.sleep(0.05)
+            yield chunk
+
+    async def process_message(self, message: Message) -> None:
+        await self.stream_message(self._chunks())
+'''
+
+
+def _install_message_persona(jp_root_dir, filename: str, source: str) -> None:
+    """Writes a fixture persona `.py` file into `<jp_root_dir>/.jupyter/personas/`
+    — the directory `MessageHandler`'s ephemeral, root-level chat resolves to,
+    since that chat has no directory of its own. Exercises real on-disk persona
+    discovery rather than mocking the persona.
+    """
+    personas_dir = Path(jp_root_dir) / ".jupyter" / "personas"
+    personas_dir.mkdir(parents=True, exist_ok=True)
+    (personas_dir / filename).write_text(source)
+
+
+async def test_message_handler_runs_prepare_before_processing(jp_fetch, jp_root_dir):
+    """Regression test for #160: the magics endpoint must run a persona's
+    prepare() hook before process_message(), just like the live chat path.
+    Before the fix, this handler called process_message() directly, so a
+    persona relying on prepare() (as ACP personas do) would raise here."""
+    _install_message_persona(
+        jp_root_dir, "prepare-required_persona.py", _PREPARE_REQUIRED_PERSONA_SOURCE
+    )
+
+    response = await jp_fetch(
+        "api", "ai", "message", "Prepare Required Persona",
+        method="POST",
+        body=json.dumps({"message": "hi"}),
+    )
+
+    assert response.code == 200
+    body = json.loads(response.body)
+    assert body["response"] == "session ready: hi"
+
+
+async def test_message_handler_surfaces_prepare_failure(jp_fetch, jp_root_dir):
+    """A persona whose prepare() fails must deliver a readable error into the
+    response rather than raising an opaque 500 out of the handler."""
+    _install_message_persona(
+        jp_root_dir, "broken-prepare_persona.py", _BROKEN_PREPARE_PERSONA_SOURCE
+    )
+
+    response = await jp_fetch(
+        "api", "ai", "message", "Broken Prepare Persona",
+        method="POST",
+        body=json.dumps({"message": "hi"}),
+    )
+
+    assert response.code == 200
+    body = json.loads(response.body)
+    assert "An error occurred while processing your message" in body["response"]
+    assert "boom: prepare failed" in body["response"]
+
+
+async def test_message_handler_waits_for_streaming_reply(jp_fetch, jp_root_dir):
+    """A persona that replies via `stream_message()` (rather than the
+    single-shot `send_message()` used above) must have every chunk captured,
+    not just whatever landed first — covering the streaming reply path the
+    handler's `while target_persona.processing` wait loop exists for."""
+    _install_message_persona(
+        jp_root_dir, "streaming_persona.py", _STREAMING_PERSONA_SOURCE
+    )
+
+    response = await jp_fetch(
+        "api", "ai", "message", "Streaming Persona",
+        method="POST",
+        body=json.dumps({"message": "go"}),
+    )
+
+    assert response.code == 200
+    body = json.loads(response.body)
+    assert body["response"] == "one two three"

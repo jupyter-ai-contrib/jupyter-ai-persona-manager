@@ -12,6 +12,7 @@ import pytest
 from jupyter_events import EventLogger
 from jupyterlab_chat.models import Message
 
+from jupyter_ai_persona_manager.base_persona import BasePersona, PersonaDefaults
 from jupyter_ai_persona_manager.persona_events import (
     PERSONAS_EVENT_SCHEMA_ID,
     PersonaManagerSessionState,
@@ -19,7 +20,6 @@ from jupyter_ai_persona_manager.persona_events import (
 )
 from jupyter_ai_persona_manager.persona_manager import (
     PersonaManager,
-    _safe_process,
 )
 
 
@@ -128,40 +128,68 @@ class TestPersonaListEvents:
         asyncio.run(run())
 
 
-class TestSafeProcessAppliesSpecsFirst:
-    """apply_specs_in_message must run before process_message."""
+class _MinimalPersona(BasePersona):
+    """A real BasePersona (default no-op prepare) for testing on_message."""
+
+    @property
+    def defaults(self) -> PersonaDefaults:
+        return PersonaDefaults(
+            name="P", description="", avatar_path="", system_prompt=""
+        )
+
+    async def process_message(self, message) -> None:  # overridden per-test
+        pass
+
+
+def _make_on_message_persona():
+    persona = _MinimalPersona.__new__(_MinimalPersona)
+    persona.chat = MagicMock()
+    persona.chat.add_message = MagicMock(return_value="m")
+    persona.log = logging.getLogger("test-persona")
+    persona.state = MagicMock()
+    persona._processing_count = 0
+    persona._processing_message = None
+    persona._processing_lock = None
+    persona._prepare_task = None
+    persona.auth = MagicMock()
+    persona._login_terminal_opened = False
+    return persona
+
+
+def _message():
+    msg = MagicMock(spec=Message)
+    msg.metadata = {}
+    return msg
+
+
+class TestOnMessageAppliesSpecsFirst:
+    """`on_message` must run apply_specs_in_message before process_message, and
+    route failures from either to handle_uncaught_exception."""
 
     @pytest.mark.asyncio
     async def test_specs_applied_before_processing(self):
         order = []
-        persona = MagicMock()
-        persona.name = "P"
-        persona.log = MagicMock()
-        persona._ensure_prepared = AsyncMock()
+        persona = _make_on_message_persona()
         persona.apply_specs_in_message = AsyncMock(
             side_effect=lambda m: order.append("apply")
         )
         persona.process_message = AsyncMock(
             side_effect=lambda m: order.append("process")
         )
-        persona.handle_uncaught_exception = AsyncMock()
 
-        await _safe_process(persona, MagicMock(spec=Message))
+        await persona.on_message(_message())
 
         assert order == ["apply", "process"]
 
     @pytest.mark.asyncio
     async def test_processing_error_routed_to_handler(self):
-        persona = MagicMock()
-        persona.name = "P"
-        persona.log = MagicMock()
-        persona._ensure_prepared = AsyncMock()
+        persona = _make_on_message_persona()
         persona.apply_specs_in_message = AsyncMock()
         exc = RuntimeError("boom")
         persona.process_message = AsyncMock(side_effect=exc)
         persona.handle_uncaught_exception = AsyncMock()
 
-        await _safe_process(persona, MagicMock(spec=Message))
+        await persona.on_message(_message())
 
         persona.handle_uncaught_exception.assert_awaited_once_with(exc)
 
@@ -169,16 +197,13 @@ class TestSafeProcessAppliesSpecsFirst:
     async def test_spec_error_routed_to_handler(self):
         # A failure while applying specs is also delivered to the user rather
         # than crashing the dispatch task.
-        persona = MagicMock()
-        persona.name = "P"
-        persona.log = MagicMock()
-        persona._ensure_prepared = AsyncMock()
+        persona = _make_on_message_persona()
         exc = RuntimeError("bad spec")
         persona.apply_specs_in_message = AsyncMock(side_effect=exc)
         persona.process_message = AsyncMock()
         persona.handle_uncaught_exception = AsyncMock()
 
-        await _safe_process(persona, MagicMock(spec=Message))
+        await persona.on_message(_message())
 
         persona.process_message.assert_not_awaited()
         persona.handle_uncaught_exception.assert_awaited_once_with(exc)

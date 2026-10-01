@@ -6,6 +6,7 @@ import asyncio
 import logging
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -19,9 +20,6 @@ from jupyter_ai_persona_manager.persona_manager import (
     SYSTEM_USERNAME,
     PersonaManager,
     PersonaRequirementsUnmet,
-    _keep_chat_alive,
-    _safe_prepare,
-    _safe_process,
     find_persona_files,
     format_persona_load_errors,
     load_from_dir,
@@ -336,186 +334,111 @@ class TestFormatPersonaLoadErrors:
 # TestSafeProcess
 # ---------------------------------------------------------------------------
 
-def _make_mock_persona():
-    persona = MagicMock()
-    persona.name = "TestPersona"
-    persona.log = MagicMock()
-    persona._ensure_prepared = AsyncMock()
-    persona.process_message = AsyncMock()
-    persona.apply_specs_in_message = AsyncMock()
-    persona.handle_uncaught_exception = AsyncMock()
+def _make_lifecycle_persona(chat=None):
+    """
+    Build a real `_LifecyclePersona` (bypassing `__init__`) with just the
+    attributes `on_message` touches, for testing the invocation lifecycle
+    directly. `_LifecyclePersona` is defined below; this runs at test time.
+    """
+    persona = _LifecyclePersona.__new__(_LifecyclePersona)
+    persona.chat = chat if chat is not None else MagicMock()
+    if isinstance(persona.chat, MagicMock):
+        persona.chat.add_message = MagicMock(return_value="msg-1")
+    persona.log = logging.getLogger("test-persona")
+    persona.state = MagicMock()
+    persona._processing_count = 0
+    persona._processing_message = None
+    persona._processing_lock = None
+    persona._prepare_task = None
+    persona.auth = MagicMock()
+    persona._login_terminal_opened = False
+    persona.prepare_calls = 0
+    persona.process_calls = 0
+    persona.prepare_should_fail = False
+    persona.process_should_fail = False
+    persona.prepare_gate = None
     return persona
 
 
-def _make_mock_message():
-    return MagicMock(spec=Message)
-
-
-class TestSafeProcess:
-
-    @pytest.mark.asyncio
-    async def test_calls_process_message(self):
-        persona = _make_mock_persona()
-        message = _make_mock_message()
-        await _safe_process(persona, message)
-        persona.process_message.assert_awaited_once_with(message)
-
-    @pytest.mark.asyncio
-    async def test_calls_handle_uncaught_exception_on_failure(self):
-        exc = RuntimeError("test error")
-        persona = _make_mock_persona()
-        persona.process_message.side_effect = exc
-        message = _make_mock_message()
-
-        await _safe_process(persona, message)
-
-        persona.handle_uncaught_exception.assert_awaited_once_with(exc)
-
-    @pytest.mark.asyncio
-    async def test_logs_error_before_handle(self):
-        persona = _make_mock_persona()
-        persona.process_message.side_effect = RuntimeError("fail")
-        message = _make_mock_message()
-
-        await _safe_process(persona, message)
-
-        persona.log.error.assert_called_once()
-        persona.log.exception.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_no_exception_propagates_on_process_message_failure(self):
-        persona = _make_mock_persona()
-        persona.process_message.side_effect = RuntimeError("fail")
-        message = _make_mock_message()
-
-        # Should not raise
-        await _safe_process(persona, message)
-
-    @pytest.mark.asyncio
-    async def test_catches_secondary_exception_from_handle_uncaught_exception(self):
-        persona = _make_mock_persona()
-        persona.process_message.side_effect = RuntimeError("primary")
-        persona.handle_uncaught_exception.side_effect = RuntimeError("secondary")
-        message = _make_mock_message()
-
-        # Should not raise even when handle_uncaught_exception also raises
-        await _safe_process(persona, message)
-
-        # Secondary exception logged
-        assert persona.log.exception.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_handle_not_called_on_success(self):
-        persona = _make_mock_persona()
-        message = _make_mock_message()
-
-        await _safe_process(persona, message)
-
-        persona.handle_uncaught_exception.assert_not_called()
+def _make_message():
+    """A message with empty metadata (so `apply_specs_in_message` is a no-op)."""
+    msg = MagicMock(spec=Message)
+    msg.metadata = {}
+    return msg
 
 
 class TestKeepChatAlive:
-    """`_safe_process` must hold a WsChatModel alive while processing, so a chat
-    is not freed if the user disconnects mid-reply -- but only for WsChatModel;
-    under RTC memory is managed elsewhere."""
+    """`on_message` holds a WsChatModel alive while processing, so a chat is not
+    freed if the user disconnects mid-reply -- but only for WsChatModel; under
+    RTC memory is managed elsewhere."""
 
     def test_helper_selects_context_by_chat_type(self, tmp_path):
         ws = WsChatModel(path="k.chat", root_dir=tmp_path)
-        with _keep_chat_alive(ws):
+        with BasePersona._keep_chat_alive(SimpleNamespace(chat=ws)):
             assert ws.is_kept_alive is True
         assert ws.is_kept_alive is False
 
         # A non-WsChatModel chat (e.g. YChat under RTC) is left untouched.
         other = MagicMock()
-        with _keep_chat_alive(other):
+        with BasePersona._keep_chat_alive(SimpleNamespace(chat=other)):
             pass
         other.keep_alive.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ws_chat_is_kept_alive_during_processing(self, tmp_path):
-        persona = _make_mock_persona()
-        persona.chat = WsChatModel(path="k.chat", root_dir=tmp_path)
-
+        persona = _make_lifecycle_persona(
+            chat=WsChatModel(path="k.chat", root_dir=tmp_path)
+        )
         observed = {}
 
         async def _process(_message):
             observed["kept_alive"] = persona.chat.is_kept_alive
 
-        persona.process_message.side_effect = _process
+        persona.process_message = _process
 
-        await _safe_process(persona, _make_mock_message())
+        await persona.on_message(_make_message())
 
         assert observed["kept_alive"] is True  # held for the whole reply
         assert persona.chat.is_kept_alive is False  # released afterward
 
     @pytest.mark.asyncio
     async def test_keep_alive_released_even_when_processing_fails(self, tmp_path):
-        persona = _make_mock_persona()
-        persona.chat = WsChatModel(path="k.chat", root_dir=tmp_path)
-        persona.process_message.side_effect = RuntimeError("boom")
+        persona = _make_lifecycle_persona(
+            chat=WsChatModel(path="k.chat", root_dir=tmp_path)
+        )
 
-        await _safe_process(persona, _make_mock_message())
+        async def _boom(_message):
+            raise RuntimeError("boom")
+
+        persona.process_message = _boom
+        # We're asserting keep-alive release, not error delivery; keep the error
+        # handler from writing to the real chat model.
+        persona.handle_uncaught_exception = AsyncMock()
+
+        await persona.on_message(_make_message())
 
         assert persona.chat.is_kept_alive is False
 
     @pytest.mark.asyncio
     async def test_non_ws_chat_is_not_kept_alive(self):
-        persona = _make_mock_persona()
-        persona.chat = MagicMock()  # not a WsChatModel
+        persona = _make_lifecycle_persona()  # MagicMock chat, not a WsChatModel
+        processed = {}
 
-        await _safe_process(persona, _make_mock_message())
+        async def _process(_message):
+            processed["ok"] = True
+
+        persona.process_message = _process
+
+        await persona.on_message(_make_message())
 
         persona.chat.keep_alive.assert_not_called()
-        persona.process_message.assert_awaited_once()
-
-
-class TestSafePrepare:
-    """Unit tests for the shared prepare error boundary, `_safe_prepare`."""
-
-    @pytest.mark.asyncio
-    async def test_returns_true_on_success(self):
-        persona = _make_mock_persona()
-
-        result = await _safe_prepare(persona)
-
-        assert result is True
-        persona._ensure_prepared.assert_awaited_once()
-        persona.handle_uncaught_exception.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_returns_false_and_delivers_error_on_failure(self):
-        exc = RuntimeError("prepare boom")
-        persona = _make_mock_persona()
-        persona._ensure_prepared.side_effect = exc
-
-        result = await _safe_prepare(persona)
-
-        assert result is False
-        persona.handle_uncaught_exception.assert_awaited_once_with(exc)
-
-    @pytest.mark.asyncio
-    async def test_no_exception_propagates_on_failure(self):
-        persona = _make_mock_persona()
-        persona._ensure_prepared.side_effect = RuntimeError("boom")
-
-        # Should not raise.
-        assert await _safe_prepare(persona) is False
-
-    @pytest.mark.asyncio
-    async def test_catches_secondary_exception_from_handler(self):
-        persona = _make_mock_persona()
-        persona._ensure_prepared.side_effect = RuntimeError("primary")
-        persona.handle_uncaught_exception.side_effect = RuntimeError("secondary")
-
-        # Should not raise even when the error handler also raises.
-        assert await _safe_prepare(persona) is False
-        assert persona.log.exception.call_count == 2
+        assert processed["ok"] is True
 
 
 class _LifecyclePersona(BasePersona):
     """
     A real BasePersona subclass with an instrumented prepare()/process_message,
-    for integration-testing the prepare lifecycle through the real _safe_process
+    for integration-testing the prepare lifecycle through the real on_message
     and _ensure_prepared.
     """
 
@@ -562,7 +485,7 @@ def _make_manager_and_persona():
     A real PersonaManager routing to a real _LifecyclePersona.
 
     The manager is built via __new__ with only the attributes its routing path
-    (`on_chat_message` -> `_safe_process`) touches; the persona is a real
+    (`on_chat_message` -> `on_message`) touches; the persona is a real
     BasePersona subclass with a real `prepare()` / `process_message`.
     """
     pm = PersonaManager.__new__(PersonaManager)
@@ -613,7 +536,7 @@ class TestPrepareLifecycleIntegration:
     """
     Integration tests for the prepare() lifecycle: messages routed through
     PersonaManager.on_chat_message to a _LifecyclePersona, exercising
-    the _safe_process / _ensure_prepared / prepare() path end to end.
+    the on_message / _ensure_prepared / prepare() path end to end.
     """
 
     @pytest.mark.asyncio
@@ -761,7 +684,7 @@ class TestPreparePersonaOnSelection:
         assert p.prepare_calls == 1
 
     @pytest.mark.asyncio
-    async def test_prepare_failure_is_delivered_and_not_raised(self):
+    async def test_prepare_failure_is_silent_on_selection(self):
         pm, p = _make_manager_and_persona()
         p.prepare_should_fail = True
 
@@ -770,7 +693,9 @@ class TestPreparePersonaOnSelection:
 
         assert p.prepare_calls == 1
         assert p.preparation_state == PreparationState.FAILED
-        p.chat.add_message.assert_called()  # error surfaced to the user
+        # Selection is silent: the failure is NOT surfaced to the chat here. It
+        # is only reported when the user actually sends a message (on_message).
+        p.chat.add_message.assert_not_called()
 
 
 class TestOnPersonaSelectedListener:
@@ -852,24 +777,30 @@ def _message(sender, metadata=None):
     return message
 
 
+def _make_routing_persona():
+    """A mock persona whose `on_message` is a MagicMock, so routing tests can
+    assert which persona a message was dispatched to."""
+    persona = MagicMock()
+    persona.on_message = MagicMock()
+    return persona
+
+
 class TestOnChatMessageRouting:
-    """Who a message is routed to. Patches ``_safe_process`` (the per-persona
-    delivery coroutine) to assert which persona a message reaches."""
+    """Who a message is routed to. Routing dispatches ``persona.on_message`` for
+    the addressed persona; we assert which persona's ``on_message`` was called."""
 
     def _route(self, pm, message):
-        """Run routing with ``_safe_process`` patched; return the personas it
-        was called with."""
-        # Patch with a plain (non-async) mock so no coroutine is created — the
-        # real `_safe_process` is a coroutine function, and we don't run it here.
-        with patch(
-            "jupyter_ai_persona_manager.persona_manager._safe_process",
-            new=MagicMock(),
-        ) as safe_process:
-            pm.on_chat_message("room", message)
-        return [call.args[0] for call in safe_process.call_args_list]
+        """Run routing and return the personas whose ``on_message`` was called.
+
+        ``on_chat_message`` schedules ``persona.on_message(message)`` on the
+        event loop (a ``Mock`` here), so the coroutine/mock is created — i.e.
+        ``on_message`` is *called* — synchronously during routing.
+        """
+        pm.on_chat_message("room", message)
+        return [p for p in pm._personas.values() if p.on_message.called]
 
     def test_routes_to_the_persona_named_in_metadata(self):
-        target = _make_mock_persona()
+        target = _make_routing_persona()
         pm = _routing_manager(personas={"p1": target})
 
         routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "p1"}))
@@ -877,14 +808,14 @@ class TestOnChatMessageRouting:
         assert routed == [target]
 
     def test_no_target_persona_means_no_one_is_routed_to(self):
-        pm = _routing_manager(personas={"p1": _make_mock_persona()})
+        pm = _routing_manager(personas={"p1": _make_routing_persona()})
 
         routed = self._route(pm, _message(HUMAN_SENDER, metadata=None))
 
         assert routed == []
 
     def test_unknown_target_persona_means_no_one_is_routed_to(self):
-        pm = _routing_manager(personas={"p1": _make_mock_persona()})
+        pm = _routing_manager(personas={"p1": _make_routing_persona()})
 
         routed = self._route(pm, _message(HUMAN_SENDER, {"to_persona": "gone"}))
 
@@ -894,7 +825,7 @@ class TestOnChatMessageRouting:
         # Routing keys only on `to_persona`; the sender is not consulted. A
         # persona addressing another persona via metadata is explicit and
         # intentional, so there is no sender-based guard.
-        target = _make_mock_persona()
+        target = _make_routing_persona()
         pm = _routing_manager(personas={"p1": target})
 
         for sender in (PERSONA_SENDER, SYSTEM_USERNAME):
