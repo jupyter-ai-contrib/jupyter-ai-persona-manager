@@ -24,5 +24,9 @@ declare module '@jupyter/chat' {
      * A null value means "use the persona's current value".
      */
     settings?: { [id: string]: string | null };
+    /**
+     * Optional reasoning trace from the model's internal chain-of-thought.
+     */
+    reasoning?: string;
   }
 }
