@@ -2,8 +2,11 @@
 Tests for the PersonaManagerExtension class.
 """
 
-import pytest
+import asyncio
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
+
+import pytest
+
 from jupyter_ai_persona_manager.extension import PersonaManagerExtension
 
 
@@ -69,6 +72,29 @@ async def test_stop_extension_with_failing_shutdown(extension, mock_server_app):
 
     # Assert: error was logged
     assert extension.log.exception.called
+
+
+@pytest.mark.asyncio
+async def test_chat_stop_only_shuts_down_captured_manager(extension, mock_server_app):
+    """A reconnect must not let an old stop event remove the new manager."""
+    old_manager = Mock(shutdown_personas=AsyncMock())
+    new_manager = Mock(shutdown_personas=AsyncMock())
+    persona_managers = {'room1': old_manager}
+    mock_server_app.web_app.settings['jupyter-ai']['persona-managers'] = persona_managers
+
+    with patch.object(type(extension), "event_loop", new_callable=PropertyMock) as event_loop:
+        event_loop.return_value = asyncio.get_running_loop()
+        extension._on_router_chat_stop('room1')
+        stop_task = extension._stopping_chats['room1']
+        persona_managers['room1'] = new_manager
+        replacement_task = Mock()
+        extension._stopping_chats['room1'] = replacement_task
+        await stop_task
+
+    old_manager.shutdown_personas.assert_awaited_once()
+    new_manager.shutdown_personas.assert_not_awaited()
+    assert persona_managers['room1'] is new_manager
+    assert extension._stopping_chats['room1'] is replacement_task
 
 
 @pytest.mark.asyncio
