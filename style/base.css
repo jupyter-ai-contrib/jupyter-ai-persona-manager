@@ -484,3 +484,20 @@
   background-color: var(--jp-border-color2);
 }
 /* stylelint-enable selector-class-pattern */
+
+/* "Login required" tag on a persona in the persona menu. */
+.jp-jai-controlMenu-paper .jp-jai-controlMenu-login-tag {
+  margin-left: 12px;
+  flex-shrink: 0;
+  font-family: var(--jp-ui-font-family);
+  font-size: var(--jp-ui-font-size0);
+  color: var(--jp-ui-font-color2);
+}
+
+/* "Login required" next to the selected persona in the toolbar. */
+.jp-jai-personaControls-login-required {
+  padding: 1px 6px;
+  font-size: var(--jp-ui-font-size1);
+  color: var(--jp-ui-font-color2);
+  white-space: nowrap;
+}

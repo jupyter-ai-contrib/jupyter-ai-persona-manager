@@ -7,8 +7,8 @@ Jupyter Events:
 - ``jupyter_ai_persona_manager/personas/v1`` -- the list of personas in a chat
   (published by the manager).
 - ``jupyter_ai_persona_manager/persona_state/v1`` -- a single persona's session
-  state: model configuration, general settings, usage, and slash commands
-  (published by each persona on change).
+  state: model configuration, general settings, usage, slash commands, and
+  authentication state (published by each persona on change).
 
 Events are fire-and-forget, so a client that connects after an event was emitted
 would miss it. Catch-up is handled by re-emitting the current state when a client
@@ -25,6 +25,7 @@ from logging import Logger
 from typing import TYPE_CHECKING, Any, Optional
 
 from .awareness_models import (
+    AuthState,
     CommandOption,
     ModelConfiguration,
     PersonaOption,
@@ -71,8 +72,9 @@ PERSONA_STATE_EVENT_SCHEMA = {
     "title": "Persona session state",
     "personal-data": True,
     "description": (
-        "A single persona's model, settings, usage, slash commands, and "
-        "whether it is currently processing a message."
+        "A single persona's model, settings, usage, slash commands, "
+        "authentication state, and whether it is currently processing a "
+        "message."
     ),
     "type": "object",
     "required": ["chat_id", "persona_id"],
@@ -88,6 +90,13 @@ PERSONA_STATE_EVENT_SCHEMA = {
             "description": (
                 "Whether the persona is currently processing a message. The "
                 "frontend uses this to enable the stop button."
+            ),
+        },
+        "auth": {
+            "type": "object",
+            "description": (
+                "Serialized AuthState: whether the user is signed in. Absent "
+                "for personas that require no authentication."
             ),
         },
     },
@@ -199,6 +208,7 @@ class PersonaSessionState:
         self._usage = Usage()
         self._slash_commands: list[CommandOption] = []
         self._processing = False
+        self._auth: Optional[AuthState] = None
 
     @property
     def id(self) -> str:
@@ -253,10 +263,25 @@ class PersonaSessionState:
         self._processing = processing
         self._emit({"processing": processing})
 
+    @property
+    def auth(self) -> Optional[AuthState]:
+        """The persona's authentication state, or None if it never published one
+        (i.e. it requires no authentication)."""
+        return self._auth
+
+    @auth.setter
+    def auth(self, auth: AuthState) -> None:
+        # The auth manager republishes the shared state to every chat whenever
+        # any part of it changes, so skip assignments that change nothing here.
+        if self._auth == auth:
+            return
+        self._auth = auth
+        self._emit({"auth": auth.model_dump()})
+
     def to_data(self) -> dict[str, Any]:
         """The persona's full current state, including the routing ids. Used by
         :meth:`publish` for the catch-up snapshot."""
-        return {
+        data = {
             "chat_id": self._chat_id,
             "persona_id": self._persona_id,
             "model": self._model.model_dump(),
@@ -265,6 +290,9 @@ class PersonaSessionState:
             "slash_commands": [c.model_dump() for c in self._slash_commands],
             "processing": self._processing,
         }
+        if self._auth is not None:
+            data["auth"] = self._auth.model_dump()
+        return data
 
     def _emit(self, fields: dict[str, Any]) -> None:
         """Emit a ``persona_state`` event carrying ``fields`` plus the routing

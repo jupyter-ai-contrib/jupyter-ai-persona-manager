@@ -153,6 +153,44 @@ describe('PersonaSessionRegistry', () => {
     expect(registry.get('a.chat').processing).toBe(false);
   });
 
+  it('treats a persona without auth state as not needing login', async () => {
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1'
+    });
+    const state = registry.get('a.chat').getPersona('p1');
+    expect(state?.auth).toBeNull();
+    expect(state?.needsLogin).toBe(false);
+  });
+
+  it('tracks auth state and keeps it across partial events', async () => {
+    const { registry, events } = makeRegistry();
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      auth: { status: 'not_authed', via: null }
+    });
+    expect(registry.get('a.chat').getPersona('p1')?.needsLogin).toBe(true);
+
+    // A usage-only event must not drop the auth state.
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      usage: { input_tokens: 5 }
+    });
+    expect(registry.get('a.chat').getPersona('p1')?.needsLogin).toBe(true);
+
+    await events.emit(PERSONA_STATE_EVENT_SCHEMA_ID, {
+      chat_id: 'a.chat',
+      persona_id: 'p1',
+      auth: { status: 'authed', via: 'Bedrock' }
+    });
+    const state = registry.get('a.chat').getPersona('p1');
+    expect(state?.needsLogin).toBe(false);
+    expect(state?.auth?.via).toBe('Bedrock');
+  });
+
   it('discards a chat persona manager on close, freeing memory', async () => {
     const { registry, events } = makeRegistry();
     await events.emit(PERSONAS_EVENT_SCHEMA_ID, {

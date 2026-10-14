@@ -87,6 +87,16 @@ export type PersonaOption = {
   yjs_client_id?: number;
 };
 
+/**
+ * A persona's authentication state. Mirrors `AuthState`. Personas that need no
+ * authentication never publish one, so a missing state means authenticated.
+ */
+export type AuthState = {
+  status: 'authed' | 'not_authed';
+  /** How the user is signed in, when known (e.g. "Bedrock"). */
+  via: string | null;
+};
+
 export const EMPTY_USAGE: Usage = {
   context_tokens: null,
   context_size: null,
