@@ -1315,6 +1315,9 @@ export function PersonaControls(
               primary={p.name}
               classes={{ primary: `${MENU_CLASS}-name` }}
             />
+            {managerState?.getPersona(p.id)?.needsLogin ? (
+              <span className={`${MENU_CLASS}-login-tag`}>Login required</span>
+            ) : null}
             {p.id === selectedId ? (
               <CheckIcon className={`${MENU_CLASS}-check`} fontSize="small" />
             ) : null}
@@ -1334,6 +1337,15 @@ export function PersonaControls(
           ) : null}
         </MenuItem>
       </Menu>
+
+      {personaState?.needsLogin ? (
+        <span
+          className={`${SELECTOR_CLASS}-login-required`}
+          title={`Sign in to ${personaLabel} to use it.`}
+        >
+          Login required
+        </span>
+      ) : null}
 
       <UsageChip usage={usage} />
 

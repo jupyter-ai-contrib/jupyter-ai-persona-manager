@@ -14,6 +14,17 @@ if TYPE_CHECKING:
     from jupyterlab_chat.ychat import YChat
 
 
+@pytest.fixture(autouse=True)
+def _isolate_shared_auth_state():
+    """Auth state is shared by every instance of a persona class, keyed by
+    persona ID, so forget it between tests."""
+    from jupyter_ai_persona_manager.auth_manager import PersonaAuthManager
+
+    PersonaAuthManager._shared_by_persona.clear()
+    yield
+    PersonaAuthManager._shared_by_persona.clear()
+
+
 @pytest.fixture
 def tmp_dir():
     """Create a temporary directory with guaranteed cleanup."""

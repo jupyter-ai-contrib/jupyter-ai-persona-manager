@@ -14,6 +14,7 @@ import { IDisposable } from '@lumino/disposable';
 import { ISignal, Signal } from '@lumino/signaling';
 
 import {
+  AuthState,
   CommandOption,
   EMPTY_MODEL_CONFIGURATION,
   EMPTY_USAGE,
@@ -39,6 +40,7 @@ export type PersonaStatePayload = {
   usage?: Usage;
   slash_commands?: CommandOption[];
   processing?: boolean;
+  auth?: AuthState;
 };
 
 /** The wire shape of a `personas` event. */
@@ -62,6 +64,7 @@ export class PersonaSessionState {
     this.usage = { ...EMPTY_USAGE, ...(payload.usage ?? {}) };
     this.slash_commands = payload.slash_commands ?? [];
     this.processing = payload.processing ?? false;
+    this.auth = payload.auth ?? null;
   }
 
   readonly model: ModelConfiguration;
@@ -70,6 +73,19 @@ export class PersonaSessionState {
   readonly slash_commands: CommandOption[];
   /** Whether the persona is currently processing a message. */
   readonly processing: boolean;
+  /**
+   * The persona's authentication state, or null if it never published one
+   * (it needs no authentication).
+   */
+  readonly auth: AuthState | null;
+
+  /**
+   * Whether the user must sign in before using this persona. A persona without
+   * auth state never needs it.
+   */
+  get needsLogin(): boolean {
+    return this.auth !== null && this.auth.status !== 'authed';
+  }
 
   /**
    * Merge a `persona_state` event payload onto this state, returning a new
@@ -83,7 +99,8 @@ export class PersonaSessionState {
       settings: payload.settings ?? this.settings,
       usage: payload.usage ?? this.usage,
       slash_commands: payload.slash_commands ?? this.slash_commands,
-      processing: payload.processing ?? this.processing
+      processing: payload.processing ?? this.processing,
+      auth: payload.auth ?? this.auth ?? undefined
     });
   }
 }

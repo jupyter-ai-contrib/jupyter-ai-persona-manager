@@ -192,6 +192,9 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
             chat_id=_chat.get_id() if _chat is not None else "",
             log=self.log,
         )
+        # Auth state is shared across chats, so a persona created after it was
+        # published (e.g. in a newly opened chat) starts out up to date.
+        self.auth.sync_state()
 
         # Register this persona as a user in the chat
         self.chat.set_user(self.as_user())
@@ -1105,10 +1108,12 @@ class BasePersona(ABC, LoggingConfigurable, metaclass=ABCLoggingConfigurableMeta
         logic. The override should generally call `super().shutdown()` first
         before running custom shutdown logic.
         """
-        # Cancel any background auth poll so no task outlives the persona.
+        # Cancel any background auth poll so no task outlives the persona, and
+        # stop publishing the shared auth state to it.
         auth = getattr(self, "auth", None)
         if auth is not None:
             auth.stop()
+            auth.detach()
         # Stop awareness heartbeat task & remove self from chat awareness
         if self.state is not None:
             self.state.shutdown()

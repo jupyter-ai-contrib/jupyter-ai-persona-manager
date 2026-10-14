@@ -6,6 +6,7 @@ import logging
 from jupyter_events import EventLogger
 
 from jupyter_ai_persona_manager.awareness_models import (
+    AuthState,
     ModelConfiguration,
     Usage,
 )
@@ -138,6 +139,66 @@ def test_publish_includes_processing_for_catchup():
 
         assert len(captured) == 1
         assert captured[0]["processing"] is True
+
+    asyncio.run(run())
+
+
+def test_auth_setter_emits_only_auth_and_skips_unchanged_values():
+    """Setting `auth` emits a state event carrying only the auth state, and an
+    equal value is not re-emitted (the auth manager republishes freely)."""
+
+    async def run():
+        logger, captured = _logger_and_capture()
+        state = PersonaSessionState(
+            event_logger=logger,
+            chat_id="chat.chat",
+            persona_id="p1",
+            log=logging.getLogger("t"),
+        )
+        assert state.auth is None
+
+        state.auth = AuthState(status="not_authed")
+        state.auth = AuthState(status="not_authed")  # equal: must not re-emit
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        assert captured[0]["auth"] == {"status": "not_authed", "via": None}
+        assert "model" not in captured[0]
+
+        state.auth = AuthState(status="authed", via="Bedrock")
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 2
+        assert captured[-1]["auth"] == {"status": "authed", "via": "Bedrock"}
+
+    asyncio.run(run())
+
+
+def test_publish_includes_auth_only_once_set():
+    """Catch-up omits `auth` for a persona that never published one (consumers
+    treat that as authenticated) and includes it once set."""
+
+    async def run():
+        logger, captured = _logger_and_capture()
+        state = PersonaSessionState(
+            event_logger=logger,
+            chat_id="chat.chat",
+            persona_id="p1",
+            log=logging.getLogger("t"),
+        )
+        state.publish()
+        await asyncio.sleep(0.1)
+        assert "auth" not in captured[-1]
+
+        state.auth = AuthState(status="not_authed")
+        await asyncio.sleep(0.1)
+        captured.clear()
+
+        state.publish()
+        await asyncio.sleep(0.1)
+
+        assert len(captured) == 1
+        assert captured[0]["auth"]["status"] == "not_authed"
 
     asyncio.run(run())
 

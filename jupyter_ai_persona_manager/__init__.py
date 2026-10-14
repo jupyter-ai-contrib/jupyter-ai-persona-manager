@@ -26,6 +26,7 @@ from .persona_events import (
     register_persona_event_schemas,
 )
 from .awareness_models import (
+    AuthState,
     CommandOption,
     ModelConfiguration,
     ModelOption,

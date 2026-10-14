@@ -22,6 +22,8 @@ User selections are *not* stored here. They ride on outgoing message metadata
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -145,6 +147,19 @@ class CommandOption(BaseModel):
     """The command name, including the leading "/", e.g. "/compact"."""
     description: str | None = None
     """Optional short description of what the command does, shown in the UI."""
+
+
+class AuthState(BaseModel):
+    """A persona's authentication state, published to the frontend.
+
+    Personas that require no authentication never publish this, so a consumer
+    treats a missing auth state as authenticated.
+    """
+
+    status: Literal["authed", "not_authed"]
+    """Whether the user is signed in to the persona."""
+    via: str | None = None
+    """How the user is signed in, when known (e.g. "Bedrock")."""
 
 
 ################################################
