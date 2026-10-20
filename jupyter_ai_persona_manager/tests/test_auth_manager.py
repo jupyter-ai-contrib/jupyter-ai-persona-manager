@@ -6,7 +6,8 @@ mechanism and how `BasePersona.on_message` reacts to an unauthenticated
 
 import asyncio
 import logging
-from unittest.mock import MagicMock
+import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 from traitlets.config import LoggingConfigurable
@@ -276,8 +277,7 @@ class TestShutdownCleansUpAuth:
 class TestOpenLoginTerminal:
     @pytest.mark.asyncio
     async def test_returns_false_when_toolkit_unavailable(self):
-        # jupyterlab_commands_toolkit is not a test dependency, so the soft
-        # import fails and the helper degrades to False rather than raising.
         persona = _make_auth_gated_persona({"v": False})
-        assert await persona._open_login_terminal() is False
+        with patch.dict(sys.modules, {"jupyterlab_commands_toolkit.tools": None}):
+            assert await persona._open_login_terminal() is False
         persona.auth.stop()

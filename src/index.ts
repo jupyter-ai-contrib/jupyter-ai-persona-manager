@@ -125,7 +125,8 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         ...itemProps,
         controlRegistry,
         sessionRegistry,
-        events
+        events,
+        commands: app.commands
       });
     // Wrap the stop button to inject the session registry, so it can enable
     // itself while a persona in the chat is processing a message.

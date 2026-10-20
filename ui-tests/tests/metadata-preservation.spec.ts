@@ -11,9 +11,7 @@ const TEST_DIR = 'metadata-preservation';
 const PERSONAS = [FixturePersona.MetadataEcho];
 
 // Stands in for metadata another extension contributes to the shared chat
-// input — e.g. jupyterlab-commands-toolkit stamps a `web_client_id` there to
-// route frontend commands back to the web client that triggered them. It must
-// survive the persona controls stamping their own metadata.
+// input. It must survive the persona controls stamping their own metadata.
 const THIRD_PARTY_KEY = 'third_party_key';
 const THIRD_PARTY_VALUE = 'preserve-me';
 
@@ -52,5 +50,23 @@ test.describe('metadata-preservation', () => {
     expect(reply).toContain(`${THIRD_PARTY_KEY}: ${THIRD_PARTY_VALUE}`);
     // ...alongside the routing metadata the persona controls contribute.
     expect(reply).toContain('to_persona');
+  });
+
+  test('persona controls stamp the id of the web client', async ({ page }) => {
+    const helpers = new TestHelpers({ dir: TEST_DIR, page });
+    await helpers.openChat();
+    await helpers.selectPersona(FixturePersona.MetadataEcho);
+    await helpers.waitForControls();
+
+    // The id of this browser tab, provided by jupyterlab-commands-toolkit.
+    const webClientId = await page.evaluate(() =>
+      window.jupyterapp.commands.execute(
+        'jupyterlab-commands-toolkit:get-web-client-id'
+      )
+    );
+    expect(webClientId).toBeTruthy();
+
+    const reply = await helpers.sendMessage('echo metadata');
+    expect(reply).toContain(`web_client_id: ${webClientId}`);
   });
 });
