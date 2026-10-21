@@ -17,8 +17,11 @@ from jupyter_ai_persona_manager.handlers import (
     build_avatar_cache,
 )
 
-from .persona_manager import PersonaManager
-from .persona_events import register_persona_event_schemas
+from .persona_manager import CHAT_ROOM_EVENT_SCHEMA_ID, PersonaManager
+from .persona_events import (
+    PERSONA_SELECTED_EVENT_SCHEMA_ID,
+    register_persona_event_schemas,
+)
 
 if TYPE_CHECKING:
     from typing import Any
@@ -243,6 +246,17 @@ class PersonaManagerExtension(ExtensionApp):
                 return
 
             try:
+                if persona_manager.event_logger is not None:
+                    for schema_id, listener in (
+                        (CHAT_ROOM_EVENT_SCHEMA_ID, persona_manager._on_chat_event),
+                        (PERSONA_SELECTED_EVENT_SCHEMA_ID, persona_manager._on_persona_selected),
+                    ):
+                        try:
+                            persona_manager.event_logger.remove_listener(
+                                schema_id=schema_id, listener=listener
+                            )
+                        except KeyError:
+                            pass
                 await persona_manager.shutdown_personas()
                 self.log.info(f"Shut down persona manager for chat '{chat_id}'.")
             except Exception as e:
