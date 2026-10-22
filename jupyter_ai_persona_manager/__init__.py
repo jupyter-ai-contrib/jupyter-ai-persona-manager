@@ -9,7 +9,7 @@ except ImportError:
     __version__ = "dev"
 
 from .base_persona import BasePersona, PersonaDefaults, PreparationState
-from .auth_manager import PersonaAuthManager, PersonaNotAuthenticated
+from .auth_manager import PersonaAuthManager, PersonaAuthSpec, PersonaNotAuthenticated
 from .doc_markers import (
     ContractLevel,
     get_contract_level,
