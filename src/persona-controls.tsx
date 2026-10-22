@@ -1,12 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import {
   Button,
   ListItemText,
@@ -19,7 +11,6 @@ import {
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CheckIcon from '@mui/icons-material/Check';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import { PageConfig } from '@jupyterlab/coreutils';
 import { Event } from '@jupyterlab/services';
 import { CommandRegistry } from '@lumino/commands';
@@ -37,7 +28,7 @@ import {
   emptyPersonaSettings
 } from './metadata';
 import { PERSONA_SELECTED_EVENT_SCHEMA_ID } from './persona-events';
-import { PersonaSelection } from './persona-selection';
+import { InputToolbarState } from './input-toolbar-state';
 
 /**
  * The jupyterlab-commands-toolkit command returning the id of this web client.
@@ -64,10 +55,6 @@ const USAGE_ERROR_AT = 0.9;
  */
 const DEFAULT_PERSONA_ID =
   PageConfig.getOption('jupyter_ai_default_persona') || null;
-
-// Width (px) reserved for the overflow ("...") button when not every control
-// fits inline.
-const OVERFLOW_BTN_WIDTH = 36;
 
 const menuAnchorProps = {
   anchorOrigin: { vertical: 'top', horizontal: 'left' } as const,
@@ -610,184 +597,6 @@ export function ControlMenu(props: {
   );
 }
 
-/**
- * The overflow popover: controls that did not fit inline, shown as a single flat
- * menu (no nested dropdowns). Each control renders as a group label followed by
- * its Default row and choices. Exported for tests.
- */
-export function OverflowControlsMenu(props: {
-  controls: Control[];
-  anchor: HTMLElement | null;
-  onClose: () => void;
-  onChange: (control: Control, value: string | null) => void;
-}): JSX.Element {
-  const { controls, anchor, onClose, onChange } = props;
-  return (
-    <Menu
-      anchorEl={anchor}
-      open={!!anchor}
-      onClose={onClose}
-      MenuListProps={{ 'aria-label': 'More controls' }}
-      {...menuAnchorProps}
-    >
-      {controls.flatMap(control => [
-        <ControlMenuSubheader
-          key={`${control.id}-label`}
-          label={control.label}
-        />,
-        <ChoiceMenuItem
-          key={`${control.id}-default`}
-          primary={defaultChoiceLabel(control)}
-          description={null}
-          selected={control.selection === null}
-          onSelect={() => {
-            onClose();
-            onChange(control, null);
-          }}
-        />,
-        ...control.options.map(option => (
-          <ChoiceMenuItem
-            key={`${control.id}-${option.id}`}
-            primary={option.name}
-            description={option.description}
-            selected={control.selection === option.id}
-            onSelect={() => {
-              onClose();
-              onChange(control, option.id);
-            }}
-          />
-        ))
-      ])}
-    </Menu>
-  );
-}
-
-/**
- * A single-row, width-aware list of controls. Shows as many as fit inline and
- * collapses the rest into an overflow ("...") popover, recomputing on resize.
- */
-function ControlsRow(props: {
-  controls: Control[];
-  onChange: (control: Control, value: string | null) => void;
-}): JSX.Element {
-  const { controls, onChange } = props;
-  const rowRef = useRef<HTMLDivElement>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
-  const overflowBtnRef = useRef<HTMLButtonElement>(null);
-  const [visibleCount, setVisibleCount] = useState(controls.length);
-  const [overflowAnchor, setOverflowAnchor] = useState<HTMLElement | null>(
-    null
-  );
-
-  // Re-measure only when a control's displayed width could change (its set of
-  // ids or effective values), not on every re-render.
-  const controlsKey = controls
-    .map(p => `${p.id}:${effectiveValue(p)}`)
-    .join('|');
-
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    const measure = measureRef.current;
-    if (!row || !measure) {
-      return;
-    }
-    // The measurement copy exists only to size controls; keep its buttons out of
-    // the tab order and the accessibility tree.
-    measure.inert = true;
-    const GAP = 2;
-    let frame = 0;
-    const compute = () => {
-      const avail = row.clientWidth;
-      const widths = (Array.from(measure.children) as HTMLElement[]).map(
-        el => el.offsetWidth
-      );
-      const total = widths.reduce((a, w, i) => a + w + (i ? GAP : 0), 0);
-      if (total <= avail) {
-        setVisibleCount(widths.length);
-        return;
-      }
-      const reserve =
-        (overflowBtnRef.current?.offsetWidth ?? OVERFLOW_BTN_WIDTH) + GAP;
-      let used = 0;
-      let count = 0;
-      for (let i = 0; i < widths.length; i++) {
-        const w = widths[i] + (i ? GAP : 0);
-        if (used + w + reserve <= avail) {
-          used += w;
-          count++;
-        } else {
-          break;
-        }
-      }
-      setVisibleCount(count);
-    };
-    // A ResizeObserver can fire many times during a drag; coalesce the work to
-    // one measurement per animation frame.
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(compute);
-    };
-    compute();
-    const observer = new ResizeObserver(schedule);
-    observer.observe(row);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [controlsKey]);
-
-  const visible = controls.slice(0, visibleCount);
-  const overflow = controls.slice(visibleCount);
-
-  return (
-    <div className={`${SELECTOR_CLASS}-controls`} ref={rowRef}>
-      {/* Hidden full-width copy used only to measure each control's width. */}
-      <div
-        className={`${SELECTOR_CLASS}-controls-measure`}
-        ref={measureRef}
-        aria-hidden="true"
-      >
-        {controls.map(control => (
-          <ControlMenu
-            key={control.id}
-            control={control}
-            onSelect={v => onChange(control, v)}
-          />
-        ))}
-      </div>
-
-      {visible.map(control => (
-        <ControlMenu
-          key={control.id}
-          control={control}
-          onSelect={v => onChange(control, v)}
-        />
-      ))}
-
-      {overflow.length ? (
-        <>
-          <button
-            type="button"
-            ref={overflowBtnRef}
-            className={`${SELECTOR_CLASS} ${SELECTOR_CLASS}-overflow-btn`}
-            onClick={event => setOverflowAnchor(event.currentTarget)}
-            title="More controls"
-            aria-label="More controls"
-          >
-            <MoreHorizIcon fontSize="small" />
-          </button>
-          <OverflowControlsMenu
-            controls={overflow}
-            anchor={overflowAnchor}
-            onClose={() => setOverflowAnchor(null)}
-            onChange={onChange}
-          />
-        </>
-      ) : null}
-    </div>
-  );
-}
-
 // All formatters pin the `en` locale so numbers agree with each other and
 // with the surrounding English labels.
 const exactNumber = new Intl.NumberFormat('en');
@@ -1076,7 +885,7 @@ export function PersonaControls(
     /**
      * Hold the current selected persona and settings across rebuild.
      */
-    personaSelection: PersonaSelection;
+    inputToolbarState: InputToolbarState;
     /**
      * The per-chat persona session-state registry (fed by Jupyter Events).
      * Optional so the component still works without it (renders nothing).
@@ -1097,7 +906,7 @@ export function PersonaControls(
   const {
     chatModel,
     model,
-    personaSelection,
+    inputToolbarState,
     sessionRegistry,
     events,
     commands
@@ -1138,19 +947,21 @@ export function PersonaControls(
   // Initialize to the last selected persona, so it is persistent if the widget move
   // to the popup toolbar).
   const [selectedId, setSelectedId] = useState<string | null>(
-    personaSelection.id ?? DEFAULT_PERSONA_ID
+    inputToolbarState.personaId ?? DEFAULT_PERSONA_ID
   );
-  const [personaState, setPersonaState] = useState<PersonaSessionState | null>(
-    null
-  );
-  // Per-persona settings the user has chosen, indexed by persona ID. Remembers
-  // each persona's picks so switching away and back restores them, rather than
-  // resetting to defaults. Chat-lifetime (held in `selection.settings`) so it
-  // survives remounts; not persisted across reloads. A persona absent from the
-  // cache has made no changes yet.
+  // Mirror the shared settings cache so writes from the extracted control items
+  // re-render us and re-stamp message metadata.
   const [settingsCache, setSettingsCache] = useState<
     Record<string, PersonaSettings>
-  >(personaSelection.settings);
+  >(inputToolbarState.settings);
+  useEffect(() => {
+    const sync = () => setSettingsCache(inputToolbarState.settings);
+    sync();
+    inputToolbarState.settingsChanged.connect(sync);
+    return () => {
+      inputToolbarState.settingsChanged.disconnect(sync);
+    };
+  }, [inputToolbarState]);
   const [personaAnchor, setPersonaAnchor] = useState<HTMLElement | null>(null);
 
   // The selected persona's settings: its cache entry, or empty (all defaults)
@@ -1171,7 +982,7 @@ export function PersonaControls(
       const next = reconcileSelection(
         list,
         current,
-        personaSelection.userPicked
+        inputToolbarState.userPicked
       );
       return next === undefined ? current : next;
     });
@@ -1194,27 +1005,6 @@ export function PersonaControls(
       managerState.changed.disconnect(sync);
     };
   }, [managerState, readManager]);
-
-  // Track the selected persona's state, re-reading on every change so the
-  // toolbar reflects the latest published model/usage/commands. The first read
-  // applies unconditionally (it runs whenever `selectedId` changes and must
-  // reflect the newly selected persona, even an absent one); later reads go
-  // through reconcilePersonaState so a transient absence doesn't blank it out.
-  useEffect(() => {
-    if (!managerState || !selectedId) {
-      setPersonaState(null);
-      return;
-    }
-    setPersonaState(managerState.getPersona(selectedId) ?? null);
-    const read = () =>
-      setPersonaState(prev =>
-        reconcilePersonaState(prev, managerState.getPersona(selectedId) ?? null)
-      );
-    managerState.changed.connect(read);
-    return () => {
-      managerState.changed.disconnect(read);
-    };
-  }, [managerState, selectedId]);
 
   // Discard this chat's session state when the chat model is disposed (chat
   // closed), freeing its memory.
@@ -1266,13 +1056,14 @@ export function PersonaControls(
 
   // Update the selected ID in the persistent state.
   useEffect(() => {
-    personaSelection.id = selectedId;
-  }, [personaSelection, selectedId]);
+    inputToolbarState.personaId = selectedId;
+  }, [inputToolbarState, selectedId]);
 
-  // Mirror the per-persona settings to the persistent state.
+  // Publish the resolved chat id so the persona-items reconciler can look up
+  // the chat's managerState without having a chat model in scope.
   useEffect(() => {
-    personaSelection.settings = settingsCache;
-  }, [personaSelection, settingsCache]);
+    inputToolbarState.chatId = chatId;
+  }, [inputToolbarState, chatId]);
 
   // On selection, tell the server to prepare the persona by
   // emitting `persona_selected` over the event bus, so its controls appear
@@ -1306,29 +1097,11 @@ export function PersonaControls(
   const selectedPersona = personas.find(p => p.id === selectedId) ?? null;
   const personaLabel = selectedPersona?.name ?? NO_ONE_LABEL;
   const activeAvatar = selectedPersona?.avatar_url ?? null;
-  const usage = personaState?.usage ?? EMPTY_USAGE;
-  const controls = buildControls(personaState, settings);
 
   const handlePersona = (personaId: string | null) => {
     setPersonaAnchor(null);
-    personaSelection.userPicked = true;
+    inputToolbarState.userPicked = true;
     setSelectedId(personaId);
-  };
-
-  const handleControl = (control: Control, value: string | null) => {
-    if (!selectedId) {
-      return;
-    }
-    // Fold the change into this persona's cached settings, remembering it for
-    // when the user switches away and back.
-    setSettingsCache(prev => ({
-      ...prev,
-      [selectedId]: applyControlChange(
-        prev[selectedId] ?? emptyPersonaSettings(),
-        control,
-        value
-      )
-    }));
   };
 
   return (
@@ -1381,15 +1154,103 @@ export function PersonaControls(
           ) : null}
         </MenuItem>
       </Menu>
-
-      <UsageChip usage={usage} />
-
-      {controls.length ? (
-        <>
-          <span className={`${SELECTOR_CLASS}-divider`} />
-          <ControlsRow controls={controls} onChange={handleControl} />
-        </>
-      ) : null}
     </div>
+  );
+}
+
+/**
+ * Toolbar item: the persona's usage chip. Renders nothing when no persona is
+ * selected or when the persona has reported no usage.
+ */
+export function PersonaUsageItem(
+  props: InputToolbarRegistry.IToolbarItemProps & {
+    inputToolbarState: InputToolbarState;
+  }
+): JSX.Element | null {
+  const { inputToolbarState: inputToolbarState } = props;
+  const [personaState, setPersonaState] =
+    React.useState<PersonaSessionState | null>(inputToolbarState.personaState);
+
+  React.useEffect(() => {
+    setPersonaState(inputToolbarState.personaState);
+    const sync = (_: unknown, next: PersonaSessionState | null) =>
+      setPersonaState(prev => reconcilePersonaState(prev, next));
+    inputToolbarState.personaStateChanged.connect(sync);
+    return () => {
+      inputToolbarState.personaStateChanged.disconnect(sync);
+    };
+  }, [inputToolbarState]);
+
+  if (!personaState) {
+    return null;
+  }
+  return <UsageChip usage={personaState.usage ?? EMPTY_USAGE} />;
+}
+
+/**
+ * Toolbar item: one of the selected persona's controls (model picker, a model
+ * setting, or a general setting). Looks up its own definition from the current
+ * `personaState` + user settings each render; writes picks back via
+ * `inputToolbarState.setSettings` so `PersonaControls` re-stamps message
+ * metadata and other items see the change.
+ */
+export function PersonaControlItem(
+  props: InputToolbarRegistry.IToolbarItemProps & {
+    inputToolbarState: InputToolbarState;
+    controlId: string;
+  }
+): JSX.Element | null {
+  const { inputToolbarState: inputToolbarState, controlId } = props;
+  const [personaState, setPersonaState] =
+    React.useState<PersonaSessionState | null>(inputToolbarState.personaState);
+
+  React.useEffect(() => {
+    setPersonaState(inputToolbarState.personaState);
+    const sync = (_: unknown, next: PersonaSessionState | null) =>
+      setPersonaState(prev => reconcilePersonaState(prev, next));
+    inputToolbarState.personaStateChanged.connect(sync);
+    return () => {
+      inputToolbarState.personaStateChanged.disconnect(sync);
+    };
+  }, [inputToolbarState]);
+
+  const [settingsCache, setSettingsCache] = React.useState(
+    inputToolbarState.settings
+  );
+
+  React.useEffect(() => {
+    const sync = () => setSettingsCache(inputToolbarState.settings);
+    sync();
+    inputToolbarState.settingsChanged.connect(sync);
+    return () => {
+      inputToolbarState.settingsChanged.disconnect(sync);
+    };
+  }, [inputToolbarState]);
+
+  const selectedId = inputToolbarState.personaId;
+  if (!selectedId || !personaState) {
+    return null;
+  }
+  const settings = settingsCache[selectedId] ?? emptyPersonaSettings();
+  const control = buildControls(personaState, settings).find(
+    c => c.id === controlId
+  );
+  if (!control) {
+    return null;
+  }
+  return (
+    <ControlMenu
+      control={control}
+      onSelect={value =>
+        inputToolbarState.setSettings(
+          selectedId,
+          applyControlChange(
+            inputToolbarState.settings[selectedId] ?? emptyPersonaSettings(),
+            control,
+            value
+          )
+        )
+      }
+    />
   );
 }

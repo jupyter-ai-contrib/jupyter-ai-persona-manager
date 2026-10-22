@@ -105,7 +105,7 @@ export class PersonaControlRegistry implements IPersonaControlRegistry {
  * Build a toolbar item for a contributed persona control bound to a specific
  * persona. The item is rebuilt when the persona changes.
  */
-export function buildControlItem(
+export function buildRegisteredControl(
   control: IPersonaControl,
   personaId: string,
   position: number
