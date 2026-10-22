@@ -2201,6 +2201,7 @@ __metadata:
     "@jupyterlab/coreutils": ^6.0.0
     "@jupyterlab/services": ^7.0.0
     "@jupyterlab/testutils": ^4.0.0
+    "@jupyterlab/ui-components": ^4.0.0
     "@lumino/commands": ^2.0.0
     "@testing-library/dom": ^10.4.0
     "@testing-library/react": ^16.3.0
@@ -2978,7 +2979,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/ui-components@npm:^4.5.0, @jupyterlab/ui-components@npm:^4.6.3":
+"@jupyterlab/ui-components@npm:^4.0.0, @jupyterlab/ui-components@npm:^4.5.0, @jupyterlab/ui-components@npm:^4.6.3":
   version: 4.6.3
   resolution: "@jupyterlab/ui-components@npm:4.6.3"
   dependencies:

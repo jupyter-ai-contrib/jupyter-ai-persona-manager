@@ -2,7 +2,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
-
+import { Toolbar } from '@jupyterlab/ui-components';
 import {
   IChatCommandRegistry,
   IInputToolbarRegistryFactory,
@@ -12,12 +12,14 @@ import {
 import { PersonaControls } from './persona-controls';
 import {
   IPersonaControlRegistry,
-  PersonaControlRegistry
+  PersonaControlRegistry,
+  buildControlItem
 } from './persona-control-registry';
 import {
   IPersonaSessionRegistry,
   PersonaSessionRegistry
 } from './persona-events';
+import { PersonaSelection } from './persona-selection';
 import {
   SLASH_COMMAND_PROVIDER_ID,
   SlashCommandProvider
@@ -32,6 +34,9 @@ export * from './persona-events';
 
 // Public API for contributing controls to the persona controls toolbar.
 export * from './persona-control-registry';
+
+// Toolbar-side observable for the current persona selection.
+export * from './persona-selection';
 
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
@@ -96,6 +101,13 @@ const controlRegistryPlugin: JupyterFrontEndPlugin<IPersonaControlRegistry> = {
   }
 };
 
+// Toolbar position for contributed controls: between the spacer (5) and the
+// stop button (7). `idx * STEP` disambiguates when several controls share the
+// same bucket.
+const REGISTERED_CONTROLS_BASE_POSITION = 6;
+const REGISTERED_CONTROLS_POSITION_STEP = 0.0001;
+const nameOf = (id: string) => `persona-ctrl:${id}`;
+
 /**
  * Plugin that provides the chat input toolbar factory: the default toolbar
  * plus the persona controls (picker, model, settings, usage) and a stop
@@ -113,42 +125,85 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
     controlRegistry: IPersonaControlRegistry,
     sessionRegistry: PersonaSessionRegistry
   ): IInputToolbarRegistryFactory => {
-    // The event bus front-end; `PersonaControls` uses it to emit
-    // `persona_selected` on selection.
     const events = app.serviceManager.events;
-    // Wrap the persona controls to inject the control + session registries and
-    // the event manager, which the generic toolbar-item props don't carry.
-    const PersonaControlsItem = (
-      itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) =>
-      PersonaControls({
-        ...itemProps,
-        controlRegistry,
-        sessionRegistry,
-        events,
-        commands: app.commands
-      });
-    // Wrap the stop button to inject the session registry, so it can enable
-    // itself while a persona in the chat is processing a message.
-    const StopButtonItem = (
-      itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) => StopButton({ ...itemProps, sessionRegistry });
     return {
       create: () => {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)
         const registry = InputToolbarRegistry.defaultToolbarRegistry();
+        // Per-chat persona state.
+        const personaSelection = new PersonaSelection();
+
+        // Wrap the persona controls to inject the session registry, the event
+        // manager, and the per-chat selection — none of which the generic
+        // toolbar-item props carry.
+        const PersonaControlsItem = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) =>
+          PersonaControls({
+            ...itemProps,
+            personaSelection,
+            sessionRegistry,
+            events,
+            commands: app.commands
+          });
+        // Wrap the stop button to inject the session registry, so it can enable
+        // itself while a persona in the chat is processing a message.
+        const StopButtonItem = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) => StopButton({ ...itemProps, sessionRegistry });
+
         // Add the active-persona controls (persona + model), leftmost.
         registry.addItem('persona', {
-          element: PersonaControlsItem,
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem(PersonaControlsItem),
+          position: 4
+        });
+        registry.addItem('persona-control-spacer', {
+          createWidget: Toolbar.createSpacerItem,
           position: 5
         });
-        // Stop button, between the persona controls (5) and the default
-        // toolbar's cancel button (10); a tie would leave the order to
-        // insertion rather than position.
+        // Stop button, between the spacer (5) and the default toolbar's cancel
+        // button (10); a tie would leave the order to insertion rather than position.
         registry.addItem('stop', {
-          element: StopButtonItem,
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem(StopButtonItem),
           position: 7
         });
+
+        // Project contributed controls into the toolbar, rebuilding on persona
+        // change and adding/removing on registry change.
+        const controlNames = new Set<string>();
+        const reconcileRegisteredControls = (forceRebuild = false) => {
+          const id = personaSelection.id;
+          const nextControls = id ? controlRegistry.getControls(id) : [];
+          const nextControlNames = new Set(nextControls.map(c => nameOf(c.id)));
+
+          for (const name of Array.from(controlNames)) {
+            if (forceRebuild || !nextControlNames.has(name)) {
+              registry.removeItem(name);
+              controlNames.delete(name);
+            }
+          }
+
+          nextControls.forEach((control, idx) => {
+            const name = nameOf(control.id);
+            if (controlNames.has(name)) {
+              return;
+            }
+            const position =
+              REGISTERED_CONTROLS_BASE_POSITION +
+              idx * REGISTERED_CONTROLS_POSITION_STEP;
+            registry.addItem(name, buildControlItem(control, id!, position));
+            controlNames.add(name);
+          });
+        };
+
+        personaSelection.changed.connect(() =>
+          reconcileRegisteredControls(true)
+        );
+        controlRegistry.changed.connect(() => reconcileRegisteredControls());
+        reconcileRegisteredControls();
+
         return registry;
       }
     };

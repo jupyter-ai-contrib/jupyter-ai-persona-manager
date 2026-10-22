@@ -36,8 +36,8 @@ import {
   buildMessageMetadata,
   emptyPersonaSettings
 } from './metadata';
-import { IPersonaControlRegistry } from './persona-control-registry';
 import { PERSONA_SELECTED_EVENT_SCHEMA_ID } from './persona-events';
+import { PersonaSelection } from './persona-selection';
 
 /**
  * The jupyterlab-commands-toolkit command returning the id of this web client.
@@ -1074,11 +1074,9 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
 export function PersonaControls(
   props: InputToolbarRegistry.IToolbarItemProps & {
     /**
-     * Registry of controls contributed by other extensions (e.g. a persona's
-     * settings button). Rendered for the selected persona after the usage chip.
-     * Optional so the component still works without a registry.
+     * Hold the current selected persona and settings across rebuild.
      */
-    controlRegistry?: IPersonaControlRegistry;
+    personaSelection: PersonaSelection;
     /**
      * The per-chat persona session-state registry (fed by Jupyter Events).
      * Optional so the component still works without it (renders nothing).
@@ -1099,7 +1097,7 @@ export function PersonaControls(
   const {
     chatModel,
     model,
-    controlRegistry,
+    personaSelection,
     sessionRegistry,
     events,
     commands
@@ -1137,23 +1135,23 @@ export function PersonaControls(
   // Whether a persona list has been received for this chat yet. Before that, an
   // empty list means "still loading", not "this chat has no personas".
   const [ready, setReady] = useState(false);
+  // Initialize to the last selected persona, so it is persistent if the widget move
+  // to the popup toolbar).
   const [selectedId, setSelectedId] = useState<string | null>(
-    DEFAULT_PERSONA_ID
+    personaSelection.id ?? DEFAULT_PERSONA_ID
   );
   const [personaState, setPersonaState] = useState<PersonaSessionState | null>(
     null
   );
   // Per-persona settings the user has chosen, indexed by persona ID. Remembers
   // each persona's picks so switching away and back restores them, rather than
-  // resetting to defaults. Component-lifetime only (not persisted across
-  // reloads). A persona absent from the cache has made no changes yet.
+  // resetting to defaults. Chat-lifetime (held in `selection.settings`) so it
+  // survives remounts; not persisted across reloads. A persona absent from the
+  // cache has made no changes yet.
   const [settingsCache, setSettingsCache] = useState<
     Record<string, PersonaSettings>
-  >({});
+  >(personaSelection.settings);
   const [personaAnchor, setPersonaAnchor] = useState<HTMLElement | null>(null);
-  // Whether the user has explicitly picked a persona (or "No one") in this
-  // chat. Guards the sole-persona convenience in reconcileSelection.
-  const userPicked = useRef(false);
 
   // The selected persona's settings: its cache entry, or empty (all defaults)
   // when it has none yet.
@@ -1170,7 +1168,11 @@ export function PersonaControls(
     const list = managerState.personas;
     setPersonas(prev => reconcilePersonas(prev, list, managerState.ready));
     setSelectedId(current => {
-      const next = reconcileSelection(list, current, userPicked.current);
+      const next = reconcileSelection(
+        list,
+        current,
+        personaSelection.userPicked
+      );
       return next === undefined ? current : next;
     });
   }, [managerState]);
@@ -1262,6 +1264,16 @@ export function PersonaControls(
     model.updateMetadata(buildMessageMetadata(selectedId, settings));
   }, [model, metadataSignature]);
 
+  // Update the selected ID in the persistent state.
+  useEffect(() => {
+    personaSelection.id = selectedId;
+  }, [personaSelection, selectedId]);
+
+  // Mirror the per-persona settings to the persistent state.
+  useEffect(() => {
+    personaSelection.settings = settingsCache;
+  }, [personaSelection, settingsCache]);
+
   // On selection, tell the server to prepare the persona by
   // emitting `persona_selected` over the event bus, so its controls appear
   // before the first message. Skips "No one"; idempotent server-side.
@@ -1299,7 +1311,7 @@ export function PersonaControls(
 
   const handlePersona = (personaId: string | null) => {
     setPersonaAnchor(null);
-    userPicked.current = true;
+    personaSelection.userPicked = true;
     setSelectedId(personaId);
   };
 
@@ -1378,22 +1390,6 @@ export function PersonaControls(
           <ControlsRow controls={controls} onChange={handleControl} />
         </>
       ) : null}
-
-      {/* Controls contributed by other extensions for the selected persona
-          (e.g. a persona's settings button), rendered after the model selector
-          and its settings so they sit to the right of them. */}
-      {selectedId &&
-        controlRegistry?.getControls(selectedId).map(control => {
-          const Control = control.component;
-          return (
-            <Control
-              key={control.id}
-              personaId={selectedId}
-              chatModel={chatModel}
-              model={model}
-            />
-          );
-        })}
     </div>
   );
 }

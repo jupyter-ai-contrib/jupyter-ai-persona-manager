@@ -1,5 +1,6 @@
 import { Token } from '@lumino/coreutils';
-import { IChatModel, IInputModel } from '@jupyter/chat';
+import { ISignal, Signal } from '@lumino/signaling';
+import { IChatModel, IInputModel, InputToolbarRegistry } from '@jupyter/chat';
 import * as React from 'react';
 
 /**
@@ -58,6 +59,12 @@ export interface IPersonaControlRegistry {
    * controls scoped to that persona plus controls scoped to all personas.
    */
   getControls(personaId: string): IPersonaControl[];
+  /**
+   * Fires when the set of registered controls changes. Lets consumers that
+   * project controls into the chat input toolbar reconcile on late
+   * registrations.
+   */
+  readonly changed: ISignal<IPersonaControlRegistry, void>;
 }
 
 /**
@@ -72,13 +79,16 @@ export const IPersonaControlRegistry = new Token<IPersonaControlRegistry>(
  * Default `IPersonaControlRegistry` implementation.
  */
 export class PersonaControlRegistry implements IPersonaControlRegistry {
-  private _controls: IPersonaControl[] = [];
+  get changed(): ISignal<IPersonaControlRegistry, void> {
+    return this._changed;
+  }
 
   addControl(control: IPersonaControl): void {
     // Replace any existing control with the same ID so re-registration (e.g. on
     // a plugin reload) doesn't duplicate it.
     this._controls = this._controls.filter(c => c.id !== control.id);
     this._controls.push(control);
+    this._changed.emit();
   }
 
   getControls(personaId: string): IPersonaControl[] {
@@ -86,4 +96,28 @@ export class PersonaControlRegistry implements IPersonaControlRegistry {
       .filter(c => c.personaId === undefined || c.personaId === personaId)
       .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   }
+
+  private _controls: IPersonaControl[] = [];
+  private _changed = new Signal<this, void>(this);
+}
+
+/**
+ * Build a toolbar item for a contributed persona control bound to a specific
+ * persona. The item is rebuilt when the persona changes.
+ */
+export function buildControlItem(
+  control: IPersonaControl,
+  personaId: string,
+  position: number
+): InputToolbarRegistry.IToolbarItem {
+  const Item = (props: InputToolbarRegistry.IToolbarItemProps) =>
+    React.createElement(control.component, {
+      personaId,
+      chatModel: props.chatModel,
+      model: props.model
+    });
+  return {
+    position,
+    createWidget: InputToolbarRegistry.createReactToolbarItem(Item)
+  };
 }
