@@ -10,7 +10,7 @@ import {
 } from '@jupyter/chat';
 
 import {
-  PersonaControls,
+  PersonaPicker,
   PersonaUsageItem,
   PersonaControlItem,
   buildControls
@@ -136,7 +136,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         registry.addItem('persona', {
           position: 3,
           createWidget: InputToolbarRegistry.createReactToolbarItem(itemProps =>
-            PersonaControls({
+            PersonaPicker({
               ...itemProps,
               inputToolbarState,
               sessionRegistry,

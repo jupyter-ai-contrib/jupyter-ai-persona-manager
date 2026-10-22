@@ -154,12 +154,12 @@ export function buildControls(
  * Decide which persona list the toolbar should display: a freshly read empty
  * list is treated as a transient blip (e.g. a Yjs awareness sync hiccup
  * during a persona reload) rather than "no personas", so the toolbar keeps
- * showing the previous list instead of unmounting - `PersonaControls` hides
+ * showing the previous list instead of unmounting - `PersonaPicker` hides
  * itself entirely when `personas.length === 0`, so accepting every empty
- * read verbatim flashes the whole toolbar (persona name, model picker,
- * everything) to nothing and back on each blip. A genuinely personas-less
- * chat never reads a non-empty list in the first place, so this doesn't mask
- * that case - it only guards against reverting an already-populated list.
+ * read verbatim flashes the picker to nothing and back on each blip. A
+ * genuinely personas-less chat never reads a non-empty list in the first
+ * place, so this doesn't mask that case - it only guards against reverting
+ * an already-populated list.
  */
 export function reconcilePersonas(
   previous: PersonaOption[],
@@ -178,10 +178,9 @@ export function reconcilePersonas(
  * sync hiccup `reconcilePersonas` guards against, e.g. during a persona
  * reload) rather than "nothing selected", so the toolbar keeps the last
  * known state instead of dropping it. This one is not just cosmetic:
- * `buildControls` returns `[]` for a null persona state, so `controls`
- * reads empty and `PersonaControls` conditionally unmounts `ControlsRow`
- * entirely - destroying any open `ControlMenu`'s own state (its search
- * query, its open popover) mid-interaction, not merely blanking a label.
+ * `PersonaControlItem` renders nothing for a null persona state, so a stale
+ * null would close any open `ControlMenu` (destroying its search query and
+ * popover state) mid-interaction, not merely blanking a label.
  *
  * Only for the *recurring* awareness-driven read, not the initial one: the
  * initial read (on mount, or when `selectedId` itself changes to a
@@ -880,7 +879,7 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
  * each message's metadata (there is no server-side "active persona" and no REST
  * polling). It's seeded from the default persona advertised over PageConfig.
  */
-export function PersonaControls(
+export function PersonaPicker(
   props: InputToolbarRegistry.IToolbarItemProps & {
     /**
      * Hold the current selected persona and settings across rebuild.
@@ -1191,7 +1190,7 @@ export function PersonaUsageItem(
  * Toolbar item: one of the selected persona's controls (model picker, a model
  * setting, or a general setting). Looks up its own definition from the current
  * `personaState` + user settings each render; writes picks back via
- * `inputToolbarState.setSettings` so `PersonaControls` re-stamps message
+ * `inputToolbarState.setSettings` so `PersonaPicker` re-stamps message
  * metadata and other items see the change.
  */
 export function PersonaControlItem(

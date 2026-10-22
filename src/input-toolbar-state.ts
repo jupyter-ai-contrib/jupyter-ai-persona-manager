@@ -51,7 +51,7 @@ export class InputToolbarState {
     return this._settingsChanged;
   }
 
-  // Stable chat id, published by PersonaControls once chatModel.ready resolves.
+  // Stable chat id, published by PersonaPicker once chatModel.ready resolves.
   get chatId(): string | null {
     return this._chatId;
   }
