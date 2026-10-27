@@ -188,11 +188,14 @@ class PersonaManagerExtension(ExtensionApp):
         Shuts down personas and removes the PersonaManager for that chat.
         """
         persona_managers = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
-        if chat_id not in persona_managers:
+        persona_manager = persona_managers.get(chat_id)
+        if persona_manager is None:
             return
 
         self.log.info(f"Chat '{chat_id}' stopped. Shutting down persona manager.")
-        task = self.event_loop.create_task(self._stop_persona_manager(chat_id))
+        task = self.event_loop.create_task(
+            self._stop_persona_manager(chat_id, persona_manager)
+        )
         self._stopping_chats[chat_id] = task
     
     def _init_persona_manager(
@@ -234,11 +237,14 @@ class PersonaManagerExtension(ExtensionApp):
         finally:
             return persona_manager
     
-    async def _stop_persona_manager(self, chat_id: str) -> None:
+    async def _stop_persona_manager(
+        self, chat_id: str, persona_manager: PersonaManager | None = None
+    ) -> None:
         """Shuts down personas for a chat and removes it from settings."""
         async with self._stop_lock:
             persona_managers = self.serverapp.web_app.settings['jupyter-ai']['persona-managers']
-            persona_manager = persona_managers.get(chat_id)
+            if persona_manager is None:
+                persona_manager = persona_managers.get(chat_id)
             if persona_manager is None:
                 return
 
@@ -248,8 +254,10 @@ class PersonaManagerExtension(ExtensionApp):
             except Exception as e:
                 self.log.exception(f"Error shutting down persona manager for chat '{chat_id}'.")
             finally:
-                persona_managers.pop(chat_id, None)
-                self._stopping_chats.pop(chat_id, None)
+                if persona_managers.get(chat_id) is persona_manager:
+                    persona_managers.pop(chat_id, None)
+                if self._stopping_chats.get(chat_id) is asyncio.current_task():
+                    self._stopping_chats.pop(chat_id, None)
     
     async def stop_extension(self):
         """
