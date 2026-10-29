@@ -118,6 +118,8 @@ export function buildRegisteredControl(
     });
   return {
     position,
-    createWidget: InputToolbarRegistry.createReactToolbarItem(Item)
+    createWidget: InputToolbarRegistry.createReactToolbarItem?.(Item),
+    // Compatibility with jupyterlab-chat < 0.26
+    element: Item
   };
 }

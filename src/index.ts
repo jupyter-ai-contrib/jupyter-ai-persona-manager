@@ -133,28 +133,38 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         const inputToolbarState = new InputToolbarState(sessionRegistry);
 
         // Persona picker item.
+        const personaPicker = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) =>
+          PersonaPicker({
+            ...itemProps,
+            inputToolbarState,
+            sessionRegistry,
+            events,
+            commands: app.commands
+          });
         registry.addItem('persona', {
           position: 3,
-          createWidget: InputToolbarRegistry.createReactToolbarItem(itemProps =>
-            PersonaPicker({
-              ...itemProps,
-              inputToolbarState,
-              sessionRegistry,
-              events,
-              commands: app.commands
-            })
-          )
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(personaPicker),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: personaPicker
         });
 
         // Tokens usage item.
+        const personaUsage = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) =>
+          PersonaUsageItem({
+            ...itemProps,
+            inputToolbarState: inputToolbarState
+          });
         registry.addItem('persona-usage', {
           position: 4,
-          createWidget: InputToolbarRegistry.createReactToolbarItem(itemProps =>
-            PersonaUsageItem({
-              ...itemProps,
-              inputToolbarState: inputToolbarState
-            })
-          )
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(personaUsage),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: personaUsage
         });
 
         // Persona control items (model picker, settings)
@@ -174,7 +184,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           // Clean previous items
           for (const name of Array.from(personaControlNames)) {
             if (!nextNames.has(name)) {
-              registry.removeItem(name);
+              registry.removeItem?.(name);
               personaControlNames.delete(name);
             }
           }
@@ -185,17 +195,21 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
             if (personaControlNames.has(name)) {
               return;
             }
-            const controlId = control.id;
+            const personaControl = (
+              itemProps: InputToolbarRegistry.IToolbarItemProps
+            ) =>
+              PersonaControlItem({
+                ...itemProps,
+                inputToolbarState,
+                controlId: control.id
+              });
+
             registry.addItem(name, {
               position: 4.1 + idx * 0.0001,
-              createWidget: InputToolbarRegistry.createReactToolbarItem(
-                itemProps =>
-                  PersonaControlItem({
-                    ...itemProps,
-                    inputToolbarState,
-                    controlId
-                  })
-              )
+              createWidget:
+                InputToolbarRegistry.createReactToolbarItem?.(personaControl),
+              // Compatibility with jupyterlab-chat < 0.26
+              element: personaControl
             });
             personaControlNames.add(name);
           });
@@ -206,7 +220,9 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         // Add a spacer element.
         registry.addItem('persona-control-spacer', {
           createWidget: Toolbar.createSpacerItem,
-          position: 5
+          position: 5,
+          // Compatibility with jupyterlab-chat < 0.26
+          element: () => null
         });
 
         // Registered controls items.
@@ -220,7 +236,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           // Clean previous items
           for (const name of Array.from(registeredControlNames)) {
             if (forceRebuild || !nextControlNames.has(name)) {
-              registry.removeItem(name);
+              registry.removeItem?.(name);
               registeredControlNames.delete(name);
             }
           }
@@ -247,11 +263,15 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         reconcileRegisteredControls();
 
         // Stop button item.
+        const stopButton = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) => StopButton({ ...itemProps, sessionRegistry });
         registry.addItem('stop', {
           position: 7,
-          createWidget: InputToolbarRegistry.createReactToolbarItem(itemProps =>
-            StopButton({ ...itemProps, sessionRegistry })
-          )
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(stopButton),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: stopButton
         });
 
         return registry;
