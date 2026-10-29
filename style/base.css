@@ -73,19 +73,6 @@
   cursor: not-allowed;
 }
 
-/* Active-persona controls (chat input toolbar) */
-.jp-jai-personaControls-group {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-
-  /* Claim the available width of the right-aligned input toolbar: the controls
-     sit on the left, the action buttons (stop, attach, send) stay on the right,
-     and the controls row gets a real width to measure for overflow. */
-  flex: 1 1 auto;
-}
-
 /* The persona button is pinned: it never shrinks, and a long name ellipsizes. */
 .jp-jai-personaControls-persona-btn {
   flex-shrink: 0;
@@ -275,6 +262,7 @@
   font-size: var(--jp-ui-font-size0);
   color: var(--jp-ui-font-color2);
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   white-space: normal;

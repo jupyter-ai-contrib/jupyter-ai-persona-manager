@@ -1104,7 +1104,7 @@ export function PersonaPicker(
   };
 
   return (
-    <div className={`${SELECTOR_CLASS}-group`}>
+    <>
       <Button
         className={`${SELECTOR_CLASS} ${SELECTOR_CLASS}-persona-btn`}
         size="small"
@@ -1153,7 +1153,7 @@ export function PersonaPicker(
           ) : null}
         </MenuItem>
       </Menu>
-    </div>
+    </>
   );
 }
 
