@@ -2,22 +2,30 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
-
+import { Toolbar } from '@jupyterlab/ui-components';
 import {
   IChatCommandRegistry,
   IInputToolbarRegistryFactory,
   InputToolbarRegistry
 } from '@jupyter/chat';
 
-import { PersonaControls } from './persona-controls';
+import {
+  PersonaPicker,
+  PersonaUsageItem,
+  PersonaControlItem,
+  buildControls
+} from './persona-controls';
 import {
   IPersonaControlRegistry,
-  PersonaControlRegistry
+  PersonaControlRegistry,
+  buildRegisteredControl
 } from './persona-control-registry';
 import {
   IPersonaSessionRegistry,
   PersonaSessionRegistry
 } from './persona-events';
+import { emptyPersonaSettings } from './metadata';
+import { InputToolbarState } from './input-toolbar-state';
 import {
   SLASH_COMMAND_PROVIDER_ID,
   SlashCommandProvider
@@ -32,6 +40,9 @@ export * from './persona-events';
 
 // Public API for contributing controls to the persona controls toolbar.
 export * from './persona-control-registry';
+
+// Toolbar-side observable for the current persona selection.
+export * from './input-toolbar-state';
 
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
@@ -113,42 +124,156 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
     controlRegistry: IPersonaControlRegistry,
     sessionRegistry: PersonaSessionRegistry
   ): IInputToolbarRegistryFactory => {
-    // The event bus front-end; `PersonaControls` uses it to emit
-    // `persona_selected` on selection.
     const events = app.serviceManager.events;
-    // Wrap the persona controls to inject the control + session registries and
-    // the event manager, which the generic toolbar-item props don't carry.
-    const PersonaControlsItem = (
-      itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) =>
-      PersonaControls({
-        ...itemProps,
-        controlRegistry,
-        sessionRegistry,
-        events,
-        commands: app.commands
-      });
-    // Wrap the stop button to inject the session registry, so it can enable
-    // itself while a persona in the chat is processing a message.
-    const StopButtonItem = (
-      itemProps: InputToolbarRegistry.IToolbarItemProps
-    ) => StopButton({ ...itemProps, sessionRegistry });
     return {
       create: () => {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)
         const registry = InputToolbarRegistry.defaultToolbarRegistry();
-        // Add the active-persona controls (persona + model), leftmost.
+        // Per-chat persona state.
+        const inputToolbarState = new InputToolbarState(sessionRegistry);
+
+        // Persona picker item.
+        const personaPicker = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) =>
+          PersonaPicker({
+            ...itemProps,
+            inputToolbarState,
+            sessionRegistry,
+            events,
+            commands: app.commands
+          });
         registry.addItem('persona', {
-          element: PersonaControlsItem,
-          position: 5
+          position: 3,
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(personaPicker),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: personaPicker
         });
-        // Stop button, between the persona controls (5) and the default
-        // toolbar's cancel button (10); a tie would leave the order to
-        // insertion rather than position.
+
+        // Tokens usage item.
+        const personaUsage = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) =>
+          PersonaUsageItem({
+            ...itemProps,
+            inputToolbarState: inputToolbarState
+          });
+        registry.addItem('persona-usage', {
+          position: 4,
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(personaUsage),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: personaUsage
+        });
+
+        // Persona control items (model picker, settings)
+        const personaControlNames = new Set<string>();
+        const nameOfControl = (id: string) => `persona-control:${id}`;
+        const reconcilePersonaControls = () => {
+          const personaState = inputToolbarState.personaState;
+          const settings = inputToolbarState.personaId
+            ? (inputToolbarState.settings[inputToolbarState.personaId] ??
+              emptyPersonaSettings())
+            : emptyPersonaSettings();
+          const controls = personaState
+            ? buildControls(personaState, settings)
+            : [];
+          const nextNames = new Set(controls.map(c => nameOfControl(c.id)));
+
+          // Clean previous items
+          for (const name of Array.from(personaControlNames)) {
+            if (!nextNames.has(name)) {
+              registry.removeItem?.(name);
+              personaControlNames.delete(name);
+            }
+          }
+
+          // Add new items
+          controls.forEach((control, idx) => {
+            const name = nameOfControl(control.id);
+            if (personaControlNames.has(name)) {
+              return;
+            }
+            const personaControl = (
+              itemProps: InputToolbarRegistry.IToolbarItemProps
+            ) =>
+              PersonaControlItem({
+                ...itemProps,
+                inputToolbarState,
+                controlId: control.id
+              });
+
+            registry.addItem(name, {
+              position: 4.1 + idx * 0.0001,
+              createWidget:
+                InputToolbarRegistry.createReactToolbarItem?.(personaControl),
+              // Compatibility with jupyterlab-chat < 0.26
+              element: personaControl
+            });
+            personaControlNames.add(name);
+          });
+        };
+        inputToolbarState.personaStateChanged.connect(reconcilePersonaControls);
+        reconcilePersonaControls();
+
+        // Add a spacer element.
+        registry.addItem('persona-control-spacer', {
+          createWidget: Toolbar.createSpacerItem,
+          position: 5,
+          // Compatibility with jupyterlab-chat < 0.26
+          element: () => null
+        });
+
+        // Registered controls items.
+        const registeredControlNames = new Set<string>();
+        const nameOf = (id: string) => `persona-registered-control:${id}`;
+        const reconcileRegisteredControls = (forceRebuild = false) => {
+          const id = inputToolbarState.personaId;
+          const nextControls = id ? controlRegistry.getControls(id) : [];
+          const nextControlNames = new Set(nextControls.map(c => nameOf(c.id)));
+
+          // Clean previous items
+          for (const name of Array.from(registeredControlNames)) {
+            if (forceRebuild || !nextControlNames.has(name)) {
+              registry.removeItem?.(name);
+              registeredControlNames.delete(name);
+            }
+          }
+
+          // Add new items
+          nextControls.forEach((control, idx) => {
+            const name = nameOf(control.id);
+            if (registeredControlNames.has(name)) {
+              return;
+            }
+            const position = 6 + idx * 0.0001;
+            registry.addItem(
+              name,
+              buildRegisteredControl(control, id!, position)
+            );
+            registeredControlNames.add(name);
+          });
+        };
+
+        inputToolbarState.changed.connect(() =>
+          reconcileRegisteredControls(true)
+        );
+        controlRegistry.changed.connect(() => reconcileRegisteredControls());
+        reconcileRegisteredControls();
+
+        // Stop button item.
+        const stopButton = (
+          itemProps: InputToolbarRegistry.IToolbarItemProps
+        ) => StopButton({ ...itemProps, sessionRegistry });
         registry.addItem('stop', {
-          element: StopButtonItem,
-          position: 7
+          position: 7,
+          createWidget:
+            InputToolbarRegistry.createReactToolbarItem?.(stopButton),
+          // Compatibility with jupyterlab-chat < 0.26
+          element: stopButton
         });
+
         return registry;
       }
     };

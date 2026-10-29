@@ -7,11 +7,7 @@
 import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import {
-  Control,
-  ControlMenu,
-  OverflowControlsMenu
-} from '../persona-controls';
+import { Control, ControlMenu } from '../persona-controls';
 
 const SUBHEADER_SELECTOR = 'li.jp-jai-controlMenu-subheader';
 const KBD_FOCUSED_SELECTOR = 'li.jp-jai-controlMenu-kbd-focused';
@@ -140,57 +136,6 @@ describe('control menus', () => {
       await user.keyboard('{Escape}');
       expect(screen.queryByPlaceholderText('Search model')).toBeNull();
       expect(onSelect).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('overflow menu', () => {
-    it('is labeled and arrows skip the section headings', async () => {
-      const first: Control = {
-        id: 'a',
-        kind: 'setting',
-        label: 'Aaa',
-        current: null,
-        selection: 'a1',
-        options: [{ id: 'a1', name: 'A one', description: null }]
-      };
-      const second: Control = {
-        id: 'b',
-        kind: 'setting',
-        label: 'Bbb',
-        current: 'b1',
-        selection: 'stale',
-        options: [{ id: 'b1', name: 'B one', description: null }]
-      };
-      const user = userEvent.setup();
-      const anchor = document.createElement('button');
-      document.body.appendChild(anchor);
-      render(
-        <OverflowControlsMenu
-          controls={[first, second]}
-          anchor={anchor}
-          onClose={() => undefined}
-          onChange={() => undefined}
-        />
-      );
-      expect(screen.getByRole('menu').getAttribute('aria-label')).toBe(
-        'More controls'
-      );
-      const headings = Array.from(
-        document.querySelectorAll(SUBHEADER_SELECTOR)
-      );
-      expect(headings.map(h => h.textContent)).toEqual(['Aaa', 'Bbb']);
-      // Sticky, so the section a scrolled row belongs to stays visible.
-      for (const h of headings) {
-        expect(h.classList.contains('MuiListSubheader-sticky')).toBe(true);
-      }
-      // "A one" is the only selected row; ArrowDown crosses the "Bbb" heading
-      // to the next section's first choice row.
-      expect(focused()).toBe(screen.getByRole('menuitem', { name: 'A one' }));
-      await user.keyboard('{ArrowDown}');
-      expect(focused()).toBe(
-        screen.getByRole('menuitem', { name: 'Default (B one)' })
-      );
-      anchor.remove();
     });
   });
 });
