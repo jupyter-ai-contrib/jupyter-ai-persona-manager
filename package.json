@@ -117,7 +117,8 @@
         "extension": true,
         "outputDir": "jupyter_ai_persona_manager/labextension",
         "disabledExtensions": [
-            "jupyterlab-chat-extension:inputToolbarFactory"
+            "jupyterlab-chat-extension:inputToolbarFactory",
+            "jupyterlab-chat-extension:input-toolbar-factory"
         ],
         "sharedPackages": {
             "@jupyter/chat": {
