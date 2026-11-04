@@ -36,10 +36,8 @@ test.describe('settings', () => {
     // Both general settings render; "Effort" comes before "Verbose".
     await expect(helpers.control('Effort')).toBeVisible();
     await expect(helpers.control('Verbose')).toBeVisible();
-    const labels = await helpers.chat
-      .locator(
-        '.jp-jai-personaControls-controls > .jp-jai-personaControls-control-btn'
-      )
+    const labels = await helpers
+      .controls()
       .evaluateAll(els => els.map(el => el.getAttribute('title')));
     expect(labels.indexOf('Effort')).toBeLessThan(labels.indexOf('Verbose'));
   });
