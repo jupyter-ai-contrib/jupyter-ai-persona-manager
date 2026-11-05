@@ -164,29 +164,6 @@ export function reconcilePersonas(
 }
 
 /**
- * Decide which selected-persona state the toolbar should track: a fresh
- * null read is treated as a transient blip (the same class of awareness
- * sync hiccup `reconcilePersonas` guards against, e.g. during a persona
- * reload) rather than "nothing selected", so the toolbar keeps the last
- * known state instead of dropping it. This one is not just cosmetic:
- * `PersonaControlItem` renders nothing for a null persona state, so a stale
- * null would close any open `ControlMenu` (destroying its search query and
- * popover state) mid-interaction, not merely blanking a label.
- *
- * Only for the *recurring* awareness-driven read, not the initial one: the
- * initial read (on mount, or when `selectedId` itself changes to a
- * different persona) must apply unconditionally, including a genuine null
- * result, or switching personas could show the previous persona's stale
- * state under the new selection.
- */
-export function reconcilePersonaState(
-  previous: PersonaSessionState | null,
-  next: PersonaSessionState | null
-): PersonaSessionState | null {
-  return next ?? previous;
-}
-
-/**
  * Decide how to reconcile the current selection with a freshly read persona
  * list: the new selection to apply, or `undefined` to keep the current one.
  *
@@ -1170,7 +1147,7 @@ export function PersonaUsageItem(
   React.useEffect(() => {
     setPersonaState(inputToolbarState.personaState);
     const sync = (_: unknown, next: PersonaSessionState | null) =>
-      setPersonaState(prev => reconcilePersonaState(prev, next));
+      setPersonaState(next);
     inputToolbarState.personaStateChanged.connect(sync);
     return () => {
       inputToolbarState.personaStateChanged.disconnect(sync);
@@ -1203,7 +1180,7 @@ export function PersonaControlItem(
   React.useEffect(() => {
     setPersonaState(inputToolbarState.personaState);
     const sync = (_: unknown, next: PersonaSessionState | null) =>
-      setPersonaState(prev => reconcilePersonaState(prev, next));
+      setPersonaState(next);
     inputToolbarState.personaStateChanged.connect(sync);
     return () => {
       inputToolbarState.personaStateChanged.disconnect(sync);
