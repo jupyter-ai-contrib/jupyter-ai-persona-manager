@@ -1176,10 +1176,19 @@ export function PersonaUsageItem(
 export function PersonaControlItem(
   props: InputToolbarRegistry.IToolbarItemProps & {
     inputToolbarState: InputToolbarState;
+    /**
+     * The control's kind: with the ID, identifies the control, since model
+     * settings and general settings may share an ID.
+     */
+    controlKind: Control['kind'];
     controlId: string;
   }
 ): JSX.Element | null {
-  const { inputToolbarState: inputToolbarState, controlId } = props;
+  const {
+    inputToolbarState: inputToolbarState,
+    controlKind,
+    controlId
+  } = props;
   const [personaState, setPersonaState] =
     React.useState<PersonaSessionState | null>(inputToolbarState.personaState);
 
@@ -1212,7 +1221,7 @@ export function PersonaControlItem(
   }
   const settings = settingsCache[selectedId] ?? emptyPersonaSettings();
   const control = buildControls(personaState, settings).find(
-    c => c.id === controlId
+    c => c.kind === controlKind && c.id === controlId
   );
   if (!control) {
     return null;

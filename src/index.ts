@@ -14,7 +14,8 @@ import {
   PersonaPicker,
   PersonaUsageItem,
   PersonaControlItem,
-  buildControls
+  buildControls,
+  Control
 } from './persona-controls';
 import {
   IPersonaControlRegistry,
@@ -173,7 +174,10 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
 
         // Persona control items (model picker, settings)
         const personaControlNames = new Set<string>();
-        const nameOfControl = (id: string) => `persona-control:${id}`;
+        // Keyed by kind and ID: model settings and general settings are
+        // separate namespaces, so both may use the same ID (e.g. `effort`).
+        const nameOfControl = (control: Control) =>
+          `persona-control:${control.kind}:${control.id}`;
         const reconcilePersonaControls = () => {
           const personaState = inputToolbarState.personaState;
           const settings = inputToolbarState.personaId
@@ -183,7 +187,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           const controls = personaState
             ? buildControls(personaState, settings)
             : [];
-          const nextNames = new Set(controls.map(c => nameOfControl(c.id)));
+          const nextNames = new Set(controls.map(nameOfControl));
 
           // Clean previous items
           for (const name of Array.from(personaControlNames)) {
@@ -195,7 +199,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
 
           // Add new items
           controls.forEach((control, idx) => {
-            const name = nameOfControl(control.id);
+            const name = nameOfControl(control);
             if (personaControlNames.has(name)) {
               // Check that the item is at the expected position, otherwise add it again.
               if (registry.get(name)?.position === 4.1 + idx * 0.0001) {
@@ -209,6 +213,7 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
               PersonaControlItem({
                 ...itemProps,
                 inputToolbarState,
+                controlKind: control.kind,
                 controlId: control.id
               });
 
