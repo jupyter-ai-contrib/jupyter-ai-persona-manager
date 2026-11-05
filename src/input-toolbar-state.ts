@@ -1,3 +1,4 @@
+import { IDisposable } from '@lumino/disposable';
 import { ISignal, Signal } from '@lumino/signaling';
 
 import { PersonaSettings } from './metadata';
@@ -9,8 +10,10 @@ import { PersonaSessionRegistry, PersonaSessionState } from './persona-events';
  * don't reset it, and so the toolbar reconciler can read it without
  * being inside a React component.
  *
+ * Disposed when its chat model is disposed (see `PersonaPicker`), so that
+ * listeners connected to longer-lived objects can be released.
  */
-export class InputToolbarState {
+export class InputToolbarState implements IDisposable {
   constructor(
     sessionRegistry: PersonaSessionRegistry,
     options: InputToolbarState.IOptions = {}
@@ -100,6 +103,35 @@ export class InputToolbarState {
     this._personaStateChanged.emit(next);
   }
 
+  /**
+   * Whether the state has been disposed.
+   */
+  get isDisposed(): boolean {
+    return this._isDisposed;
+  }
+
+  /**
+   * Emitted once, when the state is disposed.
+   */
+  get disposed(): ISignal<this, void> {
+    return this._disposed;
+  }
+
+  /**
+   * Dispose of the state: detach from the chat's session state and clear all
+   * signal connections. Idempotent.
+   */
+  dispose(): void {
+    if (this._isDisposed) {
+      return;
+    }
+    this._isDisposed = true;
+    this._detachManager?.();
+    this._detachManager = null;
+    this._disposed.emit();
+    Signal.clearData(this);
+  }
+
   private _resubscribeManager(): void {
     this._detachManager?.();
     this._detachManager = null;
@@ -125,6 +157,8 @@ export class InputToolbarState {
   private _personaStateChanged = new Signal<this, PersonaSessionState | null>(
     this
   );
+  private _isDisposed = false;
+  private _disposed = new Signal<this, void>(this);
 }
 
 export namespace InputToolbarState {

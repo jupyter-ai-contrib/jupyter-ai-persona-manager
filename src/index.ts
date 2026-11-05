@@ -197,7 +197,11 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           controls.forEach((control, idx) => {
             const name = nameOfControl(control.id);
             if (personaControlNames.has(name)) {
-              return;
+              // Check that the item is at the expected position, otherwise add it again.
+              if (registry.get(name)?.position === 4.1 + idx * 0.0001) {
+                return;
+              }
+              registry.removeItem?.(name);
             }
             const personaControl = (
               itemProps: InputToolbarRegistry.IToolbarItemProps
@@ -232,25 +236,20 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         // Registered controls items.
         const registeredControlNames = new Set<string>();
         const nameOf = (id: string) => `persona-registered-control:${id}`;
-        const reconcileRegisteredControls = (forceRebuild = false) => {
+
+        const reconcileRegisteredControls = () => {
           const id = inputToolbarState.personaId;
           const nextControls = id ? controlRegistry.getControls(id) : [];
-          const nextControlNames = new Set(nextControls.map(c => nameOf(c.id)));
 
           // Clean previous items
-          for (const name of Array.from(registeredControlNames)) {
-            if (forceRebuild || !nextControlNames.has(name)) {
-              registry.removeItem?.(name);
-              registeredControlNames.delete(name);
-            }
+          for (const name of registeredControlNames) {
+            registry.removeItem?.(name);
           }
+          registeredControlNames.clear();
 
           // Add new items
           nextControls.forEach((control, idx) => {
             const name = nameOf(control.id);
-            if (registeredControlNames.has(name)) {
-              return;
-            }
             const position = 6 + idx * 0.0001;
             registry.addItem(
               name,
@@ -260,10 +259,14 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
           });
         };
 
-        inputToolbarState.changed.connect(() =>
-          reconcileRegisteredControls(true)
+        inputToolbarState.changed.connect(reconcileRegisteredControls);
+
+        // The control registry outlives this chat: disconnect when the chat's
+        // toolbar state is disposed, so it doesn't keep this registry alive.
+        controlRegistry.changed.connect(reconcileRegisteredControls);
+        inputToolbarState.disposed.connect(() =>
+          controlRegistry.changed.disconnect(reconcileRegisteredControls)
         );
-        controlRegistry.changed.connect(() => reconcileRegisteredControls());
         reconcileRegisteredControls();
 
         // Stop button item.

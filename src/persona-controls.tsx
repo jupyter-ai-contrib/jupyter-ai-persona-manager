@@ -997,6 +997,12 @@ export function PersonaPicker(
     };
   }, [sessionRegistry, chatId, chatModel]);
 
+  // Dispose of the chat's toolbar state when the chat model is disposed, so the
+  // toolbar registry releases its listeners on longer-lived objects.
+  useEffect(() => {
+    chatModel?.disposed.connect(inputToolbarState.dispose, inputToolbarState);
+  }, [chatModel, inputToolbarState]);
+
   // Stamp the id of this web client onto the input model's metadata, so it
   // rides out with each message and a persona can route frontend commands back
   // to this browser tab. Without jupyterlab-commands-toolkit there is no id and
