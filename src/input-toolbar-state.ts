@@ -4,14 +4,19 @@ import { PersonaSettings } from './metadata';
 import { PersonaSessionRegistry, PersonaSessionState } from './persona-events';
 
 /**
- * Observable model for the persona-related state of one chat input toolbar.
+ * Observable model for the persona-related state of one chat input toolbar registry.
  * Lives outside React so toolbar remounts (between inline and overflow popup)
  * don't reset it, and so the toolbar reconciler can read it without
  * being inside a React component.
+ *
  */
 export class InputToolbarState {
-  constructor(sessionRegistry: PersonaSessionRegistry) {
+  constructor(
+    sessionRegistry: PersonaSessionRegistry,
+    options: InputToolbarState.IOptions = {}
+  ) {
     this._sessionRegistry = sessionRegistry;
+    this._id = options.defaultPersonaId ?? null;
     this.changed.connect(this._updatePersonaState, this);
     this.chatIdChanged.connect(this._resubscribeManager, this);
     this.chatIdChanged.connect(this._updatePersonaState, this);
@@ -110,7 +115,7 @@ export class InputToolbarState {
 
   private _sessionRegistry: PersonaSessionRegistry;
   private _detachManager: (() => void) | null = null;
-  private _id: string | null = null;
+  private _id: string | null;
   private _changed = new Signal<this, string | null>(this);
   private _settings: Record<string, PersonaSettings> = {};
   private _settingsChanged = new Signal<this, void>(this);
@@ -120,4 +125,13 @@ export class InputToolbarState {
   private _personaStateChanged = new Signal<this, PersonaSessionState | null>(
     this
   );
+}
+
+export namespace InputToolbarState {
+  export interface IOptions {
+    /**
+     * The persona initially selected, before the user picks one.
+     */
+    defaultPersonaId?: string | null;
+  }
 }

@@ -11,7 +11,6 @@ import {
 } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import CheckIcon from '@mui/icons-material/Check';
-import { PageConfig } from '@jupyterlab/coreutils';
 import { Event } from '@jupyterlab/services';
 import { CommandRegistry } from '@lumino/commands';
 import { InputToolbarRegistry } from '@jupyter/chat';
@@ -47,14 +46,6 @@ const MODEL_CONTROL_ID = '__model__';
 // ring and percent turn warn, then error, colored.
 const USAGE_WARN_AT = 0.7;
 const USAGE_ERROR_AT = 0.9;
-
-/**
- * The chat's default persona ID, advertised by the persona-manager server
- * extension via PageConfig. Used as the initial selection for a chat where the
- * user hasn't picked a persona yet. Empty string if none is configured.
- */
-const DEFAULT_PERSONA_ID =
-  PageConfig.getOption('jupyter_ai_default_persona') || null;
 
 const menuAnchorProps = {
   anchorOrigin: { vertical: 'top', horizontal: 'left' } as const,
@@ -877,7 +868,9 @@ export function UsageChip(props: { usage: Usage }): JSX.Element | null {
  * configuration, usage, and slash commands) is read from the chat's Yjs
  * awareness channel. The selection is owned by the frontend and stamped onto
  * each message's metadata (there is no server-side "active persona" and no REST
- * polling). It's seeded from the default persona advertised over PageConfig.
+ * polling). The selection lives in the shared `inputToolbarState` (seeded from
+ * the default persona advertised over PageConfig): every picker of the chat,
+ * including the ones in inline message editors, mirrors it and writes to it.
  */
 export function PersonaPicker(
   props: InputToolbarRegistry.IToolbarItemProps & {
@@ -943,11 +936,20 @@ export function PersonaPicker(
   // Whether a persona list has been received for this chat yet. Before that, an
   // empty list means "still loading", not "this chat has no personas".
   const [ready, setReady] = useState(false);
-  // Initialize to the last selected persona, so it is persistent if the widget move
-  // to the popup toolbar).
-  const [selectedId, setSelectedId] = useState<string | null>(
-    inputToolbarState.personaId ?? DEFAULT_PERSONA_ID
+  // Mirror of the shared selection. The toolbar state is shared by every input
+  // of the chat (main composer and inline message editors), so it is the single
+  // source of truth: each picker follows it and writes its changes to it.
+  const [selectedId, setSelectedIdState] = useState<string | null>(
+    inputToolbarState.personaId
   );
+  useEffect(() => {
+    const sync = () => setSelectedIdState(inputToolbarState.personaId);
+    sync();
+    inputToolbarState.changed.connect(sync);
+    return () => {
+      inputToolbarState.changed.disconnect(sync);
+    };
+  }, [inputToolbarState]);
   // Mirror the shared settings cache so writes from the extracted control items
   // re-render us and re-stamp message metadata.
   const [settingsCache, setSettingsCache] = useState<
@@ -977,15 +979,15 @@ export function PersonaPicker(
     }
     const list = managerState.personas;
     setPersonas(prev => reconcilePersonas(prev, list, managerState.ready));
-    setSelectedId(current => {
-      const next = reconcileSelection(
-        list,
-        current,
-        inputToolbarState.userPicked
-      );
-      return next === undefined ? current : next;
-    });
-  }, [managerState]);
+    const next = reconcileSelection(
+      list,
+      inputToolbarState.personaId,
+      inputToolbarState.userPicked
+    );
+    if (next !== undefined) {
+      inputToolbarState.personaId = next;
+    }
+  }, [managerState, inputToolbarState]);
 
   // React to the session state's `changed` signal: re-read the persona list and
   // readiness. This replaces the awareness `change` subscription — a persona
@@ -1053,11 +1055,6 @@ export function PersonaPicker(
     model.updateMetadata(buildMessageMetadata(selectedId, settings));
   }, [model, metadataSignature]);
 
-  // Update the selected ID in the persistent state.
-  useEffect(() => {
-    inputToolbarState.personaId = selectedId;
-  }, [inputToolbarState, selectedId]);
-
   // Publish the resolved chat id so the persona-items reconciler can look up
   // the chat's managerState without having a chat model in scope.
   useEffect(() => {
@@ -1100,7 +1097,7 @@ export function PersonaPicker(
   const handlePersona = (personaId: string | null) => {
     setPersonaAnchor(null);
     inputToolbarState.userPicked = true;
-    setSelectedId(personaId);
+    inputToolbarState.personaId = personaId;
   };
 
   return (

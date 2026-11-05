@@ -2,6 +2,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { PageConfig } from '@jupyterlab/coreutils';
 import { Toolbar } from '@jupyterlab/ui-components';
 import {
   IChatCommandRegistry,
@@ -130,7 +131,10 @@ const toolbarPlugin: JupyterFrontEndPlugin<IInputToolbarRegistryFactory> = {
         // Start with the default toolbar (Send, Attach, Cancel, SaveEdit)
         const registry = InputToolbarRegistry.defaultToolbarRegistry();
         // Per-chat persona state.
-        const inputToolbarState = new InputToolbarState(sessionRegistry);
+        const inputToolbarState = new InputToolbarState(sessionRegistry, {
+          defaultPersonaId:
+            PageConfig.getOption('jupyter_ai_default_persona') || null
+        });
 
         // Persona picker item.
         const personaPicker = (
