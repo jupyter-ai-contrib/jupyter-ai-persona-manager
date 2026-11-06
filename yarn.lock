@@ -2196,11 +2196,12 @@ __metadata:
   resolution: "@jupyter-ai/persona-manager@workspace:."
   dependencies:
     "@jupyter/builder": ^1.2.0
-    "@jupyter/chat": ^0.25.0-alpha.5
+    "@jupyter/chat": ^0.26.0
     "@jupyterlab/application": ^4.0.0
     "@jupyterlab/coreutils": ^6.0.0
     "@jupyterlab/services": ^7.0.0
     "@jupyterlab/testutils": ^4.0.0
+    "@jupyterlab/ui-components": ^4.0.0
     "@lumino/commands": ^2.0.0
     "@testing-library/dom": ^10.4.0
     "@testing-library/react": ^16.3.0
@@ -2254,9 +2255,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyter/chat@npm:^0.25.0-alpha.5":
-  version: 0.25.0-alpha.5
-  resolution: "@jupyter/chat@npm:0.25.0-alpha.5"
+"@jupyter/chat@npm:^0.26.0":
+  version: 0.26.0
+  resolution: "@jupyter/chat@npm:0.26.0"
   dependencies:
     "@emotion/react": ^11.10.5
     "@emotion/styled": ^11.10.5
@@ -2279,6 +2280,7 @@ __metadata:
     "@lumino/commands": ^2.3.3
     "@lumino/coreutils": ^2.2.2
     "@lumino/disposable": ^2.1.5
+    "@lumino/messaging": ^2.0.5
     "@lumino/polling": ^2.1.5
     "@lumino/signaling": ^2.1.5
     "@lumino/widgets": ^2.8.0
@@ -2287,7 +2289,7 @@ __metadata:
     clsx: ^2.1.0
     react: ^18.2.0
     react-dom: ^18.2.0
-  checksum: 581f8bdfd637b4c5a0028e4a911453c2144981ea8ac9f3c6cac7318c39bc08f86693f675f4c8dda847dfc8bb5544b7edeb05e44eeab955883ac8cc46c9bbcc56
+  checksum: 5d72e846f8f4c8e380d97e775038c2c8d9c4683195c78b19a512a78a9e6760371740450859ef6846b76861cbdf5cdc26c13fa341b351ecc0d80d6344723ae909
   languageName: node
   linkType: hard
 
@@ -2978,7 +2980,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/ui-components@npm:^4.5.0, @jupyterlab/ui-components@npm:^4.6.3":
+"@jupyterlab/ui-components@npm:^4.0.0, @jupyterlab/ui-components@npm:^4.5.0, @jupyterlab/ui-components@npm:^4.6.3":
   version: 4.6.3
   resolution: "@jupyterlab/ui-components@npm:4.6.3"
   dependencies:

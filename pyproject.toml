@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "jupyter_server>=2.4.0,<3",
-    "jupyterlab_chat>=0.25.0",
+    "jupyterlab_chat>=0.26.0",
     "pydantic>=2.0.0",
     "importlib_metadata>=4.0.0",
     "jupyter_ai_router>=0.1.1",
