@@ -126,13 +126,15 @@ class PersonaAuthManager(LoggingConfigurable):
         """
         Re-check auth every ``interval`` seconds (defaulting to
         `default_poll_interval`) until it succeeds, then invoke the persona's
-        `handle_auth()`. Runs until the check passes or the task is cancelled
-        (see `stop()` / `reset()`, called on persona shutdown).
+        `handle_auth(was_unauthenticated=True)` — the poll only runs while the
+        user is unauthenticated, so the resume it drives always signals that.
+        Runs until the check passes or the task is cancelled (see `stop()` /
+        `reset()`, called on persona shutdown).
         """
         interval = self.default_poll_interval if interval is None else interval
         while True:
             if await self.check_auth():
-                await self.parent.handle_auth()
+                await self.parent.handle_auth(was_unauthenticated=True)
                 return
             await asyncio.sleep(interval)
 
