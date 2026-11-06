@@ -259,10 +259,7 @@ function Avatar(props: { url: string | null | undefined }): JSX.Element {
  */
 function LoadingPlaceholder(): JSX.Element {
   return (
-    <div
-      className={`${SELECTOR_CLASS}-group ${SELECTOR_CLASS}-skeleton`}
-      title="Loading personas"
-    >
+    <div className={`${SELECTOR_CLASS}-skeleton`} title="Loading personas">
       <Skeleton variant="circular" width={18} height={18} />
       <Skeleton variant="rounded" width={90} height={12} />
     </div>
@@ -373,13 +370,9 @@ function defaultChoiceLabel(control: Control): string {
 }
 
 /**
- * The uppercase group label used in control menus: it titles a control's own
- * dropdown and labels each control's section in the overflow menu. Rendered
- * with MUI's `ListSubheader`, which has no tabindex, so arrow-key focus skips
- * it and the menu stays keyboard-navigable. Sticky: when the menu scrolls, the
- * label pins to the top, so the group the visible rows belong to stays
- * readable; in the overflow menu the next section's label paints over it on
- * arrival.
+ * The uppercase label titling a control's dropdown. Rendered with MUI's
+ * `ListSubheader`, which has no tabindex, so arrow-key focus skips it and the
+ * menu stays keyboard-navigable.
  */
 function ControlMenuSubheader(props: {
   label: string;

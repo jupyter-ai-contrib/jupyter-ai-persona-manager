@@ -43,9 +43,6 @@ export * from './persona-events';
 // Public API for contributing controls to the persona controls toolbar.
 export * from './persona-control-registry';
 
-// Toolbar-side observable for the current persona selection.
-export * from './input-toolbar-state';
-
 /**
  * Initialization data for the @jupyter-ai/persona-manager extension.
  */
