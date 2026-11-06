@@ -59,10 +59,11 @@
         "watch:labextension": "jupyter-builder watch ."
     },
     "dependencies": {
-        "@jupyter/chat": "^0.25.0-alpha.5",
+        "@jupyter/chat": "^0.26.0",
         "@jupyterlab/application": "^4.0.0",
         "@jupyterlab/coreutils": "^6.0.0",
         "@jupyterlab/services": "^7.0.0",
+        "@jupyterlab/ui-components": "^4.0.0",
         "@lumino/commands": "^2.0.0"
     },
     "devDependencies": {
@@ -116,7 +117,8 @@
         "extension": true,
         "outputDir": "jupyter_ai_persona_manager/labextension",
         "disabledExtensions": [
-            "jupyterlab-chat-extension:inputToolbarFactory"
+            "jupyterlab-chat-extension:inputToolbarFactory",
+            "jupyterlab-chat-extension:input-toolbar-factory"
         ],
         "sharedPackages": {
             "@jupyter/chat": {
