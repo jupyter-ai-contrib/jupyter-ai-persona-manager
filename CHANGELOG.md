@@ -2,6 +2,35 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 0.4.0
+
+([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.3.0...2c07dbb8dca07b32b4061e384c4133ec0208a6d2))
+
+### Enhancements made
+
+- Update chat input toolbar [#179](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/179) ([@brichet](https://github.com/brichet), [@jtpio](https://github.com/jtpio))
+- Simplify auth specification for persona classes [#168](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/168) ([@dlqqq](https://github.com/dlqqq), [@bhavana-nair](https://github.com/bhavana-nair), [@brichet](https://github.com/brichet))
+
+### Bugs fixed
+
+- fix: remove event listeners when a persona manager stops [#178](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/178) ([@potatoboiler](https://github.com/potatoboiler), [@dlqqq](https://github.com/dlqqq))
+
+### Other merged PRs
+
+- Bump the npm-security-updates group across 1 directory with 6 updates [#182](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/182) ([@brichet](https://github.com/brichet))
+- Bump the npm-security-updates group across 1 directory with 6 updates [#181](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/pull/181) ([@brichet](https://github.com/brichet))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-10-22&to=2026-11-09&type=c))
+
+@bhavana-nair ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abhavana-nair+updated%3A2026-10-22..2026-11-09&type=Issues)) | @brichet ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abrichet+updated%3A2026-10-22..2026-11-09&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-10-22..2026-11-09&type=Issues)) | @jtpio ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Ajtpio+updated%3A2026-10-22..2026-11-09&type=Issues)) | @potatoboiler ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Apotatoboiler+updated%3A2026-10-22..2026-11-09&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 0.3.0
 
 ([Full Changelog](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/compare/v0.2.2...d7e774d2b7edcbcd2f1072b2d580e42185267a39))
@@ -31,8 +60,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyter-ai-contrib/jupyter-ai-persona-manager/graphs/contributors?from=2026-09-28&to=2026-10-22&type=c))
 
 @brichet ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Abrichet+updated%3A2026-09-28..2026-10-22&type=Issues)) | @dlqqq ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Adlqqq+updated%3A2026-09-28..2026-10-22&type=Issues)) | @jtpio ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3Ajtpio+updated%3A2026-09-28..2026-10-22&type=Issues)) | @Zsailer ([activity](https://github.com/search?q=repo%3Ajupyter-ai-contrib%2Fjupyter-ai-persona-manager+involves%3AZsailer+updated%3A2026-09-28..2026-10-22&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.3.0a0
 
