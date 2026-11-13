@@ -79,10 +79,8 @@ class MessageHandler(JupyterHandler):
         ychat = YChat()
         ychat.initial_path = f"{uuid.uuid4()}.chat"
 
-        # Instantiate a temporary PersonaManager for this ephemeral chat.
-        from .persona_manager import PersonaManager
-
-        persona_manager = PersonaManager(
+        PersonaManagerClass = self.settings["jupyter-ai"]["persona-manager-class"]
+        persona_manager = PersonaManagerClass(
             chat=ychat,
             root_dir=root_dir,
             event_loop=asyncio.get_event_loop(),
