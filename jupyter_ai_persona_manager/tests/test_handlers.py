@@ -6,6 +6,7 @@ from unittest.mock import Mock
 from urllib.parse import quote
 
 import pytest
+from tornado.httpclient import HTTPClientError
 
 from jupyter_ai_persona_manager.handlers import build_avatar_cache
 
@@ -415,3 +416,31 @@ async def test_message_handler_waits_for_streaming_reply(jp_fetch, jp_root_dir):
     assert response.code == 200
     body = json.loads(response.body)
     assert body["response"] == "one two three"
+
+
+async def test_message_handler_honors_persona_manager_class(
+    jp_fetch, jp_serverapp, jp_root_dir
+):
+    """The one-shot endpoint must build its manager from the configured
+    `persona_manager_class`, so a subclass that excludes personas hides them."""
+    from jupyter_ai_persona_manager.persona_manager import PersonaManager
+
+    class NoPersonasManager(PersonaManager):
+        def _init_personas(self):
+            return {}
+
+    _install_message_persona(
+        jp_root_dir, "prepare-required_persona.py", _PREPARE_REQUIRED_PERSONA_SOURCE
+    )
+    jp_serverapp.web_app.settings["jupyter-ai"]["persona-manager-class"] = (
+        NoPersonasManager
+    )
+
+    with pytest.raises(HTTPClientError) as excinfo:
+        await jp_fetch(
+            "api", "ai", "message", "Prepare Required Persona",
+            method="POST",
+            body=json.dumps({"message": "hi"}),
+        )
+
+    assert excinfo.value.code == 404

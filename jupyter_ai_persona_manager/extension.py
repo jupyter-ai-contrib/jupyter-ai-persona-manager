@@ -75,6 +75,7 @@ class PersonaManagerExtension(ExtensionApp):
             self.settings['jupyter-ai'] = {}
         if 'persona-managers' not in self.settings['jupyter-ai']:
             self.settings['jupyter-ai']['persona-managers'] = {}
+        self.settings['jupyter-ai']['persona-manager-class'] = self.persona_manager_class
 
         # Register the persona event schemas once, at server-extension init, so
         # every PersonaManager can emit without re-registering per chat.
